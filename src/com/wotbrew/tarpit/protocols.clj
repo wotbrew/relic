@@ -5,7 +5,4 @@
 
 (defprotocol State
   (get-schema [st])
-  (rows [st rel])
-  (q [st rel])
-  (modify [st mods])
-  (check [st constraint]))
+  (rows [st rel]))

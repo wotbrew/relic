@@ -10,7 +10,7 @@
             [clojure.core :as clj])
   (:refer-clojure :exclude [extend update]))
 
-(defn base "Defines a base relation" [& keys] (into [:rel] keys))
+(defn rel "Defines a base relation" [& keys] (into [:rel] keys))
 
 (defn extend [rel & extensions] (into [:extend rel] extensions))
 (defn project [rel & keys] (into [:project rel] keys))
@@ -35,10 +35,10 @@
   (rel-id [rel] rel))
 
 (defn q [st rel]
-  (p/q st rel))
+  (naive/q st rel))
 
 (defn modify [st & modifications]
-  (p/modify st modifications))
+  (naive/modify st modifications))
 
 (defn empty-state [schema]
   (naive/empty-state schema))

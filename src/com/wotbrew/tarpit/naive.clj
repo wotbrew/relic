@@ -83,7 +83,7 @@
       (apply pred (map subs-arg args)))))
 
 (defn ensure [st constraint]
-  (when-not (p/check st constraint)
+  (when-not (check st constraint)
     (throw (errors/constraint-violation st constraint))))
 
 (defn modify [st modifications]
@@ -112,9 +112,6 @@
 (defrecord State [schema]
   p/State
   (get-schema [st] schema)
-  (rows [st rel] (get st (p/rel-id rel) #{}))
-  (q [st rel] (q st rel))
-  (modify [st mods] (modify st mods))
-  (check [st constraint] (check st constraint)))
+  (rows [st rel] (get st (p/rel-id rel) #{})))
 
 (defn empty-state [schema] (->State schema))

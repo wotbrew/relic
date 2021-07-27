@@ -108,10 +108,3 @@
     (doseq [constraint (:constraints (p/get-schema st))]
       (ensure st constraint))
     st))
-
-(defrecord State [schema]
-  p/State
-  (get-schema [st] schema)
-  (rows [st rel] (get st (p/rel-id rel) #{})))
-
-(defn empty-state [schema] (->State schema))

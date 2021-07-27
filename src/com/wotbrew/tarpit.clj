@@ -40,5 +40,9 @@
 (defn modify [st & modifications]
   (naive/modify st modifications))
 
-(defn empty-state [schema]
-  (naive/empty-state schema))
+(defrecord State [schema]
+  p/State
+  (get-schema [st] schema)
+  (rows [st rel] (get st (p/rel-id rel) #{})))
+
+(defn empty-state [schema] (->State schema))

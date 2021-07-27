@@ -1,8 +1,5 @@
 (ns com.wotbrew.tarpit.protocols)
 
-(defprotocol Schema
-  (new-state [schema]))
-
 (defprotocol RelId
   (rel-id [rel]))
 

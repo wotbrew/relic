@@ -2,10 +2,8 @@
   "An FRP implementation for maps that is super slow, but works."
   (:require [clojure.set :as set]
             [com.wotbrew.tarpit.errors :as errors]
-            [com.wotbrew.tarpit.protocols :as p]))
-
-(defn empty-state [schema]
-  {:tarpit/schema schema})
+            [com.wotbrew.tarpit.protocols :as p])
+  (:refer-clojure :exclude [ensure]))
 
 (defn- substitute [row arg]
   (if (contains? row arg)
@@ -110,3 +108,13 @@
     (doseq [constraint (:constraints (p/get-schema st))]
       (ensure st constraint))
     st))
+
+(defrecord State [schema]
+  p/State
+  (get-schema [st] schema)
+  (rows [st rel] (get st (p/rel-id rel) #{}))
+  (q [st rel] (q st rel))
+  (modify [st mods] (modify st mods))
+  (check [st constraint] (check st constraint)))
+
+(defn empty-state [schema] (->State schema))

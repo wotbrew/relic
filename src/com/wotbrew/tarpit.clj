@@ -6,9 +6,9 @@
   [:update rel overwrites match-rel]
   [:delete rel match-rel]"
   (:require [com.wotbrew.tarpit.naive :as naive]
-            [com.wotbrew.tarpit.protocols :as p])
-  (:refer-clojure :exclude [extend])
-  (:import (clojure.lang IPersistentMap)))
+            [com.wotbrew.tarpit.protocols :as p]
+            [clojure.core :as clj])
+  (:refer-clojure :exclude [extend update]))
 
 (defn base "Defines a base relation" [& keys] (into [:rel] keys))
 
@@ -27,23 +27,18 @@
 (defn foreign-key [rel1 rel2 km] (into [:foreign-key rel1 rel2 km] keys))
 
 (defn insert [rel row] [:insert rel row])
+(defn update [rel set-map match-rel] [:update rel set-map match-rel])
+(defn delete [rel match-rel] [:delete rel match-rel])
 
 (extend-protocol p/RelId
   Object
   (rel-id [rel] rel))
 
-(extend-protocol p/Schema
-  IPersistentMap
-  (new-state [schema] {:tarpit/schema schema}))
+(defn q [st rel]
+  (p/q st rel))
 
-(extend-protocol p/State
-  IPersistentMap
-  (get-schema [st] (:tarpit/schema st))
-  (rows [st rel] (get st (p/rel-id rel) #{}))
-  (q [st rel] (naive/q st rel))
-  (modify [st mods] (naive/modify st mods))
-  (check [st constraint] (naive/check st constraint)))
+(defn modify [st & modifications]
+  (p/modify st modifications))
 
-(defn q [st rel] (p/q st rel))
-
-(defn modify [st & modifications] (p/modify st modifications))
+(defn empty-state [schema]
+  (naive/empty-state schema))

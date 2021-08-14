@@ -315,11 +315,16 @@
       project-xf
       (comp (extend-xf (into [:extend] extend-form-fn)) project-xf))))
 
-(defn- join->join1s [stmt]
+(defn- join->sops [stmt]
   (let [[_ join-pairs] stmt
         join-pairs (partition 2 join-pairs)]
     (->> join-pairs
-         (mapv (fn [[right clause]] [:join1 right clause])))))
+         (mapv (fn [[right clause]] [:sop set/join right clause])))))
+
+(defn- build-sops [f stmt]
+  (let [[_ & rels] stmt]
+    (->> rels
+         (mapv (fn [right] [:sop f right])))))
 
 (defn- transform [rel stmt]
   (case (nth stmt 0)
@@ -345,34 +350,28 @@
     :select
     (-push-xf rel (select-xf stmt))
 
-    :join1
-    (let [[_ rel2 clause] stmt
+    :sop
+    (let [[_ sop rel2 & args] stmt
           st (-st rel)
           coll (-realize rel)
-          coll (set/join coll (relation st rel2) clause)]
+          coll (apply sop coll (relation st rel2) args)]
       (->PersistentRelation coll coll identity st (meta rel)))
 
     :join
-    (->> (join->join1s stmt)
+    (->> (join->sops stmt)
          (reduce transform rel))
 
     :union
-    (let [coll (realize-set rel)
-          st (-st rel)
-          coll (apply set/union coll (map #(relation st %) (rest stmt)))]
-      (->PersistentRelation coll coll identity st (meta rel)))
+    (->> (build-sops set/union stmt)
+         (reduce transform rel))
 
     (:diff :difference)
-    (let [coll (realize-set rel)
-          st (-st rel)
-          coll (apply set/difference coll (map #(relation st %) (rest stmt)))]
-      (->PersistentRelation coll coll identity st (meta rel)))
+    (->> (build-sops set/difference stmt)
+         (reduce transform rel))
 
     (:intersect :intersection)
-    (let [coll (realize-set rel)
-          st (-st rel)
-          coll (apply set/intersection coll (map #(relation st %) (rest stmt)))]
-      (->PersistentRelation coll coll identity st (meta rel)))
+    (->> (build-sops set/intersection stmt)
+         (reduce transform rel))
 
     (:agg :summarize)
     (let [coll (realize-set rel)
@@ -462,13 +461,13 @@
               (let [st (assoc st relvar nset)]
                 (flow-fn st added))))))
 
-      :join1
-      (let [[_ right clause] head]
+      :sop
+      (let [[_ sop right & args] head]
         (fn insert-join1 [st rows]
           (let [nrows
                 (case from
-                  :left (set/join rows (st right #{}) clause)
-                  :right (set/join (st (pop relvar) #{}) rows clause))
+                  :left (apply sop rows (st right #{}) args)
+                  :right (apply sop (st (pop relvar) #{}) rows args))
                 oset (st relvar #{})
                 nset (reduce conj oset nrows)]
             (if (identical? nset oset)
@@ -537,7 +536,10 @@
           :select
           (recur (conj acc [:xf (select-xf head)]) tail)
 
-          :join (recur (reduce conj acc (join->join1s head)) tail)
+          :join (recur (reduce conj acc (join->sops head)) tail)
+          :union (recur (reduce conj acc (build-sops set/union head)) tail)
+          (:diff :difference) (recur (reduce conj acc (build-sops set/difference head)) tail)
+          (:intersect :intersection) (recur (reduce conj acc (build-sops set/intersection head)) tail)
 
           (recur (conj acc head) tail))))))
 

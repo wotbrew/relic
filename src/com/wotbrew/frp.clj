@@ -290,6 +290,37 @@
 
 (defn- realize-set [rel] (-realize rel))
 
+(defn- where-xf [stmt]
+  (filter (apply every-pred (map expr-row-fn (rest stmt)))))
+
+(defn- extend-xf [stmt]
+  (map (apply comp (map extend-form-fn (reverse (rest stmt))))))
+
+(defn- expand-xf [stmt]
+  (apply comp (map expand-form-xf (rest stmt))))
+
+(defn- project-xf [stmt]
+  (let [ks (subvec stmt 1)] (map #(select-keys % ks))))
+
+(defn- project-away-xf [stmt]
+  (let [ks (subvec stmt 1)] (map #(apply dissoc % ks))))
+
+(defn- select-xf [stmt]
+  (let [forms (rest stmt)
+        [project-cols extend-forms] ((juxt filter remove) keyword? forms)
+        cols (into (set project-cols) (mapcat extend-form-cols) extend-forms)
+        project (into [:project] cols)
+        project-xf (project-xf project)]
+    (if (empty? extend-forms)
+      project-xf
+      (comp (extend-xf (into [:extend] extend-form-fn)) project-xf))))
+
+(defn- join->join1s [stmt]
+  (let [[_ join-pairs] stmt
+        join-pairs (partition 2 join-pairs)]
+    (->> join-pairs
+         (mapv (fn [[right clause]] [:join1 right clause])))))
+
 (defn- transform [rel stmt]
   (case (nth stmt 0)
     ;; transducer step
@@ -297,35 +328,33 @@
     (-push-xf rel (apply comp (rest stmt)))
 
     :where
-    (-push-xf rel (filter (apply every-pred (map expr-row-fn (rest stmt)))))
+    (-push-xf rel (where-xf stmt))
 
     :extend
-    (-push-xf rel (map (apply comp (map extend-form-fn (reverse (rest stmt))))))
+    (-push-xf rel (extend-xf stmt))
 
     :expand
-    (-push-xf rel (apply comp (map expand-form-xf (rest stmt))))
+    (-push-xf rel (expand-xf stmt))
 
     :project
-    (-push-xf rel (let [ks (subvec stmt 1)] (map #(select-keys % ks))))
+    (-push-xf rel (project-xf stmt))
 
     :project-away
-    (-push-xf rel (let [ks (subvec stmt 1)] (map #(apply dissoc % ks))))
+    (-push-xf rel (project-away-xf stmt))
 
     :select
-    (let [forms (rest stmt)
-          [project-cols extend-forms] ((juxt filter remove) keyword? forms)
-          cols (into (set project-cols) (mapcat extend-form-cols) extend-forms)]
-      (-> rel
-          (transform (into [:extend] extend-forms))
-          (transform (into [:project] cols))))
+    (-push-xf rel (select-xf stmt))
 
-    :join1 (transform rel (into [:join] (rest stmt)))
-    :join
-    (let [joins (rest stmt)
+    :join1
+    (let [[_ rel2 clause] stmt
           st (-st rel)
           coll (-realize rel)
-          coll (reduce (fn [s [rel2 clause]] (set/join s (relation st rel2) clause)) coll (partition 2 joins))]
+          coll (set/join coll (relation st rel2) clause)]
       (->PersistentRelation coll coll identity st (meta rel)))
+
+    :join
+    (->> (join->join1s stmt)
+         (reduce transform rel))
 
     :union
     (let [coll (realize-set rel)
@@ -376,13 +405,17 @@
   ([] (new-state nil))
   ([profile] (with-meta {} {::profile profile})))
 
-;; start with a relvar
-[[::foo]
- [:xf (filter #(= (:a %) 42))]
- [:join1 [[::bar]] {:a :a}]]
-
-;; create dep graph
 (defn- graphize
+  "Constructs a graph of relvar to other relvars that will receive inserted/deleted/updated rows
+  the edges are mostly named :left and sometimes :right (for join/union/diff/intersect).
+
+  So you for a relvar:
+
+  [base [:xf xform]]
+
+  end up with a graph like this
+  {base #{[:left [base [:xf xform]]}
+   [base [:xf xform]] #{}}"
   [g relvar next]
   (if (contains? g relvar)
     (update g relvar into next)
@@ -397,92 +430,61 @@
           g)
         g))))
 
-;; algo to insert based on relvar graph
-(defn- graph-insert [st g relvar from rows]
-  (let [head (peek relvar)]
+(defn- inserter
+  "Given a relvar graph (from graphize) will construct a function that when given a
+  st and rows will materialize changes to the state based on the graph.
+
+  This function alongside updater/deleter form the foundation for materialized views."
+  [g relvar from]
+  (let [head (peek relvar)
+        flow (g relvar)
+        nfns (mapv (fn [[from relvar]] (inserter g relvar from)) flow)
+        flow-fn (case (count nfns)
+                  1 (first nfns)
+                  (fn [st added] (reduce (fn [st f] (f st added)) st nfns)))]
     (case (nth head 0)
       :xf
-      (let [xf (apply comp (rest head))
-            oset (st relvar #{})
-            added (ArrayList.)
-            nset (transduce xf (completing (fn [s row]
-                                             (let [ns (conj s row)]
-                                               (if (identical? ns s)
-                                                 s
-                                                 (do (.add added row) ns)))))
-                            oset
-                            rows)]
-        (if (= 0 (.size added))
-          st
-          (let [st (assoc st relvar nset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-insert st g relvar from added)) st flow))))
+      (let [xf (apply comp (rest head))]
+        (fn insert-xf [st rows]
+          (let [oset (st relvar #{})
+                added (ArrayList.)
+                rf
+                (fn
+                  ([s] s)
+                  ([s row]
+                   (let [ns (conj s row)]
+                     (if (identical? ns s)
+                       s
+                       (do (.add added row) ns)))))
+                nset (transduce xf rf oset rows)]
+            (if (= 0 (.size added))
+              st
+              (let [st (assoc st relvar nset)]
+                (flow-fn st added))))))
+
       :join1
-      (let [[_ right clause] head
-            nrows
-            (case from
-              :left (set/join rows (st right #{}) clause)
-              :right (set/join (st (pop relvar) #{}) rows clause))
-            oset (st relvar #{})
-            nset (reduce conj oset nrows)]
-        (if (identical? nset oset)
-          st
-          (let [st (assoc st relvar nset)
-                added (set/difference nrows oset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-insert st g relvar from added)) st flow))))
+      (let [[_ right clause] head]
+        (fn insert-join1 [st rows]
+          (let [nrows
+                (case from
+                  :left (set/join rows (st right #{}) clause)
+                  :right (set/join (st (pop relvar) #{}) rows clause))
+                oset (st relvar #{})
+                nset (reduce conj oset nrows)]
+            (if (identical? nset oset)
+              st
+              (let [st (assoc st relvar nset)
+                    added (set/difference nrows oset)]
+                (flow-fn st added))))))
 
-      (let [oset (st relvar #{})
-            nset (reduce conj oset rows)]
-        (if (identical? nset oset)
-          st
-          (let [st (assoc st relvar nset)
-                added (set/difference rows oset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-insert st g relvar from added)) st flow)))))))
-
-(defn- graph-delete [st g relvar from rows]
-  (let [head (peek relvar)]
-    (case (nth head 0)
-      :xf
-      (let [xf (apply comp (rest head))
-            oset (st relvar #{})
-            deleted (ArrayList.)
-            nset (transduce xf (completing (fn [s row]
-                                             (let [ns (disj s row)]
-                                               (if (identical? ns s)
-                                                 s
-                                                 (do (.add deleted row) ns)))))
-                            oset
-                            rows)]
-        (if (= 0 (.size deleted))
-          st
-          (let [st (assoc st relvar nset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-delete st g relvar from deleted)) st flow))))
-      :join1
-      (let [[_ right clause] head
-            nrows
-            (case from
-              :left (set/join rows (st right #{}) clause)
-              :right (set/join (st (pop relvar) #{}) rows clause))
-            oset (st relvar #{})
-            nset (reduce disj oset nrows)]
-        (if (identical? nset oset)
-          st
-          (let [st (assoc st relvar nset)
-                deleted (set/intersection nrows oset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-delete st g relvar from deleted)) st flow))))
-
-      (let [oset (st relvar #{})
-            nset (reduce disj oset rows)]
-        (if (identical? nset oset)
-          st
-          (let [st (assoc st relvar nset)
-                added (set/intersection rows oset)
-                flow (g relvar)]
-            (reduce (fn [st [from relvar]] (graph-delete st g relvar from added)) st flow)))))))
+      (fn insert-base [st rows]
+        (let [oset (st relvar #{})
+              nset (reduce conj oset rows)]
+          (if (identical? nset oset)
+            st
+            (let [st (assoc st relvar nset)
+                  added (set/difference rows oset)]
+              (flow-fn st added))))))))
 
 (defn modify [st tx]
   (let [{:keys [::graph]} (meta st)]
@@ -493,10 +495,50 @@
       (reduce
         (fn [st stmt]
           (case (nth stmt 0)
-            :insert (let [[_ relvar row] stmt]
-                      (graph-insert st graph relvar nil #{row}))
+            :insert (let [[_ relvar row] stmt
+                          inserter (inserter graph relvar nil)]
+                      (inserter st #{row}))
             :update st
             :delete st))
         st tx))))
+
+(defn optimise [relvar profile]
+
+  ;; select/project/extend/expand/where replaced with xf
+  ;; join replaced with multiple join1 or various indexed joins
+  ;; union replaced with multiple union1, diff/intersection are the same
+  ;; agg replaced with bucketed agg strategy e.g reduce/combine pattern
+
+  ;; we can compile a fast relation function of a state with that profile
+  ;; and of course this graph can be materialized.
+
+  ;; :where and :join can use indexes in PROFILE and therefore might be replaced, as long as it would not affect
+  ;; the result.
+
+  ;; return an optimised relvar
+
+  (loop [acc ()
+         relvar relvar]
+    (if (empty? relvar)
+      (vec acc)
+      (let [head (peek relvar)
+            tail (pop relvar)]
+        (case (nth head 0)
+          :where
+          (recur (conj acc [:xf (where-xf head)]) tail)
+          :extend
+          (recur (conj acc [:xf (extend-xf head)]) tail)
+          :expand
+          (recur (conj acc [:xf (expand-xf head)]) tail)
+          :project
+          (recur (conj acc [:xf (project-xf head)]) tail)
+          :project-away
+          (recur (conj acc [:xf (project-away-xf head)]) tail)
+          :select
+          (recur (conj acc [:xf (select-xf head)]) tail)
+
+          :join (recur (reduce conj acc (join->join1s head)) tail)
+
+          (recur (conj acc head) tail))))))
 
 

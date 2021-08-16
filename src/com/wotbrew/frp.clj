@@ -397,7 +397,7 @@
 (defn relation [st relvar]
   (reduce
     transform
-    (get-materialized st (nth relvar 0))
+    (get-materialized st (subvec relvar 0 1))
     (subvec relvar 1)))
 
 (defn new-state
@@ -516,7 +516,7 @@
                        (let [{old-rows :rows
                               res :res} (m group)
                              missing (nil? old-rows)
-                             remaining-rows (if missing #{} (set/difference old-rows deleted-rows))]
+                             remaining-rows (if missing #{} (set/difference old-rows (set deleted-rows)))]
                          (cond
                            missing m
                            (empty? remaining-rows)
@@ -542,13 +542,13 @@
 
       (fn delete-base [st stmts]
         (let [oset (st relvar #{})
-              rows (relation st (reduce conj relvar stmts))
+              rows (relation st (conj relvar (into [:where] stmts)))
               nset (reduce disj oset rows)]
           (if (identical? nset oset)
             st
             (let [st (assoc st relvar nset)
                   deleted (set/intersection rows oset)]
-              (flow-delete-fns st deleted))))))))
+              (flow-deleted st deleted))))))))
 
 (defn- inserter
   "Given a relvar graph (from graphize) will construct a function that when given a
@@ -587,9 +587,12 @@
               (let [st (assoc st relvar nset)]
                 (flow-inserted st added))))))
 
-      ;; [:hash-lookup left left-index vals xf]
+      ;; [:hash-lookup left left-index vals where]
 
-      ;; [:hash-join left right clause left-index right-index]
+
+      ;; [:hash-join left right
+      ;; left-index left-where
+      ;; right-index right-where]
 
       :sop
       (let [[_ sop right & args] head]
@@ -623,7 +626,7 @@
                        (let [{old-rows :rows} (m group)
                              missing (nil? old-rows)
                              old-rows (or old-rows #{})
-                             all-rows (set/union old-rows new-rows)]
+                             all-rows (set/union old-rows (set new-rows))]
                          (if (identical? all-rows old-rows)
                            m
                            (let [res (agg-fn group all-rows)]
@@ -653,7 +656,8 @@
               (flow-inserted st added))))))))
 
 (defn modify [st tx]
-  (let [{:keys [::graph]} (meta st)]
+  (let [{:keys [::graph]
+         :or {graph {}}} (meta st)]
     (if (map? tx)
       (modify st (for [[rel rows] tx] (into [:insert rel] rows)))
       (reduce

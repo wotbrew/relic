@@ -423,8 +423,8 @@
           dep1 (pop relvar)
           g (if (empty? dep1) g (graphize g dep1 #{[:left relvar]}))]
       (case (nth head 0)
-        :join1
-        (let [[_ right-relvar] head
+        :sop
+        (let [[_ _ right-relvar] head
               g (graphize g right-relvar #{[:right relvar]})]
           g)
         g))))

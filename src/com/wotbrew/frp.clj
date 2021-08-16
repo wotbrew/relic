@@ -218,17 +218,23 @@
       #{binding}
       (set binding))))
 
-(defn agg-form-xf [form]
+(defn- agg-form-fn [form]
   (let [[binding _sep expr] form
         ;;todo complex expressions
         expr-fn expr]
     (if (keyword? binding)
-      (map
-        (fn [[m rows]]
-          (assoc m binding (expr-fn rows))))
-      (map
-        (fn [[m rows]]
-          (merge m (set/project (set (expr-fn rows)) binding)))))))
+      (fn [m rows]
+        (assoc m binding (expr-fn rows)))
+      (fn [m rows]
+        (merge m (set/project (set (expr-fn rows)) binding))))))
+
+(defn- aggs-fn [forms]
+  (let [fs (mapv agg-form-fn forms)]
+    (fn [group rows] (reduce (fn [m f] (f m rows)) group fs))))
+
+(defn- agg-form-pair-xf [form]
+  (let [f (agg-form-fn form)]
+    (map (fn [[m rows]] [(f m) rows]))))
 
 (defn expand-form-xf [form]
   ;; todo missing nil safety
@@ -377,28 +383,22 @@
     (let [coll (realize-set rel)
           [_ group-cols & aggs] stmt
           group-key-fn (if (seq group-cols) #(select-keys % group-cols) (constantly {}))
-          grouped (group-by group-key-fn coll)]
+          grouped (group-by group-key-fn coll)
+          agg-f (aggs-fn aggs)
+          f (fn [[group rows]] (agg-f group rows))]
       (if (seq aggs)
-        (->PersistentRelation nil grouped (comp (apply comp (map agg-form-xf aggs))) (-st rel) (meta rel))
-        (->PersistentRelation nil (keys grouped) identity (-st rel) (meta rel))))))
-
-(def relvar-registry (atom {}))
-(def profile-registry (atom {}))
+        (->PersistentRelation nil grouped (map f) (-st rel) (meta rel))
+        (->PersistentRelation nil (set (keys grouped)) identity (-st rel) (meta rel))))))
 
 (defn- get-materialized [st relvar]
   (let [s (get st relvar #{})]
     (->PersistentRelation s s identity st nil)))
 
 (defn relation [st relvar]
-  (if (keyword? relvar)
-    (relation st (get @relvar-registry relvar))
-    (reduce
-      transform
-      (get-materialized st (nth relvar 0))
-      (subvec relvar 1))))
-
-(defmacro def-relvar [k & forms] `(do (swap! relvar-registry assoc ~k [~@forms]) nil))
-(defmacro def-profile [k m] `(do (swap! profile-registry assoc ~k ~m) nil))
+  (reduce
+    transform
+    (get-materialized st (nth relvar 0))
+    (subvec relvar 1)))
 
 (defn new-state
   ([] (new-state nil))
@@ -429,6 +429,127 @@
           g)
         g))))
 
+(declare deleter inserter)
+
+(defn- updater
+  [g relvar from]
+  (let [insert (inserter g relvar from)
+        delete (deleter g relvar from)]
+    (fn insert-base [st smap stmts]
+      (let [nrelvar (reduce conj relvar stmts)
+
+            sfn (apply comp (for [[k expr] smap
+                                  :let [ef (expr-row-fn expr)]]
+                              (fn [row] (assoc row k (ef row)))))
+
+            matched-rows (relation st nrelvar)
+            updated-rows (into #{} (map sfn) matched-rows)
+
+            to-delete (set/difference matched-rows updated-rows)
+            to-insert (set/difference updated-rows matched-rows)]
+        (-> st
+            (delete to-delete)
+            (insert to-insert))))))
+
+(defn- deleter
+  "Given a relvar graph (from graphize) will construct a function that when given a
+  st and rows will materialize changes to the state based on the graph.
+
+  This function alongside updater/deleter form the foundation for materialized views."
+  [g relvar from]
+  (let [head (peek relvar)
+        flow (g relvar)
+        flow-delete-fns (mapv (fn [[from relvar]] (deleter g relvar from)) flow)
+        flow-deleted (case (count flow-delete-fns)
+                       1 (first flow-delete-fns)
+                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-delete-fns)))
+        flow-update-fns (mapv (fn [[from relvar]] (updater g relvar from)) flow)
+        flow-updated (case (count flow-update-fns)
+                       1 (first flow-update-fns)
+                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-update-fns)))]
+    (case (nth head 0)
+      :xf
+      (let [xf (apply comp (rest head))]
+        (fn delete-xf [st rows]
+          (let [oset (st relvar #{})
+                deleted (ArrayList.)
+                rf
+                (fn
+                  ([s] s)
+                  ([s row]
+                   (let [ns (disj s row)]
+                     (if (identical? ns s)
+                       s
+                       (do (.add deleted row) ns)))))
+                nset (transduce xf rf oset rows)]
+            (if (= 0 (.size deleted))
+              st
+              (let [st (assoc st relvar nset)]
+                (flow-deleted st deleted))))))
+
+      :sop
+      (let [[_ sop right & args] head]
+        (fn delete-sop [st rows]
+          (let [nrows
+                (case from
+                  :left (apply sop rows (st right #{}) args)
+                  :right (apply sop (st (pop relvar) #{}) rows args))
+                oset (st relvar #{})
+                nset (reduce disj oset nrows)]
+            (if (identical? nset oset)
+              st
+              (let [st (assoc st relvar nset)
+                    deleted (set/intersection nrows oset)]
+                (flow-deleted st deleted))))))
+      
+      :agg
+      (let [[_ cols & aggs] head
+            key-fn #(select-keys % cols)
+            agg-fn (aggs-fn aggs)]
+        (fn insert-agg [st rows]
+          (let [om (st relvar {})
+                grouped (group-by key-fn rows)
+                updated (ArrayList.)
+                deleted (ArrayList.)
+                nm (reduce-kv
+                     (fn [m group deleted-rows]
+                       (let [{old-rows :rows
+                              res :res} (m group)
+                             missing (nil? old-rows)
+                             remaining-rows (if missing #{} (set/difference old-rows deleted-rows))]
+                         (cond
+                           missing m
+                           (empty? remaining-rows)
+                           (do
+                             (.add deleted res)
+                             (dissoc m group))
+                           :else
+                           (let [res (agg-fn group remaining-rows)]
+                             (.add updated res)
+                             (assoc m group {:rows remaining-rows, :res res})))))
+                     om
+                     grouped)]
+            (if (identical? nm om)
+              st
+              (cond->
+                (assoc st relvar nm)
+
+                (seq updated)
+                (flow-updated updated)
+                
+                (seq deleted)
+                (flow-deleted deleted))))))
+
+      (fn delete-base [st stmts]
+        (let [oset (st relvar #{})
+              rows (relation st (reduce conj relvar stmts))
+              nset (reduce disj oset rows)]
+          (if (identical? nset oset)
+            st
+            (let [st (assoc st relvar nset)
+                  deleted (set/intersection rows oset)]
+              (flow-delete-fns st deleted))))))))
+
 (defn- inserter
   "Given a relvar graph (from graphize) will construct a function that when given a
   st and rows will materialize changes to the state based on the graph.
@@ -437,10 +558,15 @@
   [g relvar from]
   (let [head (peek relvar)
         flow (g relvar)
-        nfns (mapv (fn [[from relvar]] (inserter g relvar from)) flow)
-        flow-fn (case (count nfns)
-                  1 (first nfns)
-                  (fn [st added] (reduce (fn [st f] (f st added)) st nfns)))]
+        flow-insert-fns (mapv (fn [[from relvar]] (inserter g relvar from)) flow)
+        flow-inserted (case (count flow-insert-fns)
+                        1 (first flow-insert-fns)
+                        (fn [st added] (reduce (fn [st f] (f st added)) st flow-insert-fns)))
+
+        flow-update-fns (mapv (fn [[from relvar]] (updater g relvar from)) flow)
+        flow-updated (case (count flow-update-fns)
+                       1 (first flow-update-fns)
+                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-update-fns)))]
     (case (nth head 0)
       :xf
       (let [xf (apply comp (rest head))]
@@ -459,11 +585,15 @@
             (if (= 0 (.size added))
               st
               (let [st (assoc st relvar nset)]
-                (flow-fn st added))))))
+                (flow-inserted st added))))))
+
+      ;; [:hash-lookup left left-index vals xf]
+
+      ;; [:hash-join left right clause left-index right-index]
 
       :sop
       (let [[_ sop right & args] head]
-        (fn insert-join1 [st rows]
+        (fn insert-sop [st rows]
           (let [nrows
                 (case from
                   :left (apply sop rows (st right #{}) args)
@@ -474,7 +604,44 @@
               st
               (let [st (assoc st relvar nset)
                     added (set/difference nrows oset)]
-                (flow-fn st added))))))
+                (flow-inserted st added))))))
+
+      ;; :agg will sometimes update, sometimes insert, so need to write
+      ;; updater first
+
+      :agg
+      (let [[_ cols & aggs] head
+            key-fn #(select-keys % cols)
+            agg-fn (aggs-fn aggs)]
+        (fn insert-agg [st rows]
+          (let [om (st relvar {})
+                grouped (group-by key-fn rows)
+                added (ArrayList.)
+                updated (ArrayList.)
+                nm (reduce-kv
+                     (fn [m group new-rows]
+                       (let [{old-rows :rows} (m group)
+                             missing (nil? old-rows)
+                             old-rows (or old-rows #{})
+                             all-rows (set/union old-rows new-rows)]
+                         (if (identical? all-rows old-rows)
+                           m
+                           (let [res (agg-fn group all-rows)]
+                             (if missing
+                               (.add added res)
+                               (.add updated res))
+                             (assoc m group {:rows all-rows, :res res})))))
+                     om
+                     grouped)]
+            (if (identical? nm om)
+              st
+              (cond->
+                (assoc st relvar nm)
+                (seq added)
+                (flow-inserted added)
+
+                (seq updated)
+                (flow-updated updated))))))
 
       (fn insert-base [st rows]
         (let [oset (st relvar #{})
@@ -482,23 +649,25 @@
           (if (identical? nset oset)
             st
             (let [st (assoc st relvar nset)
-                  added (set/difference rows oset)]
-              (flow-fn st added))))))))
+                  added (remove oset rows)]
+              (flow-inserted st added))))))))
 
 (defn modify [st tx]
   (let [{:keys [::graph]} (meta st)]
     (if (map? tx)
-      (modify st (for [[rel rows] tx
-                       row rows]
-                   [:insert rel row]))
+      (modify st (for [[rel rows] tx] (into [:insert rel] rows)))
       (reduce
         (fn [st stmt]
           (case (nth stmt 0)
-            :insert (let [[_ relvar row] stmt
+            :insert (let [[_ relvar & rows] stmt
                           inserter (inserter graph relvar nil)]
-                      (inserter st #{row}))
-            :update st
-            :delete st))
+                      (inserter st rows))
+            :update (let [[_ relvar smap & stmts] stmt
+                          updater (updater graph relvar nil)]
+                      (updater st smap stmts))
+            :delete (let [[_ relvar & stmts] stmt
+                          deleter (deleter graph relvar nil)]
+                      (deleter st stmts))))
         st tx))))
 
 (defn optimise [relvar profile]
@@ -542,5 +711,3 @@
           (:intersect :intersection) (recur (reduce conj acc (build-sops set/intersection head)) tail)
 
           (recur (conj acc head) tail))))))
-
-

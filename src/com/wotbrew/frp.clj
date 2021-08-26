@@ -1,201 +1,44 @@
 (ns com.wotbrew.frp
-  (:require [clojure.set :as set])
-  (:import (clojure.lang Seqable IPersistentSet IPersistentCollection IObj IMeta)
-           (java.util ArrayList)))
+  (:require [clojure.set :as set]
+            [clojure.pprint :as pprint])
+  (:import (clojure.lang Seqable IPersistentSet IPersistentCollection IObj IMeta IEditableCollection)
+           (java.util ArrayList)
+           (java.io Writer)))
 
-;; tuple data dsl
-;; left->right like god intended for programming
-;; advantages, decent printing (compared to a tree)
-;; ITS JUST DATA
-
-;; disadvantages: IS ACTUALLY A TREE
-
-;; relation syntax
-[;; base definition, might be symbolic / registered
- [::relvar [:a :b]]
-
- ;; projection / extend (extend)?
- [:project :a :b]
- [:extend [:a+b :<- [+ :a :b]]]
-
- ;; select is project + compute, computes require all dep keys, perhaps
- ;; consider an missing/maybe extension
- ;; consider sub select extension
- [:select :a :b
-  [:a+b :<- [+ :a :b]]
-  ;; can use a vector binding if merging keys from EXPR yielding a map
-  [[:e :d] :<- {:e 42, :d 43}]]
-
- ;; expand to add rows from some function
- [:expand [:d :<- (vector 1 2 3 4)]]
-
- ;; restrict, if dep & nil implicitly discarded unless annotated ^:nil-safe , or proved safe
- ;; consider sub select extension
- [:where [= :a :b]]
-
- ;; std inner join
- [:join
-  [[:base ::relvar2 [:a :c]]] {:a :a}
-  [[:base ::relvar3 [:a :c]]] {:c :a}]
-
- ;; left join with gaps
- [:left-join
-  [[:base ::relvar2 [:a :c]]] {:a :a}
-  [[:base ::relvar3 [:a :c]]] {:c :a}]
-
- ;; aggregations
- [:agg [:a] [:n :<- count]]]
-
-;; union/intersection/difference probably work as you expect...
-;; not sure what to do about union & mismatched col sets
-
-;; quick- upsert modification syntax, great for initialization
-{::relvar [{:a 1, :b 2}, {:a 2, :b 3}]}
-
-;; full modification syntax
-[:insert ::relvar {:a 1, :b 2}]
-[:delete ::relvar {:a 1, :b 2} [:where [= :a 42]]]
-[:update ::relvar {:b 3} [:where [= :a 1]]]
-
-;; special extension
-[:upsert ::relvar [:b] {:a 1, :b 2}]
-
-;; PROFILE
-;; constraints and optimisation hints form a PROFILE
-;; this value is used to tune relations for a profile, and compile for a profile.
-;; if a PROFILE is known ahead of time, we can emit near optimal code
-
-;; constraint syntax
-;; PK affects storage, and optimises writes & joins sometimes (set vs map)
-[:pk ::relvar [:a]]
-;; UK is good for upsert and gives you a sweet index
-[:uk ::relvar [:a :b]]
-;; FK is good for joins, gives you right index by default
-[:fk ::relvar ::relvar2 {:a :b}]
-
-;; row-check is easy
-[:check ::relvar [< :a 42]]
-;; global check IS FN HARD but do we need it??!?!
-[:global-check [= 0 [count [::relvar [:where [= :a 1]]]]]]
-
-;; MATERIALIZATION
-;; enables incremental maintenance
-;; graph + set diff ops for the most part
-;; aggregates are interesting, in many cases natural combine+reduce will work
-;; sometimes you may be able to specify how to aggregate/disaggregate, fallback can be a big-boy scan.
-[:materialize ::relvar]
-
-;; INDEXES
-[:hash-index ::relvar :a]
-[:hash-index ::relvar [+ :a :b]]
-[:sort-index ::relvar [+ :a :b]]
-
-;; EXECUTION
-
-;; relations ARE plans
-;; but as optimisations we can swap out and re-order certain nodes to form
-;; more specific plans
-;; WHAT IS COOL is the dsl can accept the same plans
-;; so if you want to control index access and specifics you can
-[[::relvar [:a :b]]
- [:loop-kv-hash-lookup :a [1, 2, 3, 4]]
- [:hash-join ::relvar2 {:a :a} :a]
- [:xf (filter (comp even? :a))]]
-
-;; materialization
-;; relvars are stacks
-;; relvars can share structure, branches are possible via multi set instructions like join
-;; [a, b, c] c always depends on [a, b] and [a, b] depends on [a]
-;; for joins
-
-;; compiler can omit code given indexes, constraints that is probably better than what you could have added
-;; if it knows about LOW CARDINALITY then it can even unwrap the SETS
-
-;; DATA STRUCTURES
-;; custom PersistentRelation data structure for results
-;; this will let us fuse transducers more naturally, and realise it lazily
-;; could be good for printing
-;; has to be a set, seqable all the good stuff
-
-;; TOOLS
-;; static analysis will be awesome
-;; col typos can be tracked as all rel vars know their columns
-;; specs can be checked for compatibility
-;; WEB/swing thing that lets you experiment with building a relvar live based on some example data
-;; (load data with a >tap or something) then start building?!
-
-;; INTEGRATIONS ?!
-;; malli/spec
-;; datalogagog ??!?!
-;; core.logic
-
-
-;; API
-(comment
-  ;; ANONYMOUS RELVAR
-  ;; data is interpreted directly with simple transducer chain and memoization for joins
-  ;; plain data
-
-  ;; using a registered BASE
-  ;; [keyword? some-relvar-data...]
-
-  ;; using an inline base, in which case for equality usage must be exactly the same.
-  ;; [[::my-base [:a, :b, :c]]]
-
-  ;; MACRO def to use ::alias names in a registry
-  ;; you can then use the ::alias everywhere
-  ;; you might be warned about compatibility breakages (e.g removing keys)
-  (def-relvar alias statements)
-
-  ;; PROFILE definition, just a map
-  {:indexes [...]
-   :materialize [...]
-   :constraints [...]
-   ;; optimise particular relations for read
-   :optimise [...]}
-
-  ;; REGISTER A PROFILE for compile time optimisation with:
-  (def-profile ::my-profile PROFILE)
-
-  ;; STATE
-  ;; looks just like a map, might choose a better representation for certain
-  ;; base rels, defines how to add/del from rels and materialize certain relations
-  ;; the actual map when printed should just show the state and constraints
-
-  ;; CAN you add constraints/indexes/materialization hints ?!
-  ;; adding constraints and indexes at runtime can cause de-optimisation for compiled relations
-  (new-state PROFILE)
-
-  ;; GET A RELATION
-  ;; relation is a (lazy) Set, reducable, ?!foldable?! etc for good fun times rf and xforms
-  (relation st relvar)
-
-  ;; or maybe ILookup/IFn on state?
-  (get st relvar)
-
-  ;; TRANSFORMATION
-  ;; allows you to take an existing relation and do some work on it without a variable
-  ;; not sure if useful
-  ;; e.g (transform relation [:where [< :a 42]])
-  (transform relation TRANSFORM)
-
-
-  )
+;; .cljc will require type definitions to be separated
+;; lack of var might have implications
+;; ArrayList usage in materialize fns
 
 (defn- expr-row-fn [expr]
   ;; todo nil / missing dep safety
   (cond
+    (= [] expr) (constantly [])
+
+    ;; todo map? walk?
+
+    ;; todo vector / kw escape ?!
+
     (vector? expr)
     (let [[f & args] expr
+          [get-f args]
+          (cond
+            (qualified-symbol? f) [(constantly @(requiring-resolve f)) args]
+            (symbol? f) [(constantly @(resolve f)) args]
+            (= f :and) [(apply every-pred (map expr-row-fn args))]
+            (= f :or) [(apply some-fn (map expr-row-fn args))]
+            (= f :not) [(constantly not) args]
+            :else [(constantly f) args])
           args (map expr-row-fn args)
           get-args (when (seq args) (apply juxt args))]
       (if get-args
-        #(apply f (get-args %))
-        f))
+        #(apply (get-f %) (get-args %))
+        get-f))
 
     (keyword? expr) expr
 
-    (fn? expr) expr
+    (qualified-symbol? expr) (constantly @(requiring-resolve expr))
+
+    (symbol? expr) (constantly @(resolve expr))
 
     :else (constantly expr)))
 
@@ -232,10 +75,6 @@
   (let [fs (mapv agg-form-fn forms)]
     (fn [group rows] (reduce (fn [m f] (f m rows)) group fs))))
 
-(defn- agg-form-pair-xf [form]
-  (let [f (agg-form-fn form)]
-    (map (fn [[m rows]] [(f m) rows]))))
-
 (defn expand-form-xf [form]
   ;; todo missing nil safety
   (let [[binding _sep expr] form
@@ -250,34 +89,35 @@
           (for [v (expr-fn row)]
             (merge row (select-keys v binding))))))))
 
-(defprotocol IRowSet
+(defprotocol IRelationImpl
   (-push-xf [row-set xf])
   (-realize [row-set])
   (-st [row-set]))
 
-(deftype PersistentRelation
+(deftype Relation
   [^:volatile-mutable realised
-   coll
+   coll-fn
    xf
    st
    mdata]
-  IRowSet
+  IRelationImpl
   (-push-xf [_ xf2]
     (if realised
-      (PersistentRelation. nil realised xf2 st mdata)
-      (PersistentRelation. nil coll (comp xf xf2) st mdata)))
+      (Relation. nil (constantly realised) xf2 st mdata)
+      (Relation. nil coll-fn (comp xf xf2) st mdata)))
   (-realize [row-set]
     (when-not realised
       (set! (.-realised row-set)
-            (if (= identity xf)
-              (if (set? coll)
-                coll
-                (set coll))
-              (into #{} xf coll))))
-    realised)
+            (let [coll (coll-fn)]
+              (if (= identity xf)
+                (if (set? coll)
+                  coll
+                  (set coll))
+                (into #{} xf coll)))))
+    (.-realised row-set))
   (-st [row-set] st)
   IObj
-  (withMeta [this mta] (PersistentRelation. realised coll xf st mta))
+  (withMeta [this mta] (Relation. realised coll-fn xf st mta))
   IPersistentSet
   (disjoin [this o] (disj (-realize this) o))
   (contains [this o] (contains? (-realize this) o))
@@ -287,14 +127,27 @@
   IPersistentCollection
   (count [this] (count (-realize this)))
   (cons [this o] (conj (-realize this) o))
-  (empty [this] (PersistentRelation. #{} #{} identity st nil))
+  (empty [this] (Relation. #{} nil identity st nil))
   (equiv [this o] (= o (-realize this)))
   IMeta
   (meta [this] mdata))
 
-(declare relation)
+(defn col-set [rel]
+  (or (::col-set (meta rel))
+      (loop [rel rel]
+        (if-some [stmt (peek rel)]
+          (let [tail (pop rel)]
+            (case (nth stmt 0)
+              :from (col-set (second tail))
+              :where (col-set tail)
+              :union (apply set/union (map col-set (rest stmt)))
+              :diff (apply set/union (map col-set (butlast (rest stmt))))
 
-(defn- realize-set [rel] (-realize rel))
+
+              ))
+          #{}))))
+
+(declare relation)
 
 (defn- where-xf [stmt]
   (filter (apply every-pred (map expr-row-fn (rest stmt)))))
@@ -319,21 +172,53 @@
         project-xf (project-xf project)]
     (if (empty? extend-forms)
       project-xf
-      (comp (extend-xf (into [:extend] extend-form-fn)) project-xf))))
+      (comp (extend-xf (into [:extend] extend-forms)) project-xf))))
 
-(defn- join->sops [stmt]
-  (let [[_ join-pairs] stmt
+(defn- join->join1s [stmt]
+  (let [[_ & join-pairs] stmt
         join-pairs (partition 2 join-pairs)]
     (->> join-pairs
-         (mapv (fn [[right clause]] [:sop set/join right clause])))))
+         (mapv (fn [[right clause]] [:join1 right clause])))))
+
+(defn- left-join->join1s [stmt]
+  (let [[_ & join-pairs] stmt
+        join-pairs (partition 2 join-pairs)]
+    (->> join-pairs
+         (mapv (fn [[right clause]] [:left-join1 right clause])))))
+
+(defn- clj-left-join [xrel yrel km]
+  (let [k km
+        idx (set/index yrel (vals k))]
+    (if (instance? IEditableCollection xrel)
+      (persistent!
+        (reduce (fn [ret x]
+                  (let [found (idx (set/rename-keys (select-keys x (keys k)) k))]
+                    (if found
+                      (reduce #(conj! %1 (merge x %2)) ret found)
+                      (conj! ret x))))
+                (transient (empty xrel)) xrel))
+      (reduce (fn [ret x]
+                (let [found (idx (set/rename-keys (select-keys x (keys k)) k))]
+                  (if found
+                    (reduce #(conj %1 (merge x %2)) ret found)
+                    (conj ret x))))
+              (empty xrel) xrel))))
 
 (defn- build-sops [f stmt]
   (let [[_ & rels] stmt]
     (->> rels
          (mapv (fn [right] [:sop f right])))))
 
+(defn- enumerate-index [m-or-set]
+  (if (map? m-or-set)
+    (map enumerate-index vals m-or-set)
+    m-or-set))
+
 (defn- transform [rel stmt]
   (case (nth stmt 0)
+    :from
+    (relation (-st rel) (second stmt))
+
     ;; transducer step
     :xf
     (-push-xf rel (apply comp (rest stmt)))
@@ -359,12 +244,27 @@
     :sop
     (let [[_ sop rel2 & args] stmt
           st (-st rel)
-          coll (-realize rel)
-          coll (apply sop coll (relation st rel2) args)]
-      (->PersistentRelation coll coll identity st (meta rel)))
+          coll-fn #(apply sop (-realize rel) (relation st rel2) args)]
+      (->Relation nil coll-fn identity st (meta rel)))
+
+    :join1
+    (let [[_ rel2 clause] stmt]
+      (transform rel (if clause [:sop set/join rel2 clause] [:sop set/join rel2])))
+
+    :left-join1
+    (let [[_ rel2 clause] stmt]
+      (transform rel [:sop clj-left-join rel2 clause]))
 
     :join
-    (->> (join->sops stmt)
+    (->> (join->join1s stmt)
+         (reduce transform rel))
+
+    :left-join
+    (->> (left-join->join1s stmt)
+         (reduce transform rel))
+
+    :nat-join
+    (->> (join->join1s stmt)
          (reduce transform rel))
 
     :union
@@ -380,31 +280,52 @@
          (reduce transform rel))
 
     (:agg :summarize)
-    (let [coll (realize-set rel)
+    (let [coll #(-realize rel)
           [_ group-cols & aggs] stmt
           group-key-fn (if (seq group-cols) #(select-keys % group-cols) (constantly {}))
-          grouped (group-by group-key-fn coll)
+          grouped #(group-by group-key-fn (coll))
           agg-f (aggs-fn aggs)
           f (fn [[group rows]] (agg-f group rows))]
       (if (seq aggs)
-        (->PersistentRelation nil grouped (map f) (-st rel) (meta rel))
-        (->PersistentRelation nil (set (keys grouped)) identity (-st rel) (meta rel))))))
+        (->Relation nil grouped (map f) (-st rel) (meta rel))
+        (->Relation nil (comp set keys grouped) identity (-st rel) (meta rel))))
 
-(defn- get-materialized [st relvar]
-  (let [s (get st relvar #{})]
-    (->PersistentRelation s s identity st nil)))
+    ;; todo, this is more query planning rather than relation interpretation
+    ;; materialization will not use these primitives, perhaps they might use tables of some kind
+    ;; hash-lookup will require some kind of conditional flow from a table, not sure if worth it?!
+    :hash-lookup
+    (let [[_ index & vals] stmt
+          st (-st rel)
+          m (get st index {})
+          m-or-set (get-in m vals)]
+      (->Relation nil #(enumerate-index m-or-set) identity st nil))
+
+    ;; indexed join
+    :hash-join
+    (let [[_ index & index-exprs] stmt
+          expr-fns (mapv expr-row-fn index-exprs)
+          st (-st rel)
+          right-index (st index)
+          join-row (fn [row rows] (map (partial merge row) rows))
+          xf1 (mapcat (fn [row] (join-row row (enumerate-index (get-in right-index (mapv (fn [f] (f row)) expr-fns))))))]
+      (-push-xf rel xf1))))
 
 (defn relation [st relvar]
-  (reduce
-    transform
-    (get-materialized st (subvec relvar 0 1))
-    (subvec relvar 1)))
+  (if-some [s (get st relvar)]
+    (->Relation s nil identity st nil)
+    (if (empty? relvar)
+      (->Relation #{} nil identity st nil)
+      (let [stmt (peek relvar)
+            base (pop relvar)]
+        (transform (relation st base) stmt)))))
 
-(defn new-state
-  ([] (new-state nil))
-  ([profile] (with-meta {} {::profile profile})))
+(declare graph-index)
 
-(defn- graphize
+(defn- join-index [profile relvar ks]
+  ;; todo pick covering indexes if they exist
+  (into [:index relvar] (set ks)))
+
+(defn- graph-relvar
   "Constructs a graph of relvar to other relvars that will receive inserted/deleted/updated rows
   the edges are mostly named :left and sometimes :right (for join/union/diff/intersect).
 
@@ -415,26 +336,42 @@
   end up with a graph like this
   {base #{[:left [base [:xf xform]]}
    [base [:xf xform]] #{}}"
-  [g relvar next]
-  (if (contains? g relvar)
-    (update g relvar into next)
-    (let [g (assoc g relvar next)
-          head (peek relvar)
-          dep1 (pop relvar)
-          g (if (empty? dep1) g (graphize g dep1 #{[:left relvar]}))]
-      (case (nth head 0)
-        :sop
-        (let [[_ _ right-relvar] head
-              g (graphize g right-relvar #{[:right relvar]})]
-          g)
-        g))))
+  ([g profile relvar] (graph-relvar g profile relvar #{}))
+  ([g profile relvar next]
+   (if (contains? g relvar)
+     (update g relvar into next)
+     (let [g (assoc g relvar next)
+           head (peek relvar)
+           dep1 (pop relvar)
+           g (if (empty? dep1) g (graph-relvar g profile dep1 #{[:left relvar]}))]
+       (case (nth head 0)
+
+         (:join1 :left-join1)
+         (let [[_ right-relvar clause] head
+               index-left (join-index profile dep1 (keys clause))
+               index-right (join-index profile right-relvar (vals clause))]
+           (-> g
+               (graph-index index-left)
+               (graph-index index-right)
+               (graph-relvar profile right-relvar #{[:right relvar]})))
+
+         :sop
+         (let [[_ _ right-relvar] head
+               g (graph-relvar g profile right-relvar #{[:right relvar]})]
+           g))))))
+
+(defn- graph-index
+  [g index]
+  (let [[_ relvar] index
+        g (graph-relvar g relvar #{[:index [index]]})]
+    g))
 
 (declare deleter inserter)
 
 (defn- updater
-  [g relvar from]
-  (let [insert (inserter g relvar from)
-        delete (deleter g relvar from)]
+  [g profile relvar from]
+  (let [insert (inserter g profile relvar from)
+        delete (deleter g profile relvar from)]
     (fn insert-base [st smap stmts]
       (let [nrelvar (reduce conj relvar stmts)
 
@@ -451,27 +388,56 @@
             (delete to-delete)
             (insert to-insert))))))
 
+(defn flow-fn [g flow f]
+  (let [flow-sort {:index 0, :left 1, :right 2}
+        ;; ? flow from table ?
+        ;; e.g function row -> val, val map to flow
+        ;; this can reduce computation of certain relvar tree's if you have lots of unique branches for
+        ;; different restricts from the same base - not sure if worth it.
+        fns (mapv (fn [[from relvar]] (f g relvar from)) (sort-by (comp flow-sort first) flow))]
+    (case (count fns)
+      1 (first fns)
+      (fn [st added] (reduce (fn [st f'] (f' st added)) st fns)))))
+
 (defn- deleter
   "Given a relvar graph (from graphize) will construct a function that when given a
   st and rows will materialize changes to the state based on the graph.
 
   This function alongside updater/deleter form the foundation for materialized views."
-  [g relvar from]
-  (let [head (peek relvar)
-        flow (g relvar)
-        flow-delete-fns (mapv (fn [[from relvar]] (deleter g relvar from)) flow)
-        flow-deleted (case (count flow-delete-fns)
-                       1 (first flow-delete-fns)
-                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-delete-fns)))
-        flow-update-fns (mapv (fn [[from relvar]] (updater g relvar from)) flow)
-        flow-updated (case (count flow-update-fns)
-                       1 (first flow-update-fns)
-                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-update-fns)))]
+  [g profile target from]
+  (let [head (peek target)
+        flow (g target)
+        flow-deleted (flow-fn g flow deleter)
+        flow-updated (flow-fn g flow updater)]
     (case (nth head 0)
+
+      :hash
+      (let [[_ _ & exprs] head
+            exprs (mapv expr-row-fn exprs)
+            path-fn (apply juxt exprs)
+            disjoc-in (fn d [m ks x]
+                        (let [[k & ks] ks]
+                          (if ks
+                            (let [nm (d (get m k) ks x)]
+                              (if (empty? nm)
+                                (dissoc m k)
+                                (assoc m k nm)))
+                            (let [ns (disj (get m k) x)]
+                              (if (empty? ns)
+                                (dissoc m k)
+                                (assoc m k ns))))))]
+        (fn hash-expr [st rows]
+          (let [oidx (st target {})
+                rf (fn [nidx row]
+                     (let [path (path-fn row)]
+                       (disjoc-in nidx path row)))
+                nidx (reduce rf oidx rows)]
+            (assoc st target nidx))))
+
       :xf
       (let [xf (apply comp (rest head))]
         (fn delete-xf [st rows]
-          (let [oset (st relvar #{})
+          (let [oset (st target #{})
                 deleted (ArrayList.)
                 rf
                 (fn
@@ -484,7 +450,7 @@
                 nset (transduce xf rf oset rows)]
             (if (= 0 (.size deleted))
               st
-              (let [st (assoc st relvar nset)]
+              (let [st (assoc st target nset)]
                 (flow-deleted st deleted))))))
 
       :sop
@@ -493,21 +459,21 @@
           (let [nrows
                 (case from
                   :left (apply sop rows (st right #{}) args)
-                  :right (apply sop (st (pop relvar) #{}) rows args))
-                oset (st relvar #{})
+                  :right (apply sop (st (pop target) #{}) rows args))
+                oset (st target #{})
                 nset (reduce disj oset nrows)]
             (if (identical? nset oset)
               st
-              (let [st (assoc st relvar nset)
+              (let [st (assoc st target nset)
                     deleted (set/intersection nrows oset)]
                 (flow-deleted st deleted))))))
-      
+
       :agg
       (let [[_ cols & aggs] head
             key-fn #(select-keys % cols)
             agg-fn (aggs-fn aggs)]
-        (fn insert-agg [st rows]
-          (let [om (st relvar {})
+        (fn delete-agg [st rows]
+          (let [om (st target {})
                 grouped (group-by key-fn rows)
                 updated (ArrayList.)
                 deleted (ArrayList.)
@@ -532,46 +498,54 @@
             (if (identical? nm om)
               st
               (cond->
-                (assoc st relvar nm)
+                (assoc st target nm)
 
                 (seq updated)
                 (flow-updated updated)
-                
+
                 (seq deleted)
                 (flow-deleted deleted))))))
 
       (fn delete-base [st stmts]
-        (let [oset (st relvar #{})
-              rows (relation st (conj relvar (into [:where] stmts)))
+        (let [oset (st target #{})
+              rows (relation st (conj target (into [:where] stmts)))
               nset (reduce disj oset rows)]
           (if (identical? nset oset)
             st
-            (let [st (assoc st relvar nset)
+            (let [st (assoc st target nset)
                   deleted (set/intersection rows oset)]
               (flow-deleted st deleted))))))))
 
+(def set-conj (fnil conj #{}))
+
 (defn- inserter
-  "Given a relvar graph (from graphize) will construct a function that when given a
+  "Given a relvar/index graph (from graphize) will construct a function that when given a
   st and rows will materialize changes to the state based on the graph.
 
   This function alongside updater/deleter form the foundation for materialized views."
-  [g relvar from]
-  (let [head (peek relvar)
-        flow (g relvar)
-        flow-insert-fns (mapv (fn [[from relvar]] (inserter g relvar from)) flow)
-        flow-inserted (case (count flow-insert-fns)
-                        1 (first flow-insert-fns)
-                        (fn [st added] (reduce (fn [st f] (f st added)) st flow-insert-fns)))
-
-        flow-update-fns (mapv (fn [[from relvar]] (updater g relvar from)) flow)
-        flow-updated (case (count flow-update-fns)
-                       1 (first flow-update-fns)
-                       (fn [st added] (reduce (fn [st f] (f st added)) st flow-update-fns)))]
+  [g profile target from]
+  (let [head (peek target)
+        flow (g target)
+        flow-inserted (flow-fn g flow inserter)
+        flow-updated (flow-fn g flow updater)]
     (case (nth head 0)
+      :hash
+      (let [[_ _ & exprs] head
+            exprs (mapv expr-row-fn exprs)
+            path-fn (apply juxt exprs)]
+        (fn [st rows]
+          (let [oidx (st target {})
+                rf (fn [nidx row] (update-in nidx (path-fn row) set-conj row))
+                nidx (reduce rf oidx rows)]
+            (if (identical? nidx oidx)
+              st
+              ;; could just flow out, but unsure if needed e.g does flow from indexes make sense
+              (assoc st target nidx)))))
+
       :xf
       (let [xf (apply comp (rest head))]
         (fn insert-xf [st rows]
-          (let [oset (st relvar #{})
+          (let [oset (st target #{})
                 added (ArrayList.)
                 rf
                 (fn
@@ -584,15 +558,8 @@
                 nset (transduce xf rf oset rows)]
             (if (= 0 (.size added))
               st
-              (let [st (assoc st relvar nset)]
+              (let [st (assoc st target nset)]
                 (flow-inserted st added))))))
-
-      ;; [:hash-lookup left left-index vals where]
-
-
-      ;; [:hash-join left right
-      ;; left-index left-where
-      ;; right-index right-where]
 
       :sop
       (let [[_ sop right & args] head]
@@ -600,94 +567,141 @@
           (let [nrows
                 (case from
                   :left (apply sop rows (st right #{}) args)
-                  :right (apply sop (st (pop relvar) #{}) rows args))
-                oset (st relvar #{})
+                  :right (apply sop (st (pop target) #{}) rows args))
+                oset (st target #{})
                 nset (reduce conj oset nrows)]
             (if (identical? nset oset)
               st
-              (let [st (assoc st relvar nset)
+              (let [st (assoc st target nset)
                     added (set/difference nrows oset)]
                 (flow-inserted st added))))))
-
-      ;; :agg will sometimes update, sometimes insert, so need to write
-      ;; updater first
 
       :agg
       (let [[_ cols & aggs] head
             key-fn #(select-keys % cols)
             agg-fn (aggs-fn aggs)]
         (fn insert-agg [st rows]
-          (let [om (st relvar {})
+          (let [om (st target {})
                 grouped (group-by key-fn rows)
                 added (ArrayList.)
                 updated (ArrayList.)
                 nm (reduce-kv
                      (fn [m group new-rows]
-                       (let [{old-rows :rows} (m group)
+                       (let [{old-rows :rows
+                              old-res :res} (m group)
                              missing (nil? old-rows)
                              old-rows (or old-rows #{})
                              all-rows (set/union old-rows (set new-rows))]
                          (if (identical? all-rows old-rows)
                            m
                            (let [res (agg-fn group all-rows)]
-                             (if missing
-                               (.add added res)
-                               (.add updated res))
-                             (assoc m group {:rows all-rows, :res res})))))
+                             (cond
+                               missing
+                               (do (.add added res)
+                                   (assoc m group {:rows all-rows, :res res}))
+                               (not= old-res res)
+                               (do
+                                 (.add updated res)
+                                 (assoc m group {:rows all-rows, :res res}))
+                               :else m)))))
                      om
                      grouped)]
             (if (identical? nm om)
               st
               (cond->
-                (assoc st relvar nm)
+                (assoc st target nm)
                 (seq added)
                 (flow-inserted added)
 
                 (seq updated)
                 (flow-updated updated))))))
 
+      (:join1 :left-join1)
+      (let [[join-type relvar2 clause] head
+            ;; clause can be nil for nat-join
+            ;; but not sure how to index for that yet!
+            left-index (join-index profile (pop target) (keys clause))
+            right-index (join-index profile relvar2 (vals clause))
+
+            ;; {:a :a1, :b :b1}
+            ;; so if looking up in right index [:b1 :a1] you would get path with [:b :a] so basically need to sort
+            ;; and map through the 'clause' to get the right order and index path
+
+            [_ _ & left-ks] left-index
+            [_ _ & right-ks] right-index
+
+            reverse-clause (set/map-invert clause)
+
+            left-ks-sort (set/map-invert (into {} (map-indexed vector) left-ks))
+            right-ks-sort (set/map-invert (into {} (map-indexed vector) right-ks))
+
+            left-path (apply juxt (sort-by left-ks-sort (map reverse-clause right-ks)))
+            right-path (apply juxt (sort-by right-ks-sort (map clause left-ks)))]
+        (case from
+          :right
+          (fn [st rows]
+            (let [left-idx (st left-index {})
+                  new-rows (set (for [row rows
+                                      lrow (enumerate-index (get-in left-idx (left-path row)))]
+                                  (merge lrow row)))
+                  coll (st target #{})
+                  coll2 (reduce conj coll new-rows)]
+              (if (identical? coll coll2)
+                st
+                (-> st
+                    (assoc target coll2)
+                    (flow-inserted (set/difference new-rows coll))))))
+          :left
+          (fn [st rows]
+            (let [right-idx (st right-index {})
+                  ;; todo left-join special sauce
+                  new-rows (set (for [row rows
+                                      :let [rrow (enumerate-index (get-in right-idx (right-path row)))]]
+                                  (merge row rrow)))
+
+                  coll (st target #{})
+                  coll2 (reduce conj coll new-rows)]
+              (if (identical? coll coll2)
+                st
+                (-> st
+                    (assoc target coll2)
+                    (flow-inserted (set/difference new-rows coll))))))))
+
+
       (fn insert-base [st rows]
-        (let [oset (st relvar #{})
+        (let [oset (st target #{})
               nset (reduce conj oset rows)]
           (if (identical? nset oset)
             st
-            (let [st (assoc st relvar nset)
+            (let [st (assoc st target nset)
                   added (remove oset rows)]
               (flow-inserted st added))))))))
 
 (defn modify [st tx]
-  (let [{:keys [::graph]
-         :or {graph {}}} (meta st)]
+  (let [{:keys [::insert-fn ::update-fn ::delete-fn]} (meta st)]
     (if (map? tx)
       (modify st (for [[rel rows] tx] (into [:insert rel] rows)))
       (reduce
         (fn [st stmt]
           (case (nth stmt 0)
             :insert (let [[_ relvar & rows] stmt
-                          inserter (inserter graph relvar nil)]
+                          inserter (insert-fn relvar)]
                       (inserter st rows))
             :update (let [[_ relvar smap & stmts] stmt
-                          updater (updater graph relvar nil)]
+                          updater (update-fn relvar)]
                       (updater st smap stmts))
             :delete (let [[_ relvar & stmts] stmt
-                          deleter (deleter graph relvar nil)]
+                          deleter (delete-fn relvar)]
                       (deleter st stmts))))
         st tx))))
 
 (defn optimise [relvar profile]
-
-  ;; select/project/extend/expand/where replaced with xf
-  ;; join replaced with multiple join1 or various indexed joins
-  ;; union replaced with multiple union1, diff/intersection are the same
-  ;; agg replaced with bucketed agg strategy e.g reduce/combine pattern
-
-  ;; we can compile a fast relation function of a state with that profile
-  ;; and of course this graph can be materialized.
-
-  ;; :where and :join can use indexes in PROFILE and therefore might be replaced, as long as it would not affect
-  ;; the result.
-
-  ;; return an optimised relvar
+  ;; consider fusion of :where & :extend & :expand pre :xf as there might be gains doing this before transducers are baked
+  ;; consider fusion of :xf nodes, trading lack of sharing for more free memory
+  ;; dead code elimination (dropping extension that do not need to be computed)
+  ;; moving projections around might lead to some advantages (e.g earlier in the tree = less rows, later in the tree = less ops on rows)
+  ;; consider simplifying select as extend + project
+  ;; join / sop ordering e.g low card potential earlier to test less rows against indexes?
 
   (loop [acc ()
          relvar relvar]
@@ -696,6 +710,8 @@
       (let [head (peek relvar)
             tail (pop relvar)]
         (case (nth head 0)
+          :from
+          (recur (reduce conj acc (reverse (optimise (second head) profile))) tail)
           :where
           (recur (conj acc [:xf (where-xf head)]) tail)
           :extend
@@ -709,9 +725,39 @@
           :select
           (recur (conj acc [:xf (select-xf head)]) tail)
 
-          :join (recur (reduce conj acc (join->sops head)) tail)
-          :union (recur (reduce conj acc (build-sops set/union head)) tail)
-          (:diff :difference) (recur (reduce conj acc (build-sops set/difference head)) tail)
-          (:intersect :intersection) (recur (reduce conj acc (build-sops set/intersection head)) tail)
+          :join (recur acc (reduce conj tail (join->join1s head)))
+          :left-join (recur acc (reduce conj tail (left-join->join1s head)))
+          :nat-join (recur acc (reduce conj tail (join->join1s head)))
+          :union (recur acc (reduce conj tail (build-sops set/union head)))
+          :difference (recur acc (reduce conj tail (build-sops set/difference head)))
+          :intersection (recur acc (reduce conj tail (build-sops set/intersection head)))
+
+          :sop (recur (conj acc (update head 2 optimise profile)) tail)
 
           (recur (conj acc head) tail))))))
+
+(defn- profile-fns [profile]
+  (let [g {}
+        {:keys [materialize indexes]} profile
+        optimise-fn (memoize (fn [relvar] (optimise relvar profile)))
+        materialize (mapv optimise-fn materialize)
+        indexes (for [index indexes] (update index 1 optimise-fn))
+        g (reduce #(graph-relvar %1 profile %2) g materialize)
+        g (reduce graph-index g indexes)
+        insert-fn (memoize (fn [relvar] (inserter g profile (optimise-fn relvar) nil)))
+        update-fn (memoize (fn [relvar] (updater g profile (optimise-fn relvar) nil)))
+        delete-fn (memoize (fn [relvar] (deleter g profile (optimise-fn relvar) nil)))]
+    {::profile profile
+     ;; you won't necessarily want to cache every query
+     ;; consider variables
+     ::optimise-fn optimise-fn
+     ::insert-fn insert-fn
+     ::update-fn update-fn
+     ::delete-fn delete-fn}))
+
+(defn new-state
+  ([] (new-state nil))
+  ([profile] (with-meta {} (merge {::profile profile} (profile-fns profile)))))
+
+;; todo query plan
+;; e.g choose index scans as interpretable steps in the relvar (as opposed to materialization which does not need to)

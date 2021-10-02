@@ -30,6 +30,12 @@
 
       [[:from a]
        [:where [even? :a]]
+       [:extend [:b :<- (r/esc [:a])]]]
+      ;; =>
+      #{{:a 42, :b [:a]}}
+
+      [[:from a]
+       [:where [even? :a]]
        [:expand [:b :<- [range :a [+ :a 2]]]]]
       ;; =>
       #{{:a 42 :b 42} {:a 42, :b 43}}

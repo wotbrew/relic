@@ -10,6 +10,17 @@
               b #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
     (is (= #{} (r/interpret (r/empty-state) [])))
     (are [x ret] (= ret (r/interpret st x))
+
+      [[:coll #{{:c 0}}]]
+      ;; =>
+      #{{:c 0}}
+
+      [[:from a]
+       [:coll #{{:c 0}}]
+       [:extend [:c+1 :<- [inc :c]]]]
+      ;; =>
+      #{{:c 0, :c+1 1}}
+
       a
       ;; =>
       #{{:a 42}, {:a 43}, {:a 45}}

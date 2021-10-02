@@ -1,7 +1,7 @@
 (ns com.wotbrew.relic
   (:require [clojure.set :as set]))
 
-(def set-conj (fnil conj #{}))
+(def ^:private set-conj (fnil conj #{}))
 
 (defn- expr-col-deps [expr]
   (cond
@@ -201,6 +201,7 @@
                      groups (group-by #(select-keys % ks) (realise-set base xf))
                      ns (set (for [[m coll] groups] (f m coll)))]
                  (recur (inc i) nil ns))
+          :coll (let [[_ coll] stmt] (recur (inc i) nil coll))
 
           ;; sop specials
           :join

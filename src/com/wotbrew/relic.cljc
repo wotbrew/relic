@@ -3,7 +3,9 @@
 
 (def ^:private set-conj (fnil conj #{}))
 
-(defn- expr-col-deps [expr]
+(defn- expr-col-deps
+  "Given an expression will return a set of columns the expression depends on."
+  [expr]
   (cond
     (keyword? expr) #{expr}
     (vector? expr) (let [[_ & args] expr] (into #{} (mapcat expr-col-deps) args))
@@ -11,7 +13,11 @@
 
 (defrecord Escape [x])
 
-(defn esc [x] (->Escape x))
+(defn esc
+  "Escapes `x` so it is not treated differently in an expression, useful for 'quoting' keywords as they
+  would normally be interpreted as columns."
+  [x]
+  (->Escape x))
 
 (defn- expr-row-fn [expr]
   (cond
@@ -19,21 +25,25 @@
 
     (instance? Escape expr) (constantly (.-x ^Escape expr))
 
-    (sequential? expr)
+    (vector? expr)
     (let [[f & args] expr
-          [get-f args]
+          [f args]
           (cond
-            (qualified-symbol? f) [(constantly @(requiring-resolve f)) args]
-            (symbol? f) [(constantly @(resolve f)) args]
+            (qualified-symbol? f) [@(requiring-resolve f) args]
+            (symbol? f) [@(resolve f) args]
             (= f :and) [(apply every-pred (map expr-row-fn args))]
             (= f :or) [(apply some-fn (map expr-row-fn args))]
-            (= f :not) [(constantly not) args]
-            :else [(constantly f) args])
-          args (map expr-row-fn args)
-          get-args (when (seq args) (apply juxt args))]
-      (if get-args
-        #(apply (get-f %) (get-args %))
-        get-f))
+            (= f :not) [not args]
+            :else [f args])
+          args (map expr-row-fn args)]
+      (case (count args)
+        0 f
+        1 (let [[a] args] (comp f a))
+        2 (let [[a b] args] #(f (a %) (b %)))
+        3 (let [[a b c] args] #(f (a %) (b %) (c %)))
+        4 (let [[a b c d] args] #(f (a %) (b %) (c %) (d %)))
+        5 (let [[a b c d e] args] #(f (a %) (b %) (c %) (d %) (e %)))
+        (let [get-args (apply juxt args)] #(apply f (get-args %)))))
 
     (keyword? expr) expr
 
@@ -379,8 +389,15 @@
 (defn- base-inserter [relvar flow-inserted]
   (let [stmt (nth relvar 0)
         [_ _name {:keys [pk]}] stmt
-        pk-path (when pk (apply juxt (mapv expr-row-fn pk)))
-        insert (if pk #(assoc-in %1 (pk-path %2) %2) conj)
+        pk-fns (when pk (mapv expr-row-fn pk))
+        pk-path (when pk (apply juxt pk-fns))
+
+        insert (if pk
+                 (case (count pk)
+                   1 (let [[k] pk-fns] #(assoc %1 (k %2) %2))
+                   #(assoc-in %1 (pk-path %2) %2))
+                 conj)
+
         default (if pk (empty-index (into [:hash-unique] pk)) #{})
         contains-row? (if pk #(= %2 (get-in %1 (pk-path %2))) contains?)]
     (fn insert-base [st rows]
@@ -396,8 +413,13 @@
 (defn- base-deleter [relvar flow-deleted]
   (let [stmt (nth relvar 0)
         [_ _name {:keys [pk]}] stmt
-        pk-path (when pk (apply juxt (mapv expr-row-fn pk)))
-        delete (if pk #(dissoc-in %1 (pk-path %2)) disj)
+        pk-fns (when pk (mapv expr-row-fn pk))
+        pk-path (when pk (apply juxt pk-fns))
+        delete (if pk
+                 (case (count pk)
+                   1 (let [[k] pk-fns] #(dissoc %1 (k %2)))
+                   #(dissoc-in %1 (pk-path %2)))
+                 disj)
         default (if pk (empty-index (into [:hash-unique] pk)) #{})
         get-row (if pk #(get-in %1 (pk-path %2) %2) get)]
     (fn delete-base [st rows]

@@ -221,8 +221,7 @@
                 idx (reduce #(assoc-in %1 (path-fn %2) %2) ^{::unique true, ::depth (count exprs)} {} coll)]
             (recur (inc i) nil idx))
 
-          ;; sort
-          :sort
+          :btree
           (let [[_ & exprs] stmt
                 sort-key (apply juxt (mapv expr-row-fn exprs))
                 coll (realise-set base xf)
@@ -240,7 +239,8 @@
           ;; xf specials
           (if-some [xf2 (stmt-xf stmt)]
             (recur (inc i) (if xf (comp xf xf2) xf2) base)
-            (throw (Exception. "Unknown stmt")))))
+            (throw (Exception. "Unknown stmt"))))
+        )
       (if xf
         (realise-set base xf)
         base))))
@@ -350,7 +350,7 @@
         depth (count exprs)]
     (with-meta {} {::index index-stmt
                    ::unique (case index-type
-                              (:hash-unique :btree-unique) true
+                              :hash-unique true
                               false)
                    ::depth depth})))
 
@@ -485,7 +485,7 @@
                         st
                         (assoc st relvar nidx)))))
 
-                :sort
+                :btree
                 (let [[_ & exprs] stmt
                       path-fn (apply juxt (map expr-row-fn exprs))
                       sm (sorted-map)
@@ -692,7 +692,7 @@
                         st
                         (assoc st relvar nidx)))))
 
-                :sort
+                :btree
                 (let [[_ & exprs] stmt
                       path-fn (apply juxt (map expr-row-fn exprs))
                       sm (sorted-map)

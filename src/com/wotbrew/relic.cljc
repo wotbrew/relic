@@ -110,6 +110,28 @@
     (assoc m k (group-add-in (get m k empty) ks empty row))
     (update m k set-conj row)))
 
+(defn- dissoc-in [m ks]
+  (if-let [[k & ks] (seq ks)]
+    (if (seq ks)
+      (let [v (dissoc-in (get m k) ks)]
+        (if (empty? v)
+          (dissoc m k)
+          (assoc m k v)))
+      (dissoc m k))
+    m))
+
+(defn- disjoc-in [m ks x]
+  (let [[k & ks] ks]
+    (if ks
+      (let [nm (disjoc-in (get m k) ks x)]
+        (if (empty? nm)
+          (dissoc m k)
+          (assoc m k nm)))
+      (let [ns (disj (get m k) x)]
+        (if (empty? ns)
+          (dissoc m k)
+          (assoc m k ns))))))
+
 (declare interpret)
 
 (defn- enumerate-index
@@ -239,8 +261,7 @@
           ;; xf specials
           (if-some [xf2 (stmt-xf stmt)]
             (recur (inc i) (if xf (comp xf xf2) xf2) base)
-            (throw (Exception. "Unknown stmt"))))
-        )
+            (throw (Exception. "Unknown stmt")))))
       (if xf
         (realise-set base xf)
         base))))
@@ -278,7 +299,6 @@
 (defn- clause [stmt] (case (stmt-type stmt) (:join :left-join) (third stmt) nil))
 
 (defn- best-join-index [profile relvar exprs]
-  ;; todo use existing indexes if possible?
   (conj relvar (into [:hash] exprs)))
 
 (defn- base-indexes [profile relvar stmt]
@@ -327,10 +347,6 @@
 
 (defn flow-fn [edges f]
   (let [flow-sort {:index 0, :left 1, :right 2}
-        ;; ? flow from table ?
-        ;; e.g function row -> val, val map to flow
-        ;; this can reduce computation of certain relvar tree's if you have lots of unique branches for
-        ;; different restricts from the same base - not sure if worth it.
         fns (mapv (fn [[edge relvar]] (f relvar edge)) (sort-by (comp flow-sort first) edges))]
     (case (count fns)
       1 (first fns)
@@ -341,8 +357,6 @@
 (defn query
   ([st q] (query st q nil))
   ([st q params]
-   ;; todo parameterized queries (relvars with holes)
-   ;; query optimiser e.g where clause to index lookup
    (interpret st q)))
 
 (defn- empty-index [index-stmt]
@@ -362,7 +376,6 @@
      :cljs (.push mutable-list row)))
 
 (defn- base-inserter [relvar flow-inserted]
-  ;; todo uniqueness invariant check
   (let [stmt (nth relvar 0)
         [_ _name {:keys [pk]}] stmt
         pk-path (when pk (apply juxt (mapv expr-row-fn pk)))
@@ -378,16 +391,6 @@
               (assoc relvar set2)
               (vary-meta assoc relvar set2)
               (vary-meta flow-inserted (remove #(contains-row? set1 %) rows))))))))
-
-(defn- dissoc-in [m ks]
-  (if-let [[k & ks] (seq ks)]
-    (if (seq ks)
-      (let [v (dissoc-in (get m k) ks)]
-        (if (empty? v)
-          (dissoc m k)
-          (assoc m k v)))
-      (dissoc m k))
-    m))
 
 (defn- base-deleter [relvar flow-deleted]
   (let [stmt (nth relvar 0)
@@ -405,18 +408,6 @@
               (assoc relvar set2)
               (vary-meta assoc relvar set2)
               (vary-meta flow-deleted (keep #(get-row set1 %) rows))))))))
-
-(defn- disjoc-in [m ks x]
-  (let [[k & ks] ks]
-    (if ks
-      (let [nm (disjoc-in (get m k) ks x)]
-        (if (empty? nm)
-          (dissoc m k)
-          (assoc m k nm)))
-      (let [ns (disj (get m k) x)]
-        (if (empty? ns)
-          (dissoc m k)
-          (assoc m k ns))))))
 
 (def ^:dynamic *warn-on-naive-materialization* false)
 
@@ -503,13 +494,6 @@
                       rf (fn [nidx row] (assoc-in nidx (path-fn row) row))]
                   (fn insert-hash [st rows]
                     (let [oidx (st relvar empty)
-                          ;; todo uniqueness invariant check
-                          ;; upsert
-                          ;; collision is allowed as we are replacing a row with another
-                          ;; delayed check:
-                          ;; track collisions as part of transactions ?
-                          ;; if row still exists in :left set at the end of transaction (was not ephemeral) then
-                          ;; the database integrity is violated, track which index and row caused the problem
                           nidx (reduce rf oidx rows)]
                       (if (identical? nidx oidx)
                         st

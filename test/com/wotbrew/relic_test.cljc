@@ -132,12 +132,14 @@
   [[:from Customer]
    [:join Order {:id :customer}]])
 
+(defn- sum [coll] (reduce + 0 coll))
+
 (def CustomerOrderStats
   [[:from Customer]
    [:left-join Order {:id :customer}]
    [:agg [:id]
-    [:order-count :<- (fn [orders] (count (keep :date orders)))]
-    [:spend :<- (fn [orders] (transduce (keep :value) + 0 orders))]]
+    [:order-count :<- [count :date]]
+    [:spend :<- [sum :value]]]
    [:extend [:aov :<- [bigdec [/ :spend [max 1 :order-count]]]]]])
 
 (def MondayOrders
@@ -221,9 +223,7 @@
              {:id 1, :order-count 3, :spend 12, :aov 4M}
              {:id 2, :order-count 5, :spend 60, :aov 12M}}
            (r/query
-             (do
-               (time (dotimes [x 1000] (r/transact co-state [:update Order {:value [* :value 2]}])))
-               (r/transact co-state [:update Order {:value [* :value 2]}]))
+             (r/transact co-state [:update Order {:value [* :value 2]}])
              CustomerOrderStats)))
 
 

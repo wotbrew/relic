@@ -1,6 +1,9 @@
 (ns com.wotbrew.relic
   (:require [clojure.set :as set]))
 
+(defn sum [coll] (reduce + coll))
+(defn count-distinct [coll] (count (set coll)))
+
 (def ^:private set-conj (fnil conj #{}))
 
 (defn- expr-col-deps
@@ -24,6 +27,8 @@
     (= [] expr) (constantly [])
 
     (instance? Escape expr) (constantly (.-x ^Escape expr))
+
+    (identical? ::% expr) identity
 
     (vector? expr)
     (let [[f & args] expr
@@ -60,6 +65,9 @@
     m
     (assoc m k v)))
 
+(defn- select-keys-if-not-nil [m keyseq]
+  (reduce #(assoc-if-not-nil %1 %2 (%2 m)) {} keyseq))
+
 (defn- extend-form-fn [form]
   ;;todo sep forms for nil behaviour
   (cond
@@ -68,7 +76,7 @@
           expr (if ?sep expr ?sep)
           expr-fn (expr-row-fn expr)]
       (if (keyword? binding)
-        #(assoc-if-not-nil % binding (expr-fn %))
+        #(assoc % binding (expr-fn %))
         #(merge % (select-keys (expr-fn %) binding))))
 
     :else (throw (ex-info "Not a valid binding form, expected a vector [binding :<- expr]" {}))))
@@ -178,19 +186,24 @@
               (if (map? (first vseq))
                 (mapcat ! vseq)
                 (mapcat identity vseq)))) m-or-set)))))
-  ([m-or-coll depth] (enumerate-index m-or-coll depth false))
   ([m-or-coll depth unique]
    (cond
+     (nil? m-or-coll) nil
+
      (= depth 1)
 
      (if unique
-       (vals m-or-coll)
-       (vec (mapcat identity (vals m-or-coll))))
+       (if (map? m-or-coll)
+         (vals m-or-coll)
+         (mapcat vals m-or-coll))
+       (if (map? m-or-coll)
+         (mapcat identity (vals m-or-coll))
+         (mapcat vals m-or-coll)))
 
      (<= depth 0) (if unique [m-or-coll] m-or-coll)
 
      :else
-     (for [v (vals m-or-coll)
+     (for [v (if (map? m-or-coll) (vals m-or-coll) m-or-coll)
            v2 (enumerate-index v (dec depth) unique)]
        v2))))
 
@@ -490,12 +503,15 @@
         merge-fn (case edge :left merge (fn reverse-merge [a b] (merge b a)))
         index (case edge :left right-index left-index)
         clause-card (count clause)
-        index-card (dec (count index))]
+        index-card (dec (count (peek index)))]
     {:index index
      :path-fn path-fn
      :path-exprs path-exprs
      :merge-fn merge-fn
-     :index-depth (- index-card clause-card)}))
+     :index-depth (- index-card clause-card)
+     :index-unique (case (stmt-type (peek index))
+                     :hash-unique true
+                     false)}))
 
 (defn- mat-meta [profile]
   (let [relvars (:materialize profile)
@@ -593,11 +609,11 @@
 
                 :join
                 {:inserter
-                 (let [{:keys [index, path-fn merge-fn index-depth]} (join-calcs relvar profile edge)]
+                 (let [{:keys [index, path-fn merge-fn index-depth index-unique]} (join-calcs relvar profile edge)]
                    (fn insert-join [st rows]
                      (let [idx (st index {})
                            new-rows (for [row rows
-                                          row2 (enumerate-index (get-in idx (path-fn row)) index-depth)]
+                                          row2 (enumerate-index (get-in idx (path-fn row)) index-depth index-unique)]
                                       (merge-fn row row2))
                            coll (st relvar #{})
                            coll2 (reduce conj coll new-rows)]
@@ -607,11 +623,11 @@
                              (assoc relvar coll2)
                              (flow-inserted (remove coll new-rows)))))))
                  :deleter
-                 (let [{:keys [index index-depth path-fn merge-fn]} (join-calcs relvar profile edge)]
+                 (let [{:keys [index index-depth path-fn merge-fn index-unique]} (join-calcs relvar profile edge)]
                    (fn delete-join [st rows]
                      (let [idx (st index {})
                            new-rows (for [row rows
-                                          row2 (enumerate-index (get-in idx (path-fn row)) index-depth)]
+                                          row2 (enumerate-index (get-in idx (path-fn row)) index-depth index-unique)]
                                       (merge-fn row row2))
                            coll (st relvar #{})
                            coll2 (reduce disj coll new-rows)]
@@ -623,14 +639,14 @@
 
                 :left-join
                 {:inserter
-                 (let [{:keys [index, path-fn, merge-fn, index-depth]} (join-calcs relvar profile edge)
+                 (let [{:keys [index, path-fn, merge-fn, index-depth index-unique]} (join-calcs relvar profile edge)
                        default-row (case edge :left first second)
                        empty-row (case edge :left [{}] [])]
                    (fn insert-left-join [st rows]
                      (let [idx (st index {})
                            matched-rows (for [row rows
                                               :let [path (path-fn row)]
-                                              row2 (let [rs (enumerate-index (get-in idx path) index-depth)]
+                                              row2 (let [rs (enumerate-index (get-in idx path) index-depth index-unique)]
                                                      (if (seq rs)
                                                        rs
                                                        empty-row))]
@@ -648,13 +664,13 @@
                              (flow-deleted delete-rows)
                              (flow-inserted (remove coll new-rows)))))))
                  :deleter
-                 (let [{:keys [index, path-fn merge-fn index-depth]} (join-calcs relvar profile edge)
+                 (let [{:keys [index, path-fn merge-fn index-depth index-unique]} (join-calcs relvar profile edge)
                        default-row (case edge :right second nil)
                        empty-row (case edge :left [{}] [])]
                    (fn delete-left-join [st rows]
                      (let [idx (st index {})
                            matched-rows (for [row rows
-                                              row2 (let [rs (enumerate-index (get-in idx (path-fn row)) index-depth)]
+                                              row2 (let [rs (enumerate-index (get-in idx (path-fn row)) index-depth index-unique)]
                                                      (if (seq rs)
                                                        rs
                                                        empty-row))]

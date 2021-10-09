@@ -175,7 +175,7 @@
       {:materialize [CustomerOrder
                      CustomerOrderStats]})))
 
-(def cq (partial r/query (co-state)))
+(def cq (partial r/query* (co-state)))
 
 (deftest co-mat-tests
   (let [co-state (co-state)]
@@ -184,7 +184,7 @@
       (is (= {1 {:id 1}
               2 {:id 2}
               3 {:id 3}}
-             (r/query co-state (conj Customer [:hash-unique :id]))))
+             (r/query* co-state (conj Customer [:hash-unique :id]))))
 
       (is (contains? (meta co-state) CustomerOrderStats))
 
@@ -198,7 +198,7 @@
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 4, :spend 9, :aov 2.25M}
              {:id 2, :order-count 5, :spend 30, :aov 6M}}
-           (r/query
+           (r/query*
              (r/transact co-state {Order [{:customer 1, :date 10, :value 3}]})
              CustomerOrderStats)))
 
@@ -206,7 +206,7 @@
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 3, :spend 6, :aov 2M}
              {:id 2, :order-count 5, :spend 60, :aov 12M}}
-           (r/query
+           (r/query*
              (r/transact co-state [:update Order {:value [* :value 2]} [:where [= :customer 2]]])
              CustomerOrderStats)))
 
@@ -214,7 +214,7 @@
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 3, :spend 6, :aov 2M}
              {:id 2, :order-count 5, :spend 30, :aov 6M}}
-           (r/query
+           (r/query*
              (r/transact co-state [:update Order {:value [* :value 2]} [:where [= :customer 42]]])
              CustomerOrderStats)))
 
@@ -222,7 +222,7 @@
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 3, :spend 12, :aov 4M}
              {:id 2, :order-count 5, :spend 60, :aov 12M}}
-           (r/query
+           (r/query*
              (r/transact co-state [:update Order {:value [* :value 2]}])
              CustomerOrderStats)))
 
@@ -230,13 +230,13 @@
       (is
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 4, :spend 9, :aov 2.25M}}
-           (r/query
+           (r/query*
              (r/transact co-state {Order [{:customer 1, :date 10, :value 3}]} [:delete Customer {:id 2}])
              CustomerOrderStats)))
 
       (is
         (= #{{:id 3, :order-count 0, :spend 0, :aov 0M}
              {:id 1, :order-count 3, :spend 6, :aov 2M}}
-           (r/query
+           (r/query*
              (r/transact co-state {Order [{:customer 2, :date 10, :value 3}]} [:delete Customer {:id 2}])
              CustomerOrderStats))))))

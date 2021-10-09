@@ -180,11 +180,19 @@
                 (mapcat identity vseq)))) m-or-set)))))
   ([m-or-coll depth] (enumerate-index m-or-coll depth false))
   ([m-or-coll depth unique]
-   (if (<= depth 0)
-     m-or-coll
-     (if (map? m-or-coll)
-       (recur (vals m-or-coll) (dec depth) unique)
-       (recur (mapcat vals m-or-coll) (dec depth) unique)))))
+   (cond
+     (= depth 1)
+
+     (if unique
+       (vals m-or-coll)
+       (vec (mapcat identity (vals m-or-coll))))
+
+     (<= depth 0) (if unique [m-or-coll] m-or-coll)
+
+     :else
+     (for [v (vals m-or-coll)
+           v2 (enumerate-index v (dec depth) unique)]
+       v2))))
 
 (defn- realise-set [base xf]
   (if xf
@@ -195,7 +203,7 @@
 
 (defn- interpret-sop [st base xf relvar2 f & args]
   (let [coll (realise-set base xf)]
-    (apply f coll (interpret st relvar2) args)))
+    (apply f coll (realise-set (interpret st relvar2) nil) args)))
 
 (defn- stmt-type [stmt]
   (nth stmt 0))
@@ -278,7 +286,7 @@
                 sort-key (apply juxt (mapv expr-row-fn exprs))
                 coll (realise-set base xf)
                 sm (sorted-map)
-                idx (reduce #(group-add-in %1 (sort-key %2) sm %2) (with-meta sm {::depth (count sm)}) coll)]
+                idx (reduce #(group-add-in %1 (sort-key %2) sm %2) (with-meta sm {::depth (count exprs)}) coll)]
             (recur (inc i) nil idx))
 
           ;; index lookups
@@ -384,10 +392,15 @@
       (fn [st rows]
         (reduce (fn [st f'] (f' st rows)) st fns)))))
 
+(defn query*
+  ([st q] (query* st q nil))
+  ([st q params]
+   (interpret st q)))
+
 (defn query
   ([st q] (query st q nil))
   ([st q params]
-   (interpret st q)))
+   (enumerate-index (query* st q params))))
 
 (defn- empty-index [index-stmt]
   (let [[index-type & exprs] index-stmt
@@ -765,7 +778,7 @@
                  (let [[_ relvar2] stmt
                        a-key (case edge :left relvar2 (left relvar))]
                    (fn delete-union [st rows]
-                     (let [set2 (query st a-key)
+                     (let [set2 (query* st a-key)
                            to-remove (remove set2 rows)
                            set1 (st relvar #{})
                            ns (reduce disj set1 to-remove)]
@@ -779,8 +792,8 @@
                 {:inserter
                  (let [right (right stmt)
                        f' (case edge
-                            :left (fn [st rows] (set/intersection (set rows) (query st right)))
-                            :right (fn [st rows] (set/intersection (query st left) (set rows))))]
+                            :left (fn [st rows] (set/intersection (set rows) (query* st right)))
+                            :right (fn [st rows] (set/intersection (query* st left) (set rows))))]
                    (fn insert-intersection-or-difference [st rows]
                      (let [nrows (f' st rows)
                            oset (st relvar #{})
@@ -803,8 +816,8 @@
                 {:inserter
                  (let [right (right stmt)
                        f' (case edge
-                            :left (fn [st rows] (set/difference (set rows) (query st right)))
-                            :right (fn [st rows] (set/difference (query st left) (set rows))))]
+                            :left (fn [st rows] (set/difference (set rows) (query* st right)))
+                            :right (fn [st rows] (set/difference (query* st left) (set rows))))]
                    (fn insert-intersection-or-difference [st rows]
                      (let [nrows (f' st rows)
                            oset (st relvar #{})
@@ -902,7 +915,7 @@
                                             :let [ef (expr-row-fn expr)]]
                                         (fn [row] (assoc row k (ef row)))))
 
-                      matched-rows (query st nrelvar)
+                      matched-rows (query* st nrelvar)
                       updated-rows (into #{} (map sfn) matched-rows)
 
                       to-delete (set/difference matched-rows updated-rows)

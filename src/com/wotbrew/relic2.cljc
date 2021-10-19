@@ -1,5 +1,4 @@
-(ns com.wotbrew.relic2
-  (:require [clojure.set :as set]))
+(ns com.wotbrew.relic2)
 
 ;; protocols
 
@@ -60,13 +59,13 @@
 
 (defn map-index [empty keyfns]
   (let [path (apply juxt keyfns)
-        depth (count keyfns)]
+        depth (count keyfns)
+        map-contains-row? (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))]
     (with-meta
       empty
       {`index-row (fn [index row] (update-in index (path row) set-conj row))
        `unindex-row (fn [index row] (disjoc-in index (path row) row))
-       `contains-row?
-       (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))
+       `contains-row? map-contains-row?
        `row-seqable
        (fn enumerate-map
          ([index] (enumerate-map index depth))
@@ -95,118 +94,158 @@
                 remaining-depth)
                (throw (ex-info "Invalid remaining depth" {}))))))})))
 
-(defn- agg-index [key-fn reduce-fn combine-fn merge-fn]
-  (let [cache 32]
-    (letfn [(size [tree] (count (:rowmap tree {})))
-            (combine-results [tree1 tree2]
+(defn- agg-index [key-fn reduce-fn combine-fn merge-fn cache-size]
+  (letfn [(combine-results [tree1 tree2]
+            (combine-reduced (:results tree1) (:results tree2)))
+          (combine-reduced [combined reduced]
+            (cond
+              (nil? combined) reduced
+              (nil? reduced) combined
+              :else (combine-fn combined reduced)))
+
+          (push-cache [tree new-cache reduced]
+            (let [{:keys [rm, size, a, b, cache] :or {size 0}} tree]
+              (if (seq cache)
+                (let [grow-a (< (:size a 0) (:size b 0))
+                      branch-id (if grow-a :a :b)
+                      a (if grow-a (push-cache a cache reduced) a)
+                      b (if grow-a b (push-cache b cache reduced))
+                      rm (reduce #(assoc %1 %2 branch-id) rm cache)
+                      combined (combine-results a b)]
+                  {:size (+ size cache-size)
+                   :rm rm
+                   :cache new-cache
+                   :a a
+                   :b b
+                   :reduced reduced
+                   :combined combined
+                   :results (combine-reduced reduced combined)})
+                (let [combined (combine-results a b)]
+                  {:size (+ size cache-size)
+                   :rm rm
+                   :cache new-cache
+                   :a a
+                   :b b
+                   :reduced reduced
+                   :combined combined
+                   :results (combine-reduced reduced combined)}))))
+
+          (add [tree row]
+            (let [{:keys [size, rm, cache, a, b, reduced, combined] :or {size 0, cache #{}}} tree]
               (cond
-                (nil? tree1) (:results tree2)
-                (nil? tree2) (:results tree1)
-                :else (combine-fn (:results tree1) (:results tree2))))
-            (combine-reduced [combined reduced]
+                (contains? rm row) tree
+                (contains? cache row) tree
+                (< (count cache) cache-size)
+                (let [new-cache (conj cache row)
+                      reduced (reduce-fn new-cache)]
+                  {:size (inc size)
+                   :rm rm
+                   :cache new-cache
+                   :a a
+                   :b b
+                   :reduced reduced
+                   :combined combined
+                   :results (combine-reduced combined reduced)})
+
+                :else
+                (let [grow-a (< (:size a 0) (:size b 0))
+                      branch (if grow-a a b)
+                      branch-id (if grow-a :a :b)
+                      fit-cache (= 0 (mod (:size branch 0) cache-size))]
+                  (if fit-cache
+                    (let [branch (push-cache branch cache reduced)
+                          rm (reduce #(assoc %1 %2 branch-id) rm cache)
+                          new-cache #{row}
+                          reduced (reduce-fn new-cache)
+                          a (if grow-a branch a)
+                          b (if grow-a b branch)
+                          combined (combine-results a b)]
+                      {:size (inc size)
+                       :rm rm
+                       :cache new-cache
+                       :a a
+                       :b b
+                       :reduced reduced
+                       :combined combined
+                       :results (combine-reduced combined reduced)})
+                    (let [branch (add tree row)
+                          rm (assoc rm row branch-id)
+                          a (if grow-a branch a)
+                          b (if grow-a b branch)
+                          combined (combine-results a b)]
+                      {:size (inc size)
+                       :rm rm
+                       :cache cache
+                       :a a
+                       :b b
+                       :reduced reduced
+                       :combined combined
+                       :results (combine-reduced combined reduced)}))))))
+
+          (shrink [tree]
+            (if (= 0 (:size tree 0))
+              nil
+              tree))
+
+          (del [tree row]
+            (let [{:keys [size
+                          rm
+                          cache
+                          a
+                          b
+                          combined
+                          reduced]} tree]
               (cond
-                (nil? combined) reduced
-                (nil? reduced) combined
-                :else (combine-fn combined reduced)))
-            (push [tree row]
-              (let [{:keys [rowmap, rows, a, b, reduced]} tree
-                    [a b k] (if (< (size a) (size b)) [(add a row) b :a] [a (add b row) :b])
-                    combined (combine-results a b)
-                    rm (assoc rowmap row k)]
-                {:rowmap rm
-                 :rows rows
-                 :a a
-                 :b b
-                 :combined combined
-                 :reduced reduced
-                 :results (combine-reduced combined reduced)}))
-            (add [tree row]
-              (let [{:keys [a
-                            b
-                            combined
-                            rowmap
-                            rows]} tree]
-                (cond
-                  (contains? rowmap row) tree
-                  (< (count rows) cache)
-                  (let [rows (conj rows row)
-                        reduced (reduce-fn rows)]
-                    {:rowmap (assoc rowmap row :cache)
-                     :rows rows
+                (contains? cache row)
+                (let [new-cache (disj cache row)
+                      reduced (reduce-fn new-cache)]
+                  (shrink
+                    {:size (dec size)
+                     :rm rm
+                     :cache new-cache
                      :a a
                      :b b
                      :combined combined
                      :reduced reduced
-                     :results (combine-reduced combined reduced)})
-                  :else (push tree row))))
-            (shrink [tree]
-              (if (= 0 (size tree))
-                nil
-                tree))
-            (del [tree row]
-              (let [{:keys [rowmap
-                            rows
-                            a
-                            b
-                            combined
-                            reduced]} tree
-                    k (rowmap row)
-                    rowmap (dissoc rowmap row)]
-                (shrink
-                  (case k
-                    :a
-                    (let [a (shrink (del a row))
-                          combined (combine-results a b)]
-                      {:rowmap rowmap
-                       :rows rows
-                       :a a
-                       :b b
-                       :combined combined
-                       :reduced reduced
-                       :results (combine-reduced combined reduced)})
-                    :b
-                    (let [b (shrink (del b row))
-                          combined (combine-results a b)]
-                      {:rowmap rowmap
-                       :rows rows
-                       :a a
-                       :b b
-                       :combined combined
-                       :reduced reduced
-                       :results (combine-reduced combined reduced)})
-                    :cache
-                    (let [nrows (disj rows row)
-                          reduced (reduce-fn nrows)]
-                      {:rowmap rowmap
-                       :rows nrows
-                       :a a
-                       :b b
-                       :combined combined
-                       :reduced reduced
-                       :results (combine-reduced combined reduced)})
-                    tree))))]
-      (with-meta
-        {}
-        {`index-row (fn [index row]
+                     :results (combine-reduced combined reduced)}))
+
+                (contains? rm row)
+                (let [branch-id (rm row)
+                      shrink-a (= :a branch-id)
+                      new-rm (dissoc rm row)
+                      a (if shrink-a (del a row) a)
+                      b (if shrink-a b (del b row))
+                      combined (combine-results a b)]
+                  (shrink
+                    {:size (dec size)
+                     :rm new-rm
+                     :cache cache
+                     :a a
+                     :b b
+                     :combined combined
+                     :results (combine-reduced combined reduced)}))
+
+                :else tree)))]
+    (with-meta
+      {}
+      {`index-row (fn [index row]
+                    (let [k (key-fn row)
+                          tree (index k)
+                          tree (add tree row)
+                          tree (assoc tree :indexed-row (merge-fn k (:results tree)))]
+                      (assoc index k tree)))
+       `unindex-row (fn [index row]
                       (let [k (key-fn row)
                             tree (index k)
-                            tree (add tree row)
-                            tree (assoc tree :indexed-row (merge-fn k (:results tree)))]
-                        (assoc index k tree)))
-         `unindex-row (fn [index row]
+                            tree (del tree row)]
+                        (if (nil? tree)
+                          (dissoc index k)
+                          (assoc index k (assoc tree :indexed-row (merge-fn k (:results tree)))))))
+       `contains-row? (fn [index row]
                         (let [k (key-fn row)
-                              tree (index k)
-                              tree (del tree)]
-                          (if (nil? tree)
-                            (dissoc index k)
-                            (assoc index k (assoc tree :indexed-row (merge-fn k (:results tree)))))))
-         `contains-row? (fn [index row]
-                          (let [k (key-fn row)
-                                tree (index k)]
-                            (if-some [indexed-row (:indexed-row tree)]
-                              (= indexed-row row)
-                              false)))
-         `row-seqable (fn [index] (map :indexed-row (vals index)))}))))
+                              {:keys [rowmap]} (index k)]
+                          (contains? rowmap row)))
+       `row-seqable (fn [index] (mapcat (comp keys :rowmap) (vals index)))})))
 
 ;; statements
 
@@ -356,7 +395,8 @@
   (let [{:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
-                flow-delete1]} flow
+                flow-delete1
+                flow-init]} flow
         {:keys [empty-index
                 relvar
                 insert
@@ -413,8 +453,38 @@
                     (assoc relvar (reduce unindex-row idx del-rows))
                     (flow-deletes-n del-rows))
                 st)))
-          flow-deletes-n)]
-    {:insert1
+          flow-deletes-n)
+
+        init-key (if empty-index [::init relvar edge])
+        mark-init (if init-key (fn [st] (assoc st init-key true)) identity)
+        initialised? (if init-key #(contains? % init-key) (constantly false))
+
+        init
+        (if empty-index
+          (fn init [st rows]
+            (cond
+              (contains? st relvar)
+              (-> st
+                  (update relvar #(reduce index-row % rows))
+                  (mark-init)
+                  (flow-init rows))
+              (and (set? rows) (set? empty-index))
+              (-> st
+                  (assoc relvar (with-meta rows (meta empty-set-index)))
+                  (mark-init)
+                  (flow-init rows))
+              :else
+              (-> st
+                  (assoc relvar (reduce index-row empty-index rows))
+                  (mark-init)
+                  (flow-init rows))))
+          (fn init [st rows]
+            (-> st
+                (mark-init)
+                (flow-init rows))))
+        init1 (fn [st row] (init st [row]))]
+    {:init (fn [st rows] (if (initialised? st) st (insert st rows init init1 deleted deleted1)))
+     :insert1
      (cond
        insert1 (fn [st row] (insert1 st row inserted inserted1 deleted deleted1))
        insert (fn [st row] (insert st [row] inserted inserted1 deleted deleted1))
@@ -462,7 +532,6 @@
         visited (volatile! #{})
 
         rf (fn rf [g relvar edge]
-
              (assert (g relvar) "Should only request inserter for relvars in dataflow graph")
              (when (nil? edge)
                (when-not (base-relvar? relvar)
@@ -508,11 +577,16 @@
                        (fn [st rows]
                          (reduce (fn [st f] (f st rows)) st flow-deleters-1)))
 
+                     flow-initers (mapv :init flow-mat-fns)
+                     flow-init (fn [st rows] (reduce (fn [st f] (f st rows)) st flow-initers))
+
+
                      flow
                      {:flow-inserts-n flow-inserts-n
                       :flow-insert1 flow-insert1
                       :flow-deletes-n flow-deletes-n
-                      :flow-delete1 flow-delete1}
+                      :flow-delete1 flow-delete1
+                      :flow-init flow-init}
 
                      mat-fns (if (nil? edge) (base-mat-fns g relvar flow) (derived-mat-fns node edge flow))
                      mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))]
@@ -555,13 +629,15 @@
   (let [g (::graph m {})
         {:keys [deps
                 dependents]} (g relvar)]
-    (if (contains? m relvar)
-      (let [rows (row-seqable (m relvar))]
-        (reduce (fn [m dependent]
-                  (let [{:keys [mat-fns]} (g dependent)
-                        {:keys [insert]} (mat-fns relvar)]
-                    (insert m rows))) m dependents))
-      (reduce init m deps))))
+    (let [m (reduce init m deps)
+          rows (delay (row-seqable (m relvar empty-set-index)))]
+      (reduce (fn [m dependent]
+                (let [{:keys [mat-fns]} (g dependent)
+                      {:keys [init]} (mat-fns relvar)
+                      init-key [::init dependent relvar]]
+                  (if (contains? m init-key)
+                    m
+                    (init m @rows)))) m dependents))))
 
 (defn materialize [st & relvars]
   (let [m (meta st)
@@ -708,17 +784,19 @@
 
 (defmethod graph-node :union
   [left [_ right]]
-  {:deps [(mat-head left) (mat-head right)]
-   :insert {left pass-through-insert
-            right pass-through-insert}
-   :delete {left (fn [st rows inserted inserted1 deleted deleted1]
-                   (let [idx2 (st right empty-set-index)
-                         del-rows (remove #(contains-row? idx2 %) rows)]
-                     (deleted st del-rows)))
-            right (fn [st rows inserted inserted1 deleted deleted1]
-                    (let [idx2 (st left empty-set-index)
-                          del-rows (remove #(contains-row? idx2 %) rows)]
-                      (deleted st del-rows)))}})
+  (let [left (mat-head left)
+        right (mat-head right)]
+    {:deps [left right]
+     :insert {left pass-through-insert
+              right pass-through-insert}
+     :delete {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (let [idx2 (st right empty-set-index)
+                           del-rows (remove #(contains-row? idx2 %) rows)]
+                       (deleted st del-rows)))
+              right (fn [st rows inserted inserted1 deleted deleted1]
+                      (let [idx2 (st left empty-set-index)
+                            del-rows (remove #(contains-row? idx2 %) rows)]
+                        (deleted st del-rows)))}}))
 
 (defmethod graph-node :intersection
   [left [_ right]]
@@ -742,9 +820,9 @@
                          add-rows (remove #(contains-row? idx2 %) rows)]
                      (inserted st add-rows)))
             right (fn [st rows inserted inserted1 deleted deleted1]
-                   (let [idx2 (st left empty-set-index)
-                         del-rows (filter #(contains-row? idx2 %) rows)]
-                     (deleted st del-rows)))}
+                    (let [idx2 (st left empty-set-index)
+                          del-rows (filter #(contains-row? idx2 %) rows)]
+                      (deleted st del-rows)))}
    :delete {left (fn [st rows inserted inserted1 deleted deleted1]
                    (let [idx2 (st right empty-set-index)
                          del-rows (remove #(contains-row? idx2 %) rows)]
@@ -898,39 +976,38 @@
                             (deleted (mapcat :deletes pairs))
                             (inserted (mapcat :inserts pairs)))))}}))
 
-(def aggs
-  {:count
-   (fn []
-     {:combiner +
-      :reducer count})
+;; todo :agg custom indexes
+;; sometimes it'll be more efficient to multi-index and join
+;; for count, count-distinct, group etc
 
-   :count-distinct
-   (fn [& exprs]
-     (let [key-fn (apply juxt (map expr-row-fn exprs))]
-       {:combiner +
-        :reducer #(count (set (map key-fn %)))}))
+(defn row-count []
+  {:combiner +
+   :reducer count})
 
-   :sum
-   (fn [& exprs]
-     (let [nums (apply juxt (map expr-row-fn exprs))
-           xf (comp (mapcat nums) (remove nil?))]
-       {:combiner +
-        :reducer #(transduce xf + %)}))})
+(defn sum [& exprs]
+  (let [nums (apply juxt (map expr-row-fn exprs))
+        xf (comp (mapcat nums) (remove nil?))]
+    {:combiner +
+     :reducer #(transduce xf + %)}))
 
 (defn- agg-form-fn [form]
   (let [[binding _sep expr] form
         ;;todo sep forms for nil behaviour
         {:keys [combiner reducer]}
         (cond
-          (aggs expr) ((aggs expr))
+          (map? expr) expr
+
+          (#{count 'count `count} expr) (row-count)
+
+          (fn? expr) (expr)
 
           (vector? expr)
           (let [[f & args] expr]
-            (if (aggs f)
-              (apply (aggs f) args)
-              (raise "No known aggregate function" {:f f})))
+            (if (#{count 'count `count} f)
+              (row-count)
+              (apply f args)))
 
-          :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {})))]
+          :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr})))]
     (assert (keyword? binding) "Only keyword bindings allowed for agg forms")
     {:combiner
      (fn [m a b] (assoc m binding (combiner (binding a) (binding b))))
@@ -949,8 +1026,50 @@
   (let [cols (vec (set cols))
         key-fn #(select-keys % cols)
         {:keys [reducer combiner]} (agg-fns aggs)
-        merge-fn merge]
-    {:empty-index (agg-index key-fn reducer combiner merge-fn)
-     :deps [left]
-     :insert {left pass-through-insert}
-     :delete {left pass-through-delete}}))
+        merge-fn merge
+        empty-idx (agg-index key-fn reducer combiner merge-fn 32)
+        idx-key [::agg-index left cols aggs]]
+    {:deps [left]
+     :empty-index empty-set-index
+     :insert {left (fn [st rows insert insert1 delete delete1]
+                     (let [idx (st idx-key empty-idx)
+                           [nidx added deleted]
+                           (reduce
+                             (fn [[idx added deleted] row]
+                               (let [k (key-fn row)
+                                     old-agg (:indexed-row (get idx k))
+                                     nidx (index-row idx row)
+                                     new-agg (:indexed-row (get nidx k))]
+                                 (if (deleted k)
+                                   [nidx
+                                    (assoc added k new-agg)
+                                    deleted]
+                                   (if old-agg
+                                     [nidx (assoc added k new-agg) (assoc deleted k old-agg)]
+                                     [nidx (assoc added k new-agg) deleted]))))
+                             [idx {} {}] rows)
+                           st (assoc st idx-key nidx)]
+                       (-> st
+                           (delete (vals deleted))
+                           (insert (vals added)))))}
+     :delete {left (fn [st rows insert insert1 delete delete1]
+                     (let [idx (st idx-key empty-idx)
+                           [nidx added deleted]
+                           (reduce
+                             (fn [[idx added deleted] row]
+                               (let [k (key-fn row)
+                                     old-agg (:indexed-row (get idx k))
+                                     nidx (unindex-row idx row)
+                                     new-agg (:indexed-row (get nidx k))]
+                                 (if (deleted k)
+                                   [nidx
+                                    (assoc added k new-agg)
+                                    deleted]
+                                   (if old-agg
+                                     [nidx (assoc added k new-agg) (assoc deleted k old-agg)]
+                                     [nidx (assoc added k new-agg) deleted]))))
+                             [idx {} {}] rows)
+                           st (assoc st idx-key nidx)]
+                       (-> st
+                           (delete (vals deleted))
+                           (insert (vals added)))))}}))

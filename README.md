@@ -41,7 +41,7 @@ Now we have our state, we can ask questions of relic to find _relations_, as you
 ;; => 
 #{{:id 42, :name "bob}}
 
-(r/relation db [[:state :Customer] [:where [= :name "alice"]])
+(r/relation db [[:state :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```

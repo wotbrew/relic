@@ -4,7 +4,11 @@
 
 A Clojure(Script) library for doing information programming using 'codd style' relational algebra with materialized views for fun.
 
-## WTF is this?
+## Why 
+
+I re-read out-of-the-tarpit and found myself in a strange mood.
+
+## Tutorial
 
 This is a _relvar_, a _relvar_ is just a vector containing a series of relational statements.
 ``` clojure

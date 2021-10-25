@@ -1,4 +1,7 @@
-(ns com.wotbrew.relic2)
+(ns com.wotbrew.relic2
+  (:require [clojure.set :as set]))
+
+(defn juxt2 [& args] (if (empty? args) (constantly []) (apply juxt args)))
 
 ;; protocols
 
@@ -58,7 +61,7 @@
        (with-meta #{})))
 
 (defn map-index [empty keyfns]
-  (let [path (apply juxt keyfns)
+  (let [path (apply juxt2 keyfns)
         depth (count keyfns)
         map-contains-row? (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))]
     (with-meta
@@ -70,15 +73,17 @@
        (fn enumerate-map
          ([index] (enumerate-map index depth))
          ([index depth]
-          (if (= 1 depth)
-            (mapcat identity (vals index))
+          (cond
+            (= 0 depth) (mapcat identity (vals index))
+            (= 1 depth) (mapcat identity (vals index))
+            :else
             (for [v (vals index)
                   v2 (enumerate-map v (dec depth))]
               v2))))
        `seek-n
        (fn map-seekn [index ks]
          (let [remaining-depth (- depth (count ks))
-               m-or-coll (get-in index ks)]
+               m-or-coll (if (seq ks) (get-in index ks) (row-seqable index))]
            (case remaining-depth
              0 m-or-coll
              1 (mapcat identity (vals m-or-coll))
@@ -94,7 +99,7 @@
                 remaining-depth)
                (throw (ex-info "Invalid remaining depth" {}))))))})))
 
-(defn- agg-index [key-fn reduce-fn combine-fn merge-fn cache-size]
+(defn- agg-index [key-fn reduce-fn combine-fn complete-fn merge-fn cache-size]
   (letfn [(combine-results [tree1 tree2]
             (combine-reduced (:results tree1) (:results tree2)))
           (combine-reduced [combined reduced]
@@ -232,7 +237,7 @@
                     (let [k (key-fn row)
                           tree (index k)
                           tree (add tree row)
-                          tree (assoc tree :indexed-row (merge-fn k (:results tree)))]
+                          tree (assoc tree :indexed-row (complete-fn (merge-fn k (:results tree))))]
                       (assoc index k tree)))
        `unindex-row (fn [index row]
                       (let [k (key-fn row)
@@ -240,7 +245,7 @@
                             tree (del tree row)]
                         (if (nil? tree)
                           (dissoc index k)
-                          (assoc index k (assoc tree :indexed-row (merge-fn k (:results tree)))))))
+                          (assoc index k (assoc tree :indexed-row (complete-fn (merge-fn k (:results tree))))))))
        `contains-row? (fn [index row]
                         (let [k (key-fn row)
                               {:keys [rowmap]} (index k)]
@@ -365,6 +370,10 @@
                   st (vary-meta st assoc relvar nidx)]
               (vary-meta st flow-delete1 row)))))})))
 
+(defn- mat-noop
+  ([st rows] st)
+  ([st rows inserted inserted1 deleted deleted1] st))
+
 (defn- add-to-graph [g relvars]
   (letfn [(edit-flow [node dependent]
             (let [dependents (:dependents node #{})
@@ -395,8 +404,7 @@
   (let [{:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
-                flow-delete1
-                flow-init]} flow
+                flow-delete1]} flow
         {:keys [empty-index
                 relvar
                 insert
@@ -447,63 +455,33 @@
         (if empty-index
           (fn deleted [st rows]
             (let [idx (st relvar empty-index)
-                  del-rows (into [] (filter #(contains-row? idx %) rows))]
+                  del-rows (filterv #(contains-row? idx %) rows)]
               (if (seq del-rows)
                 (-> st
                     (assoc relvar (reduce unindex-row idx del-rows))
                     (flow-deletes-n del-rows))
                 st)))
-          flow-deletes-n)
-
-        init-key (if empty-index [::init relvar edge])
-        mark-init (if init-key (fn [st] (assoc st init-key true)) identity)
-        initialised? (if init-key #(contains? % init-key) (constantly false))
-
-        init
-        (if empty-index
-          (fn init [st rows]
-            (cond
-              (contains? st relvar)
-              (-> st
-                  (update relvar #(reduce index-row % rows))
-                  (mark-init)
-                  (flow-init rows))
-              (and (set? rows) (set? empty-index))
-              (-> st
-                  (assoc relvar (with-meta rows (meta empty-set-index)))
-                  (mark-init)
-                  (flow-init rows))
-              :else
-              (-> st
-                  (assoc relvar (reduce index-row empty-index rows))
-                  (mark-init)
-                  (flow-init rows))))
-          (fn init [st rows]
-            (-> st
-                (mark-init)
-                (flow-init rows))))
-        init1 (fn [st row] (init st [row]))]
-    {:init (fn [st rows] (if (initialised? st) st (insert st rows init init1 deleted deleted1)))
-     :insert1
+          flow-deletes-n)]
+    {:insert1
      (cond
        insert1 (fn [st row] (insert1 st row inserted inserted1 deleted deleted1))
        insert (fn [st row] (insert st [row] inserted inserted1 deleted deleted1))
-       :else (raise "No :insert/:insert1 defined for node/edge" {:node node, :edge edge}))
+       :else mat-noop)
      :insert
      (cond
        insert (fn [st rows] (insert st rows inserted inserted1 deleted deleted1))
        insert1 (fn [st rows] (reduce #(insert1 %1 %2 inserted inserted1 deleted deleted1) st rows))
-       :else (raise "No :insert/:insert1 defined for node/edge" {:node node, :edge edge}))
+       :else mat-noop)
      :delete1
      (cond
        delete1 (fn [st row] (delete1 st row inserted inserted1 deleted deleted1))
        delete (fn [st row] (delete st [row] inserted inserted1 deleted deleted1))
-       :else (raise "No :insert/:insert1 defined for node/edge" {:node node, :edge edge}))
+       :else mat-noop)
      :delete
      (cond
        delete (fn [st rows] (delete st rows inserted inserted1 deleted deleted1))
        delete1 (fn [st rows] (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) st rows))
-       :else (raise "No :insert/:insert1 defined for node/edge" {:node node, :edge edge}))}))
+       :else mat-noop)}))
 
 (defn add-mat-fns [g relvars]
 
@@ -577,16 +555,11 @@
                        (fn [st rows]
                          (reduce (fn [st f] (f st rows)) st flow-deleters-1)))
 
-                     flow-initers (mapv :init flow-mat-fns)
-                     flow-init (fn [st rows] (reduce (fn [st f] (f st rows)) st flow-initers))
-
-
                      flow
                      {:flow-inserts-n flow-inserts-n
                       :flow-insert1 flow-insert1
                       :flow-deletes-n flow-deletes-n
-                      :flow-delete1 flow-delete1
-                      :flow-init flow-init}
+                      :flow-delete1 flow-delete1}
 
                      mat-fns (if (nil? edge) (base-mat-fns g relvar flow) (derived-mat-fns node edge flow))
                      mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))]
@@ -633,11 +606,8 @@
           rows (delay (row-seqable (m relvar empty-set-index)))]
       (reduce (fn [m dependent]
                 (let [{:keys [mat-fns]} (g dependent)
-                      {:keys [init]} (mat-fns relvar)
-                      init-key [::init dependent relvar]]
-                  (if (contains? m init-key)
-                    m
-                    (init m @rows)))) m dependents))))
+                      {:keys [insert]} (mat-fns relvar)]
+                  (insert m @rows))) m dependents))))
 
 (defn materialize [st & relvars]
   (let [m (meta st)
@@ -749,12 +719,12 @@
 (defn- pass-through-delete [st rows inserted inserted1 deleted deleted1] (deleted st rows))
 
 (defn- transform-insert [f]
-  (fn [st rows inserted inserted1 deleted deleted1] (inserted st (mapv f rows))))
+  (fn [st rows inserted inserted1 deleted deleted1]
+    (inserted st (mapv f rows))))
 
 (defn- transform-delete [f]
-  (fn [st rows inserted inserted1 deleted deleted1] (deleted st (mapv f rows))))
-
-(defn- mat-noop [st rows inserted inserted1 deleted deleted1] st)
+  (fn [st rows inserted inserted1 deleted deleted1]
+    (deleted st (mapv f rows))))
 
 (defmethod graph-node :state
   [_ _]
@@ -777,7 +747,7 @@
 (defmethod graph-node :project-away
   [left [_ & cols]]
   (let [cols (vec (set cols))
-        f (fn [_ row] (apply dissoc row cols))]
+        f (fn [row] (apply dissoc row cols))]
     {:deps [left]
      :insert {left (transform-insert f)}
      :delete {left (transform-delete f)}}))
@@ -834,16 +804,68 @@
   (let [expr-preds (mapv expr-row-fn exprs)
         pred-fn (apply every-pred expr-preds)]
     {:deps [left]
-     :insert {left (fn [st rows inserted inserted1 deleted deleted1] (inserted st (filterv pred-fn rows)))}
+     :insert {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (inserted st (filterv pred-fn rows)))}
      :delete {left (fn [st rows inserted inserted1 deleted deleted1] (deleted st (filterv pred-fn rows)))}}))
+
+(defrecord JoinColl [relvar clause])
+(defn join-coll [relvar clause] (->JoinColl relvar clause))
+(defn- join-expr? [expr] (instance? JoinColl expr))
+(defn- extend-expr [[_ _ expr]] expr)
+(defn- join-ext? [extension] (join-expr? (extend-expr extension)))
+
+(defrecord JoinFirst [relvar clause])
+(defn join-first [relvar clause] (->JoinFirst relvar clause))
+(defn- join-first-expr? [expr] (instance? JoinFirst expr))
+(defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
+
+(defmethod graph-node ::extend*
+  [left [_ & extensions]]
+  (let [f (apply comp (map extend-form-fn (reverse extensions)))]
+    {:deps [left]
+     :insert {left (transform-insert f)}
+     :delete {left (transform-delete f)}}))
 
 (defmethod graph-node :extend
   [left [_ & extensions]]
-  (let [ext-fns (mapv extend-form-fn extensions)
-        ext-fn (apply comp (reverse ext-fns))]
+  (->> (for [extensions (partition-by (fn [ext] (cond
+                                                  (join-ext? ext) :join
+                                                  (join-first-ext? ext) :join1
+                                                  :else :std)) extensions)]
+         (cond
+           (join-ext? (first extensions))
+           (for [[binding _ {:keys [relvar clause]}] extensions
+                 :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]]
+             [:join-as-coll relvar clause binding])
+
+           (join-first-ext? (first extensions))
+           (for [[binding _ {:keys [relvar clause]}] extensions
+                 :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]
+                 stmt [[:join-as-coll relvar clause binding]
+                       (into [::extend*] (for [[binding] extensions] [binding :<- [first binding]]))]]
+             stmt)
+
+           :else [(into [::extend*] extensions)]))
+       (transduce cat conj left)
+       ((fn [relvar]
+          (graph-node (pop relvar) (peek relvar))))))
+
+(defmethod graph-node :qualify
+  [left [_ namespace]]
+  (let [namespace (name namespace)
+        f #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]
     {:deps [left]
-     :insert {left (transform-insert ext-fn)}
-     :delete {left (transform-delete ext-fn)}}))
+     :insert {left (transform-insert f)}
+     :delete {left (transform-delete f)}}))
+
+(defmethod graph-node :rename
+  [left [_ renames]]
+  (let [extensions (for [[from to] renames] [to :<- from])
+        away (keys renames)
+        dep (conj left (into [:extend] extensions) (into [:project-away] away))]
+    {:deps [dep]
+     :insert {dep pass-through-insert}
+     :delete {dep pass-through-delete}}))
 
 (defmethod graph-node :expand
   [left [_ & expansions]]
@@ -859,8 +881,8 @@
         cols (set (concat cols (mapcat extend-form-cols exts)))
         select-fn (apply comp #(select-keys % cols) (map extend-form-fn (reverse exts)))]
     {:deps [left]
-     :insert (transform-insert select-fn)
-     :delete (transform-delete select-fn)}))
+     :insert {left (transform-insert select-fn)}
+     :delete {left (transform-delete select-fn)}}))
 
 (defmethod graph-node :hash
   [left [_ & exprs]]
@@ -882,11 +904,11 @@
   [left [_ right clause]]
   (let [left-exprs (keys clause)
         left (conj left (into [:hash] left-exprs))
-        right-path-fn (apply juxt (map expr-row-fn left-exprs))
+        right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
 
         right-exprs (vals clause)
         right (conj right (into [:hash] right-exprs))
-        left-path-fn (apply juxt (map expr-row-fn right-exprs))
+        left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
         join-row merge]
     {:deps [left right]
      :insert {left (fn [st rows inserted inserted1 deleted deleted1]
@@ -901,7 +923,7 @@
                             matches (for [row rows
                                           :let [path (left-path-fn row)]
                                           match (seek-n idx path)]
-                                      (join-row row match))]
+                                      (join-row match row))]
                         (inserted st matches)))}
      :delete {left (fn [st rows inserted inserted1 deleted deleted1]
                      (let [idx (st right)
@@ -915,66 +937,96 @@
                             matches (for [row rows
                                           :let [path (left-path-fn row)]
                                           match (seek-n idx path)]
-                                      (join-row row match))]
+                                      (join-row match row))]
                         (deleted st matches)))}}))
 
-(defmethod graph-node :left-join
-  [left [_ right clause]]
+(defmethod graph-node :join-as-coll
+  [left [_ right clause k]]
   (let [left-exprs (keys clause)
         left (conj left (into [:hash] left-exprs))
-        right-path-fn (apply juxt (map expr-row-fn left-exprs))
+        right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
 
         right-exprs (vals clause)
         right (conj right (into [:hash] right-exprs))
-        left-path-fn (apply juxt (map expr-row-fn right-exprs))
-        join-row merge]
+        left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
+        join-matches (fn [m rows] (assoc m k (set rows)))]
     {:deps [left right]
      :insert {left (fn [st rows inserted inserted1 deleted deleted1]
                      (let [idx (st right)
-                           pairs (for [row rows
-                                       :let [path (right-path-fn row)
-                                             matches (seek-n idx path)]]
-                                   (if (seq matches)
-                                     {:delete row
-                                      :inserts (mapv #(join-row row %) matches)}
-                                     {:inserts [row]}))]
-                       (-> st
-                           (deleted (keep :delete pairs))
-                           (inserted (mapcat :inserts pairs)))))
+                           matches (for [row rows
+                                         :let [path (right-path-fn row)
+                                               matches (seek-n idx path)]]
+                                     (join-matches row matches))]
+                       (inserted st matches)))
               right (fn [st rows inserted inserted1 deleted deleted1]
                       (let [idx (st left)
-                            pairs (for [row rows
-                                        :let [path (left-path-fn row)
-                                              matches (seek-n idx path)]]
-                                    ;; todo deal with resultant merged map being same as original map
-                                    {:deletes matches
-                                     :inserts (mapv #(join-row % row) matches)})]
+                            right-idx (st right)
+                            nrows (group-by left-path-fn rows)
+                            lrows (for [row rows
+                                        :let [path (left-path-fn row)]
+                                        match (seek-n idx path)]
+                                    match)
+                            deletes (set (for [row lrows
+                                               :let [path (right-path-fn row)
+                                                     matches (set (seek-n right-idx path))]]
+                                           (join-matches row (set/difference matches (set (nrows path))))))
+                            inserts (set (for [row lrows
+                                               :let [path (right-path-fn row)
+                                                     matches (seek-n right-idx path)]]
+                                           (join-matches row matches)))]
                         (-> st
-                            (deleted (mapcat :deletes pairs))
-                            (inserted (mapcat :inserts pairs)))))}
+                            (deleted deletes)
+                            (inserted inserts))))}
      :delete {left (fn [st rows inserted inserted1 deleted deleted1]
                      (let [idx (st right)
-                           pairs (for [row rows
-                                       :let [path (right-path-fn row)
-                                             matches (seek-n idx path)]]
-                                   (if (seq matches)
-                                     {:insert row
-                                      :deletes (mapv #(join-row row %) matches)}
-                                     {:deletes [row]}))]
-                       (-> st
-                           (deleted (mapcat :deletes pairs))
-                           (inserted (keep :insert pairs)))))
+                           matches (for [row rows
+                                         :let [path (right-path-fn row)
+                                               matches (seek-n idx path)]]
+                                     (join-matches row matches))]
+                       (deleted st matches)))
               right (fn [st rows inserted inserted1 deleted deleted1]
                       (let [idx (st left)
-                            pairs (for [row rows
-                                        :let [path (left-path-fn row)
-                                              matches (seek-n idx path)]]
-                                    ;; todo deal with resultant merged map being same as original map
-                                    {:inserted matches
-                                     :deletes (mapv #(join-row % row) matches)})]
+                            right-idx (st right)
+                            nrows (group-by left-path-fn rows)
+                            lrows (for [row rows
+                                        :let [path (left-path-fn row)]
+                                        match (seek-n idx path)]
+                                    match)
+                            deletes (set (for [row lrows
+                                               :let [path (right-path-fn row)
+                                                     matches (seek-n right-idx path)]]
+                                           (join-matches row (set/union (set (nrows path)) (set matches)))))
+                            inserts (set (for [row lrows
+                                               :let [path (right-path-fn row)
+                                                     matches (seek-n right-idx path)]]
+                                           (join-matches row (set matches))))]
                         (-> st
-                            (deleted (mapcat :deletes pairs))
-                            (inserted (mapcat :inserts pairs)))))}}))
+                            (deleted deletes)
+                            (inserted inserts))))}}))
+
+(defmethod graph-node :left-join
+  [left [_ right clause]]
+  (let [join-as-coll (conj left [:join-as-coll right clause ::left-join])
+        join-row merge]
+    {:deps [join-as-coll]
+     :insert {join-as-coll (fn [st rows inserted inserted1 deleted deleted1]
+                             (->> (for [row rows
+                                        :let [rrows (::left-join row)
+                                              row (dissoc row ::left-join)]
+                                        nrows (if (empty? rrows)
+                                                [row]
+                                                (map #(join-row row %) rrows))]
+                                    nrows)
+                                  (inserted st)))}
+     :delete {join-as-coll (fn [st rows inserted inserted1 deleted deleted1]
+                             (->> (for [row rows
+                                        :let [rrows (::left-join row)
+                                              row (dissoc row ::left-join)]
+                                        nrows (if (empty? rrows)
+                                                [row]
+                                                (map #(join-row row %) rrows))]
+                                    nrows)
+                                  (deleted st)))}}))
 
 ;; todo :agg custom indexes
 ;; sometimes it'll be more efficient to multi-index and join
@@ -990,10 +1042,23 @@
     {:combiner +
      :reducer #(transduce xf + %)}))
 
+(defn distinct-count [& exprs]
+  (let [f (apply juxt (map expr-row-fn exprs))
+        xf (comp (map f) (remove nil?))]
+    {:complete count
+     :combiner set/union
+     :reducer #(into #{} xf %)}))
+
+(defn set-concat [& exprs]
+  (let [f (apply juxt (map expr-row-fn exprs))
+        xf (comp (mapcat f) (remove nil?))]
+    {:combiner set/union
+     :reducer #(into #{} xf %)}))
+
 (defn- agg-form-fn [form]
   (let [[binding _sep expr] form
         ;;todo sep forms for nil behaviour
-        {:keys [combiner reducer]}
+        {:keys [combiner reducer complete]}
         (cond
           (map? expr) expr
 
@@ -1009,7 +1074,8 @@
 
           :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr})))]
     (assert (keyword? binding) "Only keyword bindings allowed for agg forms")
-    {:combiner
+    {:complete (if complete (fn [m] (update m binding complete)) identity)
+     :combiner
      (fn [m a b] (assoc m binding (combiner (binding a) (binding b))))
      :reducer
      (fn [m rows] (assoc m binding (reducer rows)))}))
@@ -1017,17 +1083,19 @@
 (defn- agg-fns [forms]
   (let [fs (mapv agg-form-fn forms)
         reducer-fns (mapv :reducer fs)
-        combiner-fns (mapv :combiner fs)]
-    {:reducer (fn [rows] (reduce (fn [m reducer-fn] (reducer-fn m rows)) {} reducer-fns))
+        combiner-fns (mapv :combiner fs)
+        complete-fns (mapv :complete fs)]
+    {:complete (fn [m] (reduce (fn [m f] (f m)) m complete-fns))
+     :reducer (fn [rows] (reduce (fn [m reducer-fn] (reducer-fn m rows)) {} reducer-fns))
      :combiner (fn [a b] (reduce (fn [m combiner-fn] (combiner-fn m a b)) {} combiner-fns))}))
 
 (defmethod graph-node :agg
   [left [_ cols & aggs]]
   (let [cols (vec (set cols))
         key-fn #(select-keys % cols)
-        {:keys [reducer combiner]} (agg-fns aggs)
+        {:keys [reducer combiner complete]} (agg-fns aggs)
         merge-fn merge
-        empty-idx (agg-index key-fn reducer combiner merge-fn 32)
+        empty-idx (agg-index key-fn reducer combiner complete merge-fn 32)
         idx-key [::agg-index left cols aggs]]
     {:deps [left]
      :empty-index empty-set-index

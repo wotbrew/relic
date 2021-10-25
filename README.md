@@ -2,7 +2,13 @@
 
 `STATUS: EXPERIMENTAL`
 
-A Clojure(Script) library for doing information programming using 'codd style' relational algebra with materialized views for fun.
+A Clojure(Script) library for doing information programming using 'codd style' relational algebra.
+
+- SQL-style relational programming
+- declarative 
+- data dsl
+- materialized views
+- decent performance
 
 ## Why 
 
@@ -79,7 +85,7 @@ e.g `[= :age 42]` the first value needs to be a function, rows will be tested us
 
 Extension adds new values to rows, an extension looks like this: 
 
-`[:foo :<- [str :a :b]]`
+`[:foo [str :a :b]]`
 
 In this case it says provide the column `:foo` by concating `:a` and `:b` with `str`. 
 
@@ -108,7 +114,7 @@ SQL-style left join.
 ### `[:agg [& ?keys] & aggregations]`
 
 The aggregation / grouping operator.  Groups rows under the keys and performs aggregation on them to
-construct new values. e.g `[:agg [:a] [:summed-b :<- [r/sum :b]]]` WIP.
+construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
   
 ### `[:expand & ?expansion]`
   
@@ -130,7 +136,7 @@ construct new values. e.g `[:agg [:a] [:summed-b :<- [r/sum :b]]]` WIP.
 
 ## TODO 
 
-- Tests please
+- Tests
 - Docs  
 - Constraints
 - Update / Upsert
@@ -138,6 +144,7 @@ construct new values. e.g `[:agg [:a] [:summed-b :<- [r/sum :b]]]` WIP.
 - Improve perf
 - Better docs 
 - Tooling, spec
+- Uhhhh... Bigger datasets than memory
 
 ## Related work
 

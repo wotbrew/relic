@@ -59,6 +59,7 @@ of the passed relvars as you `transact` against the database __incrementally__.
 ## Relational operators
 
 ### `[:state ?name]` 
+
 The base state relvar, at the moment just a name e.g [:state :Customer]
 
 ### `[:from ?relvar]`
@@ -80,7 +81,7 @@ In this case it says provide the column `:foo` by concating `:a` and `:b` with `
 
 You can do more with extend but thats all I'm willing to document right now :)
 
-###`[:project & keys]`
+### `[:project & keys]`
 
 Like `select-keys` or `set/project` the resulting relation will contain only the projected keys.
   

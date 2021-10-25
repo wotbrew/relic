@@ -37,11 +37,11 @@ db
 Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database.
 
 ```clojure 
-(r/relation db [[:state :Customer] [:where [= :id 42]]]) 
+(r/query db [[:state :Customer] [:where [= :id 42]]]) 
 ;; => 
 #{{:id 42, :name "bob"}}
 
-(r/relation db [[:state :Customer] [:where [= :name "alice"]]])
+(r/query db [[:state :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```

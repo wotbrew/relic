@@ -139,8 +139,8 @@ construct new values. e.g `[:agg [:a] [:summed-b :<- [r/sum :b]]]` WIP.
 
 - [core.logic](https://github.com/clojure/core.logic) 
 - [datascript](https://github.com/tonsky/datascript)
-- [clara rules](https://github.com/cerner/clara-rules)
-- [o-doyle rules](https://github.com/oakes/odoyle-rules)
+- [clara-rules](https://github.com/cerner/clara-rules)
+- [odoyle-rules](https://github.com/oakes/odoyle-rules)
 
 ## License
 

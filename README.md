@@ -54,7 +54,7 @@ Ok ok, not very cool. _What if I told you_ that you can materialize any relvar s
 it will be maintained for you as you modify the database. In other words `relic` has materialized views.
 
 ```clojure 
-(r/materialize st [[:state :Customer] [:where [= :id 42]]])
+(r/materialize db [[:state :Customer] [:where [= :id 42]]])
 ```
 
 `materialize` will return a new _database_ that looks and smells the same, but will maintain the results

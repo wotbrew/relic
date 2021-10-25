@@ -30,7 +30,7 @@ State is stored in a plain old clojure map which we'll call the `db` in this exa
 
 db 
 ;; =>
-{[[:state :Customer]] #{{:id 42, :name "bob}, {:id 43, :name "alice"}}}
+{[[:state :Customer]] #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 
 ```
 
@@ -39,7 +39,7 @@ Now we have our state, we can ask questions of relic to find _relations_, as you
 ```clojure 
 (r/relation db [[:state :Customer] [:where [= :id 42]]]) 
 ;; => 
-#{{:id 42, :name "bob}}
+#{{:id 42, :name "bob"}}
 
 (r/relation db [[:state :Customer] [:where [= :name "alice"]]])
 ;; => 

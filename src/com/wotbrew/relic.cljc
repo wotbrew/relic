@@ -1,8 +1,6 @@
 (ns com.wotbrew.relic
   (:require [clojure.set :as set]))
 
-(defn juxt2 [& args] (if (empty? args) (constantly []) (apply juxt args)))
-
 ;; protocols
 
 (defprotocol Index
@@ -21,6 +19,9 @@
   (seek-n [_ _] nil))
 
 ;; utilities
+
+(defn juxt2 [& args]
+  (if (empty? args) (constantly []) (apply juxt args)))
 
 (defn- dissoc-in [m ks]
   (if-let [[k & ks] (seq ks)]
@@ -99,6 +100,8 @@
                 remaining-depth)
                (throw (ex-info "Invalid remaining depth" {}))))))})))
 
+(defrecord AggIndexNode [size rm cache a b reduced combined results])
+
 (defn- agg-index [key-fn reduce-fn combine-fn complete-fn merge-fn cache-size]
   (letfn [(combine-results [tree1 tree2]
             (combine-reduced (:results tree1) (:results tree2)))
@@ -106,7 +109,7 @@
             (cond
               (nil? combined) reduced
               (nil? reduced) combined
-              :else (combine-fn combined reduced)))
+              :else (delay (combine-fn @combined @reduced))))
 
           (push-cache [tree new-cache reduced]
             (let [{:keys [rm, size, a, b, cache] :or {size 0}} tree]
@@ -115,42 +118,45 @@
                       branch-id (if grow-a :a :b)
                       a (if grow-a (push-cache a cache reduced) a)
                       b (if grow-a b (push-cache b cache reduced))
-                      rm (reduce #(assoc %1 %2 branch-id) rm cache)
+                      rm (persistent! (reduce-kv (fn [m k v] (assoc! m k branch-id)) (transient (or rm {})) cache))
                       combined (combine-results a b)]
-                  {:size (+ size cache-size)
-                   :rm rm
-                   :cache new-cache
-                   :a a
-                   :b b
-                   :reduced reduced
-                   :combined combined
-                   :results (combine-reduced reduced combined)})
+                  (->AggIndexNode
+                    (+ size cache-size)
+                    rm
+                    new-cache
+                    a
+                    b
+                    reduced
+                    combined
+                    (combine-reduced reduced combined)))
                 (let [combined (combine-results a b)]
-                  {:size (+ size cache-size)
-                   :rm rm
-                   :cache new-cache
-                   :a a
-                   :b b
-                   :reduced reduced
-                   :combined combined
-                   :results (combine-reduced reduced combined)}))))
+                  (->AggIndexNode
+                    (+ size cache-size)
+                    rm
+                    new-cache
+                    a
+                    b
+                    reduced
+                    combined
+                    (combine-reduced reduced combined))))))
 
           (add [tree row]
-            (let [{:keys [size, rm, cache, a, b, reduced, combined] :or {size 0, cache #{}}} tree]
+            (let [{:keys [size, rm, cache, a, b, reduced, combined] :or {size 0, cache {}}} tree]
               (cond
                 (contains? rm row) tree
                 (contains? cache row) tree
                 (< (count cache) cache-size)
-                (let [new-cache (conj cache row)
-                      reduced (reduce-fn new-cache)]
-                  {:size (inc size)
-                   :rm rm
-                   :cache new-cache
-                   :a a
-                   :b b
-                   :reduced reduced
-                   :combined combined
-                   :results (combine-reduced combined reduced)})
+                (let [new-cache (assoc cache row row)
+                      reduced (delay (reduce-fn new-cache))]
+                  (->AggIndexNode
+                    (inc size)
+                    rm
+                    new-cache
+                    a
+                    b
+                    reduced
+                    combined
+                    (combine-reduced combined reduced)))
 
                 :else
                 (let [grow-a (< (:size a 0) (:size b 0))
@@ -159,33 +165,36 @@
                       fit-cache (= 0 (mod (:size branch 0) cache-size))]
                   (if fit-cache
                     (let [branch (push-cache branch cache reduced)
-                          rm (reduce #(assoc %1 %2 branch-id) rm cache)
-                          new-cache #{row}
-                          reduced (reduce-fn new-cache)
+                          rm (persistent! (reduce-kv (fn [m k v] (assoc! m k branch-id)) (transient (or rm {})) cache))
+
+                          new-cache (array-map row row)
+                          reduced (delay (reduce-fn new-cache))
                           a (if grow-a branch a)
                           b (if grow-a b branch)
                           combined (combine-results a b)]
-                      {:size (inc size)
-                       :rm rm
-                       :cache new-cache
-                       :a a
-                       :b b
-                       :reduced reduced
-                       :combined combined
-                       :results (combine-reduced combined reduced)})
+                      (->AggIndexNode
+                        (inc size)
+                        rm
+                        new-cache
+                        a
+                        b
+                        reduced
+                        combined
+                        (combine-reduced combined reduced)))
                     (let [branch (add tree row)
                           rm (assoc rm row branch-id)
                           a (if grow-a branch a)
                           b (if grow-a b branch)
                           combined (combine-results a b)]
-                      {:size (inc size)
-                       :rm rm
-                       :cache cache
-                       :a a
-                       :b b
-                       :reduced reduced
-                       :combined combined
-                       :results (combine-reduced combined reduced)}))))))
+                      (->AggIndexNode
+                        (inc size)
+                        rm
+                        cache
+                        a
+                        b
+                        reduced
+                        combined
+                        (combine-reduced combined reduced))))))))
 
           (shrink [tree]
             (if (= 0 (:size tree 0))
@@ -202,17 +211,18 @@
                           reduced]} tree]
               (cond
                 (contains? cache row)
-                (let [new-cache (disj cache row)
-                      reduced (reduce-fn new-cache)]
+                (let [new-cache (dissoc cache row)
+                      reduced (delay (reduce-fn new-cache))]
                   (shrink
-                    {:size (dec size)
-                     :rm rm
-                     :cache new-cache
-                     :a a
-                     :b b
-                     :combined combined
-                     :reduced reduced
-                     :results (combine-reduced combined reduced)}))
+                    (->AggIndexNode
+                      (dec size)
+                      rm
+                      new-cache
+                      a
+                      b
+                      combined
+                      reduced
+                      (combine-reduced combined reduced))))
 
                 (contains? rm row)
                 (let [branch-id (rm row)
@@ -222,13 +232,15 @@
                       b (if shrink-a b (del b row))
                       combined (combine-results a b)]
                   (shrink
-                    {:size (dec size)
-                     :rm new-rm
-                     :cache cache
-                     :a a
-                     :b b
-                     :combined combined
-                     :results (combine-reduced combined reduced)}))
+                    (->AggIndexNode
+                      (dec size)
+                      new-rm
+                      cache
+                      a
+                      b
+                      combined
+                      reduced
+                      (combine-reduced combined reduced))))
 
                 :else tree)))]
     (with-meta
@@ -237,7 +249,7 @@
                     (let [k (key-fn row)
                           tree (index k)
                           tree (add tree row)
-                          tree (assoc tree :indexed-row (complete-fn (merge-fn k (:results tree))))]
+                          tree (assoc tree :indexed-row (delay (complete-fn (merge-fn k @(:results tree)))))]
                       (assoc index k tree)))
        `unindex-row (fn [index row]
                       (let [k (key-fn row)
@@ -245,7 +257,7 @@
                             tree (del tree row)]
                         (if (nil? tree)
                           (dissoc index k)
-                          (assoc index k (assoc tree :indexed-row (complete-fn (merge-fn k (:results tree))))))))
+                          (assoc index k (assoc tree :indexed-row (delay (complete-fn (merge-fn k @(:results tree)))))))))
        `contains-row? (fn [index row]
                         (let [k (key-fn row)
                               {:keys [rowmap]} (index k)]
@@ -606,8 +618,13 @@
           rows (delay (row-seqable (m relvar empty-set-index)))]
       (reduce (fn [m dependent]
                 (let [{:keys [mat-fns]} (g dependent)
-                      {:keys [insert]} (mat-fns relvar)]
-                  (insert m @rows))) m dependents))))
+                      {:keys [insert]} (mat-fns relvar)
+                      init-key [::init dependent relvar]]
+                  (if (contains? m init-key)
+                    m
+                    (-> m
+                        (assoc init-key true)
+                        (insert @rows))))) m dependents))))
 
 (defn materialize [st & relvars]
   (let [m (meta st)
@@ -621,12 +638,14 @@
 (defn transact [st & tx]
   (reduce (or (::transactor (meta st)) (dataflow-transactor {})) st tx))
 
+(defn index [st relvar]
+  (or (get st relvar)
+      (get (meta st) relvar)
+      (let [st (materialize st relvar)]
+        (get (meta st) relvar))))
+
 (defn query [st relvar]
-  (some-> (or (get st relvar)
-              (get (meta st) relvar)
-              (let [st (materialize st relvar)]
-                (get (meta st) relvar)))
-          row-seqable))
+  (some-> (index st relvar) row-seqable))
 
 (defrecord Escape [x])
 
@@ -683,17 +702,15 @@
   (reduce #(assoc-if-not-nil %1 %2 (%2 m)) {} keyseq))
 
 (defn- extend-form-fn [form]
-  ;;todo sep forms for nil behaviour
   (cond
     (vector? form)
-    (let [[binding ?sep expr] form
-          expr (if ?sep expr ?sep)
+    (let [[binding expr] form
           expr-fn (expr-row-fn expr)]
       (if (keyword? binding)
         #(assoc % binding (expr-fn %))
         #(merge % (select-keys (expr-fn %) binding))))
 
-    :else (throw (ex-info "Not a valid binding form, expected a vector [binding :<- expr]" {}))))
+    :else (throw (ex-info "Not a valid binding form, expected a vector [binding expr]" {}))))
 
 (defn- extend-form-cols [form]
   (let [[binding] form]
@@ -702,8 +719,7 @@
       (set binding))))
 
 (defn expand-form-xf [form]
-  ;; todo sep forms for filter/nil behaviour
-  (let [[binding _sep expr] form
+  (let [[binding expr] form
         expr-fn (expr-row-fn expr)]
     (if (keyword? binding)
       (mapcat
@@ -842,7 +858,7 @@
            (for [[binding _ {:keys [relvar clause]}] extensions
                  :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]
                  stmt [[:join-as-coll relvar clause binding]
-                       (into [::extend*] (for [[binding] extensions] [binding :<- [first binding]]))]]
+                       (into [::extend*] (for [[binding] extensions] [binding [first binding]]))]]
              stmt)
 
            :else [(into [::extend*] extensions)]))
@@ -860,7 +876,7 @@
 
 (defmethod graph-node :rename
   [left [_ renames]]
-  (let [extensions (for [[from to] renames] [to :<- from])
+  (let [extensions (for [[from to] renames] [to from])
         away (keys renames)
         dep (conj left (into [:extend] extensions) (into [:project-away] away))]
     {:deps [dep]
@@ -1036,28 +1052,71 @@
   {:combiner +
    :reducer count})
 
-(defn sum [& exprs]
-  (let [nums (apply juxt (map expr-row-fn exprs))
-        xf (comp (mapcat nums) (remove nil?))]
-    {:combiner +
-     :reducer #(transduce xf + %)}))
+(defn greatest-by [expr]
+  (let [f (expr-row-fn expr)
+        rf (fn
+            ([] nil)
+            ([a] a)
+            ([a b]
+             (let [n (compare (f a) (f b))]
+               (if (< n 0)
+                 b
+                 a))))]
+    {:combiner rf
+     :reducer (fn [rows] (reduce rf rows))}))
 
-(defn distinct-count [& exprs]
-  (let [f (apply juxt (map expr-row-fn exprs))
-        xf (comp (map f) (remove nil?))]
-    {:complete count
-     :combiner set/union
-     :reducer #(into #{} xf %)}))
+(defn least-by [expr]
+  (let [f (expr-row-fn expr)
+        rf (fn
+             ([] nil)
+             ([a] a)
+             ([a b]
+              (let [n (compare (f a) (f b))]
+                (if (< n 0)
+                  a
+                  b))))]
+    {:combiner rf
+     :reducer (fn [rows] (reduce rf rows))}))
+
+(defn- comp-complete [agg f]
+  (let [{:keys [complete]} agg]
+    (if complete
+      (assoc agg :complete (comp f complete))
+      (assoc agg :complete f))))
+
+(defn greatest [expr]
+  (comp-complete (greatest-by expr) (expr-row-fn expr)))
+
+(defn least [expr]
+  (comp-complete (least-by expr) (expr-row-fn expr)))
+
+(defn sum [& exprs]
+  (case (count exprs)
+    0 {:combiner (constantly 0) :reducer (constantly 0)}
+    1
+    (let [expr (first exprs)
+          f (expr-row-fn expr)
+          xf (keep f)]
+      {:combiner +'
+       :reducer #(transduce xf +' %)})
+    (let [fns (map expr-row-fn exprs)
+          nums (apply juxt fns)
+          xf (comp (mapcat nums) (remove nil?))]
+      {:combiner +'
+       :reducer #(transduce xf +' %)})))
 
 (defn set-concat [& exprs]
   (let [f (apply juxt (map expr-row-fn exprs))
         xf (comp (mapcat f) (remove nil?))]
     {:combiner set/union
-     :reducer #(into #{} xf %)}))
+     :reducer (fn [rows] (into #{} xf rows))}))
+
+(defn distinct-count [& exprs]
+  (let [agg (apply set-concat exprs)]
+    (comp-complete agg count)))
 
 (defn- agg-form-fn [form]
-  (let [[binding _sep expr] form
-        ;;todo sep forms for nil behaviour
+  (let [[binding expr] form
         {:keys [combiner reducer complete]}
         (cond
           (map? expr) expr
@@ -1118,8 +1177,8 @@
                              [idx {} {}] rows)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (vals deleted))
-                           (insert (vals added)))))}
+                           (delete (mapv deref (vals deleted)))
+                           (insert (mapv deref (vals added))))))}
      :delete {left (fn [st rows insert insert1 delete delete1]
                      (let [idx (st idx-key empty-idx)
                            [nidx added deleted]
@@ -1139,5 +1198,5 @@
                              [idx {} {}] rows)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (vals deleted))
-                           (insert (vals added)))))}}))
+                           (delete (mapv deref (vals deleted)))
+                           (insert (mapv deref (vals added))))))}}))

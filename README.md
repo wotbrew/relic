@@ -102,7 +102,7 @@ e.g
 
 ```clojure
 (def FooSum [[:from Foo] [:agg [:foo] [:n-sum [r/sum :n]]]])
-[:extend [[:n-sum] [r/join-first FooSum {:foo :foo}]]]
+[:extend [[:n-sum] (r/join-first FooSum {:foo :foo})]]
 ```
 
 

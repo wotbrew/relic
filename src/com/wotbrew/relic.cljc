@@ -147,7 +147,7 @@
                 (contains? cache row) tree
                 (< (count cache) cache-size)
                 (let [new-cache (assoc cache row row)
-                      reduced (delay (reduce-fn new-cache))]
+                      reduced (delay (reduce-fn (vals new-cache)))]
                   (->AggIndexNode
                     (inc size)
                     rm
@@ -168,7 +168,7 @@
                           rm (persistent! (reduce-kv (fn [m k v] (assoc! m k branch-id)) (transient (or rm {})) cache))
 
                           new-cache (array-map row row)
-                          reduced (delay (reduce-fn new-cache))
+                          reduced (delay (reduce-fn (vals new-cache)))
                           a (if grow-a branch a)
                           b (if grow-a b branch)
                           combined (combine-results a b)]
@@ -212,7 +212,7 @@
               (cond
                 (contains? cache row)
                 (let [new-cache (dissoc cache row)
-                      reduced (delay (reduce-fn new-cache))]
+                      reduced (delay (reduce-fn (vals new-cache)))]
                   (shrink
                     (->AggIndexNode
                       (dec size)
@@ -786,34 +786,38 @@
 
 (defmethod graph-node :intersection
   [left [_ right]]
-  {:deps [(mat-head left) (mat-head right)]
-   :insert {left (fn [st rows inserted inserted1 deleted deleted1]
-                   (let [idx2 (st right empty-set-index)
-                         add-rows (filter #(contains-row? idx2 %) rows)]
-                     (inserted st add-rows)))
-            right (fn [st rows inserted inserted1 deleted deleted1]
-                    (let [idx2 (st left empty-set-index)
-                          add-rows (filter #(contains-row? idx2 %) rows)]
-                      (inserted st add-rows)))}
-   :delete {left pass-through-delete
-            right pass-through-delete}})
+  (let [left (mat-head left)
+        right (mat-head right)]
+    {:deps [left right]
+     :insert {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (let [idx2 (st right empty-set-index)
+                           add-rows (filter #(contains-row? idx2 %) rows)]
+                       (inserted st add-rows)))
+              right (fn [st rows inserted inserted1 deleted deleted1]
+                      (let [idx2 (st left empty-set-index)
+                            add-rows (filter #(contains-row? idx2 %) rows)]
+                        (inserted st add-rows)))}
+     :delete {left pass-through-delete
+              right pass-through-delete}}))
 
 (defmethod graph-node :difference
   [left [_ right]]
-  {:deps [left right]
-   :insert {left (fn [st rows inserted inserted1 deleted deleted1]
-                   (let [idx2 (st right empty-set-index)
-                         add-rows (remove #(contains-row? idx2 %) rows)]
-                     (inserted st add-rows)))
-            right (fn [st rows inserted inserted1 deleted deleted1]
-                    (let [idx2 (st left empty-set-index)
-                          del-rows (filter #(contains-row? idx2 %) rows)]
-                      (deleted st del-rows)))}
-   :delete {left (fn [st rows inserted inserted1 deleted deleted1]
-                   (let [idx2 (st right empty-set-index)
-                         del-rows (remove #(contains-row? idx2 %) rows)]
-                     (deleted st del-rows)))
-            right mat-noop}})
+  (let [left (mat-head left)
+        right (mat-head right)]
+    {:deps [left right]
+     :insert {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (let [idx2 (st right empty-set-index)
+                           add-rows (remove #(contains-row? idx2 %) rows)]
+                       (inserted st add-rows)))
+              right (fn [st rows inserted inserted1 deleted deleted1]
+                      (let [idx2 (st left empty-set-index)
+                            del-rows (filter #(contains-row? idx2 %) rows)]
+                        (deleted st del-rows)))}
+     :delete {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (let [idx2 (st right empty-set-index)
+                           del-rows (remove #(contains-row? idx2 %) rows)]
+                       (deleted st del-rows)))
+              right mat-noop}}))
 
 (defmethod graph-node :where
   [left [_ & exprs]]
@@ -850,12 +854,12 @@
                                                   :else :std)) extensions)]
          (cond
            (join-ext? (first extensions))
-           (for [[binding _ {:keys [relvar clause]}] extensions
+           (for [[binding {:keys [relvar clause]}] extensions
                  :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]]
              [:join-as-coll relvar clause binding])
 
            (join-first-ext? (first extensions))
-           (for [[binding _ {:keys [relvar clause]}] extensions
+           (for [[binding {:keys [relvar clause]}] extensions
                  :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]
                  stmt [[:join-as-coll relvar clause binding]
                        (into [::extend*] (for [[binding] extensions] [binding [first binding]]))]]
@@ -1058,10 +1062,14 @@
             ([] nil)
             ([a] a)
             ([a b]
-             (let [n (compare (f a) (f b))]
-               (if (< n 0)
-                 b
-                 a))))]
+             (cond
+               (nil? a) b
+               (nil? b) a
+               :else
+               (let [n (compare (f a) (f b))]
+                 (if (< n 0)
+                   b
+                   a)))))]
     {:combiner rf
      :reducer (fn [rows] (reduce rf rows))}))
 
@@ -1071,10 +1079,14 @@
              ([] nil)
              ([a] a)
              ([a b]
-              (let [n (compare (f a) (f b))]
-                (if (< n 0)
-                  a
-                  b))))]
+              (cond
+                (nil? a) b
+                (nil? b) a
+                :else
+                (let [n (compare (f a) (f b))]
+                  (if (< n 0)
+                    a
+                    b)))))]
     {:combiner rf
      :reducer (fn [rows] (reduce rf rows))}))
 

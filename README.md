@@ -66,6 +66,8 @@ it will be maintained for you as you modify the database. In other words `relic`
 `materialize` will return a new _database_ that looks and smells the same, but will maintain the results
 of the passed relvars as you `transact` against the database __incrementally__.
 
+If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
+
 ## Relational operators
 
 ### `[:state ?name]` 
@@ -89,7 +91,20 @@ Extension adds new values to rows, an extension looks like this:
 
 In this case it says provide the column `:foo` by concating `:a` and `:b` with `str`. 
 
-You can do more with extend but thats all I'm willing to document right now :)
+#### Extension forms:
+
+- `[k expr]` bind result of expr to k
+- `[[& k] expr]` merge keys from the result of expr
+
+You can use the functions r/join-first and r/join-coll in expression position for sub-selects.
+
+e.g 
+
+```clojure
+(def FooSum [[:from Foo] [:agg [:foo] [:n-sum [r/sum :n]]]])
+[:extend [[:n-sum] [r/join-first FooSum {:foo :foo}]]]
+```
+
 
 ### `[:project & keys]`
 

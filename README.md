@@ -153,6 +153,7 @@ construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
 - [datascript](https://github.com/tonsky/datascript)
 - [clara-rules](https://github.com/cerner/clara-rules)
 - [odoyle-rules](https://github.com/oakes/odoyle-rules)
+- [fyra](https://github.com/yanatan16/fyra)
 
 ## License
 

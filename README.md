@@ -131,8 +131,10 @@ construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
 ## Transact forms 
 
 ### `[:insert ?relvar & ?row]`
-### `[:delete ?relvar & ?row`
+### `[:delete ?relvar & ?row]`
 ### `{?relvar ?rows}`
+### `TODO update`
+### `TODO upsert`
 
 ## TODO 
 
@@ -140,8 +142,7 @@ construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
 - Docs  
 - Constraints
 - Update / Upsert
-- Compile time relvars  
-- Improve perf
+- Compile time relvars, the great unboxing, custom record types
 - Better docs 
 - Tooling, spec
 - Uhhhh... Bigger datasets than memory

@@ -690,10 +690,11 @@
           added (for [[relvar added] *added*
                       :let [idx (index st relvar)]]
                   [relvar {:added (filterv #(contains-row? idx %) added)}])
-          deleted (for [[relvar deleted] *added*
+          deleted (for [[relvar deleted] *deleted*
                         :let [oidx (index ost relvar)
                               idx (index st relvar)]]
-                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %)) #(contains-row? oidx %)) deleted)}])]
+                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %))
+                                                           #(contains-row? oidx %)) deleted)}])]
       {:result st
        :changes (merge-with merge (into {} added) (into {} deleted))})))
 
@@ -1387,11 +1388,11 @@
                                      new-agg (:indexed-row (get nidx k))]
                                  (if (deleted k)
                                    [nidx
-                                    (assoc added k new-agg)
+                                    (if new-agg (assoc added k new-agg) added)
                                     deleted]
                                    (if old-agg
-                                     [nidx (assoc added k new-agg) (assoc deleted k old-agg)]
-                                     [nidx (assoc added k new-agg) deleted]))))
+                                     [nidx (if new-agg (assoc added k new-agg) added) (assoc deleted k old-agg)]
+                                     [nidx (if new-agg (assoc added k new-agg) added) deleted]))))
                              [idx {} {}] rows)
                            st (assoc st idx-key nidx)]
                        (-> st
@@ -1406,3 +1407,15 @@
       (remove agg-keys left-cols)
       (for [agg agg-keys]
         {:k agg}))))
+
+(defn ed [relvar]
+  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+
+(defn ed-state [st]
+  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/set-state) st)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+
+(defn ed-transact [& tx]
+  #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/transact) tx)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))

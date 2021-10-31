@@ -20,7 +20,10 @@
 
 ;; utilities
 
-(defn juxt2 [& args]
+(defn- index-by [k coll]
+  (reduce #(assoc % (k %2) %2) {} coll))
+
+(defn- juxt2 [& args]
   (if (empty? args) (constantly []) (apply juxt args)))
 
 (defn- dissoc-in [m ks]
@@ -511,6 +514,12 @@
 (defn- record-deleted [relvar rows]
   (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar into rows))))
 
+(defn- record-added1 [relvar row]
+  (when (and *added* (*added* relvar)) (set! *added* (update *added* relvar conj row))))
+
+(defn- record-deleted1 [relvar row]
+  (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar conj row))))
+
 (defn- with-added-hook [relvar f]
   (fn [st rows] (record-added relvar rows) (f st rows)))
 
@@ -518,10 +527,10 @@
   (fn [st rows] (record-deleted relvar rows) (f st rows)))
 
 (defn- with-added-hook1 [relvar f]
-  (fn [st row] (record-added relvar row) (f st row)))
+  (fn [st row] (record-added1 relvar row) (f st row)))
 
 (defn- with-deleted-hook1 [relvar f]
-  (fn [st row] (record-deleted relvar row) (f st row)))
+  (fn [st row] (record-deleted1 relvar row) (f st row)))
 
 (defn add-mat-fns [g relvars]
   (let [og g
@@ -723,6 +732,15 @@
             (= f :and) [(apply every-pred (map expr-row-fn args))]
             (= f :or) [(apply some-fn (map expr-row-fn args))]
             (= f :not) [not args]
+            (= f :if) (let [[c t e] (map expr-row-fn args)]
+                        [(if e
+                           (fn [row]
+                             (if (c row)
+                               (t row)
+                               (e row)))
+                           (fn [row]
+                             (if (c row)
+                               (t row))))])
             :else [f args])
           args (map expr-row-fn args)]
       (case (count args)
@@ -732,7 +750,8 @@
         3 (let [[a b c] args] #(f (a %) (b %) (c %)))
         4 (let [[a b c d] args] #(f (a %) (b %) (c %) (d %)))
         5 (let [[a b c d e] args] #(f (a %) (b %) (c %) (d %) (e %)))
-        (let [get-args (apply juxt args)] #(apply f (get-args %)))))
+        (let [get-args (apply juxt args)]
+          #(apply f (get-args %)))))
 
     (keyword? expr) expr
 
@@ -800,29 +819,31 @@
     []
     (let [stmt (peek relvar)
           left (pop relvar)]
-      (for [col (col-data* left stmt)]
-        (assoc col :origin (:origin col relvar)
-                   :origin-key (:origin-key col (:k col)))))))
+      (col-data* left stmt))))
 
-(defn col-keys [relvar]
+(defn state-deps [relvar]
+  (if-some [state (unwrap-base relvar)]
+    #{state}
+    (let [left (pop relvar)
+          stmt (peek relvar)
+          {:keys [deps]} (graph-node left stmt)]
+      (set (mapcat state-deps deps)))))
+
+(defn known-keys [relvar]
   (map :k (col-data relvar)))
 
 (defmethod col-data* :default [_ _]
   {})
-
-(defmethod col-data* :state
-  [_ [_ _ {:keys [req]} :as stmt]]
-  (for [k req]
-    {:k k
-     :req true
-     :state [stmt]
-     :state-key k}))
 
 (defmethod graph-node :state
   [left stmt]
   (if (seq left)
     (graph-node left [:from [stmt]])
     {:empty-index empty-set-index}))
+
+(defmethod col-data* :state
+  [_ [_ _ {:keys [req]} :as stmt]]
+  (for [k req] {:k k}))
 
 (defmethod graph-node :from
   [_ [_ relvar]]
@@ -875,9 +896,20 @@
                         (deleted st del-rows)))}}))
 
 (defmethod col-data* :union
-  [_ [_ right]]
-  ;; todo
-  )
+  [left [_ right]]
+  (let [left-idx (index-by :k (col-data left))
+        right-idx (index-by :k (col-data right))]
+    (concat
+      (for [[k col] left-idx]
+        (if (right-idx k)
+          (if (= col (right-idx k))
+            ;; todo better = check
+            col
+            {:k k})
+          col))
+      (for [[k col] right-idx
+            :when (not (left-idx k))]
+        col))))
 
 (defmethod graph-node :intersection
   [left [_ right]]
@@ -896,9 +928,8 @@
               right pass-through-delete}}))
 
 (defmethod col-data* :intersection
-  [_ [_ right]]
-  ;; todo identical assert?
-  )
+  [left [_ _]]
+  (col-data left))
 
 (defmethod graph-node :difference
   [left [_ right]]
@@ -918,6 +949,10 @@
                            del-rows (remove #(contains-row? idx2 %) rows)]
                        (deleted st del-rows)))
               right mat-noop}}))
+
+(defmethod col-data* :difference
+  [left [_ _]]
+  (col-data left))
 
 (defmethod graph-node :where
   [left [_ & exprs]]
@@ -1358,46 +1393,24 @@
      :empty-index empty-set-index
      :insert {left (fn [st rows insert insert1 delete delete1]
                      (let [idx (st idx-key empty-idx)
-                           [nidx added deleted]
-                           (reduce
-                             (fn [[idx added deleted] row]
-                               (let [k (key-fn row)
-                                     old-agg (:indexed-row (get idx k))
-                                     nidx (index-row idx row)
-                                     new-agg (:indexed-row (get nidx k))]
-                                 (if (deleted k)
-                                   [nidx
-                                    (assoc added k new-agg)
-                                    deleted]
-                                   (if old-agg
-                                     [nidx (assoc added k new-agg) (assoc deleted k old-agg)]
-                                     [nidx (assoc added k new-agg) deleted]))))
-                             [idx {} {}] rows)
+                           ks (set (map key-fn rows))
+                           old-rows (keep (comp :indexed-row idx) ks)
+                           nidx (reduce index-row idx rows)
+                           new-rows (keep (comp :indexed-row nidx) ks)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (mapv deref (vals deleted)))
-                           (insert (mapv deref (vals added))))))}
+                           (delete (mapv deref old-rows))
+                           (insert (mapv deref new-rows)))))}
      :delete {left (fn [st rows insert insert1 delete delete1]
                      (let [idx (st idx-key empty-idx)
-                           [nidx added deleted]
-                           (reduce
-                             (fn [[idx added deleted] row]
-                               (let [k (key-fn row)
-                                     old-agg (:indexed-row (get idx k))
-                                     nidx (unindex-row idx row)
-                                     new-agg (:indexed-row (get nidx k))]
-                                 (if (deleted k)
-                                   [nidx
-                                    (if new-agg (assoc added k new-agg) added)
-                                    deleted]
-                                   (if old-agg
-                                     [nidx (if new-agg (assoc added k new-agg) added) (assoc deleted k old-agg)]
-                                     [nidx (if new-agg (assoc added k new-agg) added) deleted]))))
-                             [idx {} {}] rows)
+                           ks (set (map key-fn rows))
+                           old-rows (keep (comp :indexed-row idx) ks)
+                           nidx (reduce unindex-row idx rows)
+                           new-rows (keep (comp :indexed-row nidx) ks)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (mapv deref (vals deleted)))
-                           (insert (mapv deref (vals added))))))}}))
+                           (delete (mapv deref old-rows))
+                           (insert (mapv deref new-rows)))))}}))
 
 (defmethod col-data* :agg
   [left [_ cols & aggs]]
@@ -1410,7 +1423,7 @@
 
 (defn ed [relvar]
   #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library!")))
 
 (defn ed-state [st]
   #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/set-state) st)

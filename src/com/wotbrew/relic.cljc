@@ -542,9 +542,8 @@
           (fn [st rows]
             (case (count rows)
               0 st
-              1 (insert1 st (nth rows 0))
-              (insert st rows)))
-          insert)
+              1 (insert1 st (first rows))
+              (insert st rows))))
 
         wrap-deleten
         (fn wrap-deleten
@@ -552,9 +551,8 @@
           (fn [st rows]
             (case (count rows)
               0 st
-              1 (delete1 st (nth rows 0))
-              (delete st rows)))
-          delete)
+              1 (delete1 st (first rows))
+              (delete st rows))))
 
         visited (volatile! #{})
 
@@ -804,6 +802,9 @@
 (defn- pass-through-insert [st rows inserted inserted1 deleted deleted1] (inserted st rows))
 (defn- pass-through-delete [st rows inserted inserted1 deleted deleted1] (deleted st rows))
 
+(defn- pass-through-insert1 [st row inserted inserted1 deleted deleted1] (inserted1 st row))
+(defn- pass-through-delete1 [st row inserted inserted1 deleted deleted1] (deleted1 st row))
+
 (defn- transform-insert [f]
   (fn [st rows inserted inserted1 deleted deleted1]
     (inserted st (mapv f rows))))
@@ -811,6 +812,14 @@
 (defn- transform-delete [f]
   (fn [st rows inserted inserted1 deleted deleted1]
     (deleted st (mapv f rows))))
+
+(defn- transform-insert1 [f]
+  (fn [st row inserted inserted1 deleted deleted1]
+    (inserted1 st (f row))))
+
+(defn- transform-delete1 [f]
+  (fn [st row inserted inserted1 deleted deleted1]
+    (deleted1 st (f row))))
 
 (defmulti col-data* (fn [_ stmt] (operator stmt)))
 
@@ -849,7 +858,9 @@
   [_ [_ relvar]]
   {:deps [relvar]
    :insert {relvar pass-through-insert}
-   :delete {relvar pass-through-delete}})
+   :insert1 {relvar pass-through-insert1}
+   :delete {relvar pass-through-delete}
+   :delete1 {relvar pass-through-delete1}})
 
 (defmethod col-data* :from
   [_ [_ relvar]]
@@ -861,7 +872,9 @@
         f (fn [row] (select-keys row cols))]
     {:deps [left]
      :insert {left (transform-insert f)}
-     :delete {left (transform-delete f)}}))
+     :insert1 {left (transform-insert1 f)}
+     :delete {left (transform-delete f)}
+     :delete1 {left (transform-delete1 f)}}))
 
 (defmethod col-data* :project
   [left [_ & cols]]
@@ -873,7 +886,9 @@
         f (fn [row] (apply dissoc row cols))]
     {:deps [left]
      :insert {left (transform-insert f)}
-     :delete {left (transform-delete f)}}))
+     :insert1 {left (transform-insert1 f)}
+     :delete {left (transform-delete f)}
+     :delete1 {left (transform-delete1 f)}}))
 
 (defmethod col-data* :project-away
   [left [_ & cols]]
@@ -886,6 +901,8 @@
     {:deps [left right]
      :insert {left pass-through-insert
               right pass-through-insert}
+     :insert1 {left pass-through-insert1
+               right pass-through-insert1}
      :delete {left (fn [st rows inserted inserted1 deleted deleted1]
                      (let [idx2 (st right empty-set-index)
                            del-rows (remove #(contains-row? idx2 %) rows)]
@@ -893,7 +910,17 @@
               right (fn [st rows inserted inserted1 deleted deleted1]
                       (let [idx2 (st left empty-set-index)
                             del-rows (remove #(contains-row? idx2 %) rows)]
-                        (deleted st del-rows)))}}))
+                        (deleted st del-rows)))}
+     :delete1 {left (fn [st row inserted inserted1 deleted deleted1]
+                      (let [idx2 (st right empty-set-index)]
+                        (if (contains-row? idx2 row)
+                          st
+                          (deleted1 st row))))
+               right (fn [st row inserted inserted1 deleted deleted1]
+                       (let [idx2 (st left empty-set-index)]
+                         (if (contains-row? idx2 row)
+                           st
+                           (deleted1 st row))))}}))
 
 (defmethod col-data* :union
   [left [_ right]]
@@ -924,8 +951,20 @@
                       (let [idx2 (st left empty-set-index)
                             add-rows (filter #(contains-row? idx2 %) rows)]
                         (inserted st add-rows)))}
+     :insert1 {left (fn [st row inserted inserted1 deleted deleted1]
+                      (let [idx2 (st right empty-set-index)]
+                        (if (contains-row? idx2 row)
+                          (inserted1 st row)
+                          st)))
+               right (fn [st row inserted inserted1 deleted deleted1]
+                       (let [idx2 (st left empty-set-index)]
+                         (if (contains-row? idx2 row)
+                           (inserted1 st row)
+                           st)))}
      :delete {left pass-through-delete
-              right pass-through-delete}}))
+              right pass-through-delete}
+     :delete1 {left pass-through-delete1
+               right pass-through-delete1}}))
 
 (defmethod col-data* :intersection
   [left [_ _]]
@@ -944,11 +983,34 @@
                       (let [idx2 (st left empty-set-index)
                             del-rows (filter #(contains-row? idx2 %) rows)]
                         (deleted st del-rows)))}
+     :insert1 {left (fn [st row inserted inserted1 deleted deleted1]
+                      (let [idx2 (st right empty-set-index)]
+                        (if (contains-row? idx2 row)
+                          st
+                          (inserted1 st row))))
+               right (fn [st row inserted inserted1 deleted deleted1]
+                       (let [idx2 (st left empty-set-index)]
+                         (if (contains-row? idx2 row)
+                           (deleted1 st row)
+                           st)))}
      :delete {left (fn [st rows inserted inserted1 deleted deleted1]
                      (let [idx2 (st right empty-set-index)
                            del-rows (remove #(contains-row? idx2 %) rows)]
                        (deleted st del-rows)))
-              right mat-noop}}))
+              right (fn [st rows inserted inserted1 deleted deleted1]
+                      (let [idx2 (st left empty-set-index)
+                            add-rows (filter #(contains-row? idx2 %) rows)]
+                        (inserted st add-rows)))}
+     :delete1 {left (fn [st row inserted inserted1 deleted deleted1]
+                      (let [idx2 (st right empty-set-index)]
+                        (if (contains-row? idx2 row)
+                          st
+                          (deleted1 st row))))
+               right (fn [st row inserted inserted1 deleted deleted1]
+                       (let [idx2 (st left empty-set-index)]
+                         (if (contains-row? idx2 row)
+                           (inserted1 st row)
+                           st)))}}))
 
 (defmethod col-data* :difference
   [left [_ _]]
@@ -961,7 +1023,12 @@
     {:deps [left]
      :insert {left (fn [st rows inserted inserted1 deleted deleted1]
                      (inserted st (filterv pred-fn rows)))}
-     :delete {left (fn [st rows inserted inserted1 deleted deleted1] (deleted st (filterv pred-fn rows)))}}))
+     :insert1 {left (fn [st row inserted inserted1 deleted deleted1]
+                      (if (pred-fn row)
+                        (inserted1 st row)
+                        st))}
+     :delete {left (fn [st rows inserted inserted1 deleted deleted1] (deleted st (filterv pred-fn rows)))}
+     :delete1 {left (fn [st row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 st row) st))}}))
 
 (defmethod col-data* :where
   [left _]
@@ -983,7 +1050,9 @@
   (let [f (apply comp (map extend-form-fn (reverse extensions)))]
     {:deps [left]
      :insert {left (transform-insert f)}
-     :delete {left (transform-delete f)}}))
+     :insert1 {left (transform-insert1 f)}
+     :delete {left (transform-delete f)}
+     :delete1 {left (transform-delete1 f)}}))
 
 (defmethod graph-node :extend
   [left [_ & extensions]]
@@ -1025,7 +1094,9 @@
         f #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]
     {:deps [left]
      :insert {left (transform-insert f)}
-     :delete {left (transform-delete f)}}))
+     :insert1 {left (transform-insert1 f)}
+     :delete {left (transform-delete f)}
+     :delete1 {left (transform-delete1 f)}}))
 
 (defmethod col-data* :qualify
   [left [_ namespace] _]
@@ -1039,7 +1110,9 @@
         dep (conj left (into [:extend] extensions) (into [:project-away] away))]
     {:deps [dep]
      :insert {dep pass-through-insert}
-     :delete {dep pass-through-delete}}))
+     :insert1 {dep pass-through-insert1}
+     :delete {dep pass-through-delete}
+     :delete1 {dep pass-through-delete1}}))
 
 (defmethod col-data* :rename
   [left [_ renames]]
@@ -1076,7 +1149,9 @@
         select-fn (apply comp #(select-keys % cols) (map extend-form-fn (reverse exts)))]
     {:deps [left]
      :insert {left (transform-insert select-fn)}
-     :delete {left (transform-delete select-fn)}}))
+     :insert1 {left (transform-insert1 select-fn)}
+     :delete {left (transform-delete select-fn)}
+     :delete1 {left (transform-delete1 select-fn)}}))
 
 (defmethod col-data* :select
   [left [_ & selections]]
@@ -1095,7 +1170,9 @@
     {:empty-index (map-index {} expr-fns)
      :deps [left]
      :insert {left pass-through-insert}
-     :delete {left pass-through-delete}}))
+     :insert1 {left pass-through-insert1}
+     :delete {left pass-through-delete}
+     :delete1 {left pass-through-delete1}}))
 
 (defmethod col-data* :hash
   [left _]
@@ -1107,7 +1184,9 @@
     {:empty-index (map-index (sorted-map) expr-fns)
      :deps [left]
      :insert {left pass-through-insert}
-     :delete {left pass-through-delete}}))
+     :insert1 {left pass-through-insert1}
+     :delete {left pass-through-delete}
+     :delete1 {left pass-through-delete1}}))
 
 (defmethod col-data* :btree
   [left _]

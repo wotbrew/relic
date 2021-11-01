@@ -163,3 +163,67 @@
     (is (= #{{:n 2}} (r/what-if st R {A [a0 a1 a2]} [:delete A a0])))
     (is (= #{{:n 1}} (r/what-if st R {A [a1]} [:delete A a1] [:insert A a1])))
     (is (= #{{:n 2}} (r/what-if st R {A [a1, a2]} [:delete A a1] [:insert A a1])))))
+
+(deftest join-test
+  (let [A [[:state :A]]
+        B [[:state :B]]
+        R [[:from A] [:join B {:a :a}]]
+        aid (volatile! -1)
+        a (fn [x] {:a (vswap! aid inc), :x x})
+        b (fn [a] {:b -1, :a a})
+
+        a0 (a 0)
+        a1 (a 1)
+        a2 (a 2)
+
+        b0 (b 0)
+        b1 (b 1)
+        b2 (b 2)
+
+        ab0 (merge a0 b0)
+        ab1 (merge a1 b1)
+        ab2 (merge a2 b2)
+
+        st (r/materialize {} R)]
+
+    (is (= nil (r/query st R)))
+    (is (= nil (r/what-if st R {A [a0]})))
+    (is (= nil (r/what-if st R {B [b0]})))
+    (is (= #{ab0} (r/what-if st R [:insert A a0], [:insert B b0])))
+    (is (= #{ab0} (r/what-if st R [:insert B b0], [:insert A a0])))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]})))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete A a0] [:insert A a0])))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))))
+
+(deftest left-join-test
+  (let [A [[:state :A]]
+        B [[:state :B]]
+        R [[:from A] [:left-join B {:a :a}]]
+        aid (volatile! -1)
+        a (fn [x] {:a (vswap! aid inc), :x x})
+        b (fn [a] {:b -1, :a a})
+
+        a0 (a 0)
+        a1 (a 1)
+        a2 (a 2)
+
+        b0 (b 0)
+        b1 (b 1)
+        b2 (b 2)
+
+        ab0 (merge a0 b0)
+        ab1 (merge a1 b1)
+        ab2 (merge a2 b2)
+
+        st (r/materialize {} R)]
+
+    (is (= nil (r/query st R)))
+    (is (= #{a0} (r/what-if st R {A [a0]})))
+    (is (= nil (r/what-if st R {B [b0]})))
+    (is (= #{ab0} (r/what-if st R [:insert A a0], [:insert B b0])))
+    (is (= #{ab0} (r/what-if st R [:insert B b0], [:insert A a0])))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]})))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete A a0] [:insert A a0])))
+    (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))
+    (is (= #{a0} (r/what-if st R {A [a0] B [b0]} [:delete B b0])))
+    (is (= #{a0, ab1} (r/what-if st R {A [a0, a1], B [b0, b1]} [:delete B b0])))))

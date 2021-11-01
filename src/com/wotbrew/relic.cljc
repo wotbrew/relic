@@ -130,12 +130,12 @@
           (let [remaining-depth (- depth (count ks))
                 m-or-coll (if (seq ks) (get-in index ks) index)]
             (case remaining-depth
-              0 [m-or-coll]
+              0 (when (some? m-or-coll) [m-or-coll])
               1 (vals m-or-coll)
               (if (<= 1 remaining-depth depth)
                 ((fn ! [m-or-coll remaining-depth]
                    (case remaining-depth
-                     0 [m-or-coll]
+                     0 (when (some? m-or-coll) [m-or-coll])
                      1 (vals m-or-coll)
                      (mapcat #(! % (dec remaining-depth)) (vals m-or-coll))))
                  m-or-coll
@@ -187,6 +187,7 @@
               (cond
                 (contains? rm row) tree
                 (contains? cache row) tree
+
                 (< (count cache) cache-size)
                 (let [new-cache (assoc cache row row)
                       reduced (delay (reduce-fn (vals new-cache)))]
@@ -239,7 +240,7 @@
                         (combine-reduced combined reduced))))))))
 
           (shrink [tree]
-            (if (= 0 (:size tree 0))
+            (if (<= (:size tree 0) 0)
               nil
               tree))
 
@@ -262,8 +263,8 @@
                       new-cache
                       a
                       b
-                      combined
                       reduced
+                      combined
                       (combine-reduced combined reduced))))
 
                 (contains? rm row)
@@ -280,8 +281,8 @@
                       cache
                       a
                       b
-                      combined
                       reduced
+                      combined
                       (combine-reduced combined reduced))))
 
                 :else tree)))]
@@ -291,7 +292,8 @@
                     (let [k (key-fn row)
                           tree (index k)
                           tree (add tree row)
-                          tree (assoc tree :indexed-row (delay (merge-fn k (complete-fn @(:results tree)))))]
+                          irow (delay (merge-fn k (complete-fn @(:results tree))))
+                          tree (assoc tree :indexed-row irow)]
                       (assoc index k tree)))
        `unindex-row (fn [index row]
                       (let [k (key-fn row)
@@ -302,8 +304,9 @@
                           (assoc index k (assoc tree :indexed-row (delay (merge-fn k (complete-fn @(:results tree)))))))))
        `contains-row? (fn [index row]
                         (let [k (key-fn row)
-                              {:keys [rowmap]} (index k)]
-                          (contains? rowmap row)))
+                              {:keys [rm cache]} (index k)]
+                          (or (contains? rm row)
+                              (contains? cache row))))
        `row-seqable (fn [index] (mapcat (comp keys :rowmap) (vals index)))})))
 
 ;; statements
@@ -358,8 +361,9 @@
          (if (seq new-rows)
            (let [nidx (reduce index-row oidx new-rows)
                  st (assoc st relvar nidx)
-                 st (vary-meta st assoc relvar nidx)]
-             (vary-meta st flow-inserts-n new-rows))
+                 st (vary-meta st assoc relvar nidx)
+                 st (vary-meta st flow-inserts-n new-rows)]
+             st)
            st)))
      :insert1
      (fn base-insert1 [st row]
@@ -368,8 +372,9 @@
            st
            (let [nidx (index-row oidx row)
                  st (assoc st relvar nidx)
-                 st (vary-meta st assoc relvar nidx)]
-             (vary-meta st flow-insert1 row)))))
+                 st (vary-meta st assoc relvar nidx)
+                 st (vary-meta st flow-insert1 row)]
+             st))))
      :delete
      (fn base-delete [st rows]
        (let [oidx (st relvar empty-index)
@@ -377,8 +382,9 @@
          (if (seq deleted-rows)
            (let [nidx (reduce unindex-row oidx deleted-rows)
                  st (assoc st relvar nidx)
-                 st (vary-meta st assoc relvar nidx)]
-             (vary-meta st flow-deletes-n deleted-rows))
+                 st (vary-meta st assoc relvar nidx)
+                 st (vary-meta st flow-deletes-n deleted-rows)]
+             st)
            st)))
      :delete1
      (fn base-delete1 [st row]
@@ -387,8 +393,9 @@
            st
            (let [nidx (unindex-row oidx row)
                  st (assoc st relvar nidx)
-                 st (vary-meta st assoc relvar nidx)]
-             (vary-meta st flow-delete1 row)))))}))
+                 st (vary-meta st assoc relvar nidx)
+                 st (vary-meta st flow-delete1 row)]
+             st))))}))
 
 (defn- mat-noop
   ([st rows] st)
@@ -626,6 +633,7 @@
 (defn- dataflow-transactor [g]
   (let [mat-fns (memoize
                   (fn [relvar]
+                    (assert (base-relvar? relvar) "Can only modify :state relvars")
                     (or (get-in g [relvar :mat-fns nil])
                         (-> {}
                             (add-mat-fns [relvar])
@@ -851,11 +859,10 @@
   {})
 
 (defmethod graph-node :state
-  [left [_ _ {:keys [pk, unique]} :as stmt]]
+  [left [_ _ {:keys [pk]} :as stmt]]
   (if (seq left)
     (graph-node left [:from [stmt]])
-    {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)
-     :implicit (for [ks unique] [stmt (into [:hash-unique] ks)])}))
+    {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)}))
 
 (defmethod col-data* :state
   [_ [_ _ {:keys [req]} :as stmt]]
@@ -1181,7 +1188,7 @@
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
 
-(defmethod graph-node :hash-unique
+(defmethod graph-node :unique
   [left [_ & exprs]]
   (let [expr-fns (mapv expr-row-fn exprs)]
     {:empty-index (map-unique-index {} expr-fns)
@@ -1248,6 +1255,38 @@
                                           match (seek-n idx path)]
                                       (join-row match row))]
                         (deleted st matches)))}}))
+
+(defmethod graph-node :fk
+  [left [_ right clause]]
+  (let [left-base (unwrap-base left)
+        _ (when-not left-base (raise "FK can only depend on base relvar"))
+        left-exprs (keys clause)
+        left (conj left-base (into [:hash] left-exprs))
+        right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
+
+        right-exprs (vals clause)
+        right (conj right (into [:hash] right-exprs))
+        left-path-fn (apply juxt2 (map expr-row-fn right-exprs))]
+    {:deps [left right]
+     :insert {left (fn [st rows inserted inserted1 deleted deleted1]
+                     (let [idx (st right)
+                           matches (for [row rows
+                                         :let [path (right-path-fn row)]
+                                         match (seek-n idx path)]
+                                     match)]
+                       (when (empty? matches) (raise "FK violation (left)"))
+                       st))
+              right mat-noop}
+     :delete {left mat-noop
+              right (fn [st rows inserted inserted1 deleted deleted1]
+                      (let [idx (st left)
+                            matches (for [row rows
+                                          :let [path (left-path-fn row)]
+                                          match (seek-n idx path)]
+                                      match)]
+                        (if (seq matches)
+                          (raise "FK violation (right)")
+                          st)))}}))
 
 (defmethod col-data* :join
   [left [_ right]]
@@ -1476,6 +1515,8 @@
        :reducer (fn [rows] (reduce (fn [m reducer-fn] (reducer-fn m rows)) {} reducer-fns))
        :combiner (fn [a b] (reduce (fn [m combiner-fn] (combiner-fn m a b)) {} combiner-fns))})))
 
+(defn- maybe-deref [x] (some-> x deref))
+
 (defmethod graph-node :agg
   [left [_ cols & aggs]]
   (let [cols (vec (set cols))
@@ -1490,23 +1531,23 @@
      :insert {left (fn [st rows insert insert1 delete delete1]
                      (let [idx (st idx-key empty-idx)
                            ks (set (map key-fn rows))
-                           old-rows (keep (comp :indexed-row idx) ks)
+                           old-rows (keep (comp maybe-deref :indexed-row idx) ks)
                            nidx (reduce index-row idx rows)
-                           new-rows (keep (comp :indexed-row nidx) ks)
+                           new-rows (keep (comp maybe-deref :indexed-row nidx) ks)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (mapv deref old-rows))
-                           (insert (mapv deref new-rows)))))}
+                           (delete old-rows)
+                           (insert new-rows))))}
      :delete {left (fn [st rows insert insert1 delete delete1]
                      (let [idx (st idx-key empty-idx)
                            ks (set (map key-fn rows))
-                           old-rows (keep (comp :indexed-row idx) ks)
+                           old-rows (keep (comp maybe-deref :indexed-row idx) ks)
                            nidx (reduce unindex-row idx rows)
-                           new-rows (keep (comp :indexed-row nidx) ks)
+                           new-rows (keep (comp maybe-deref :indexed-row nidx) ks)
                            st (assoc st idx-key nidx)]
                        (-> st
-                           (delete (mapv deref old-rows))
-                           (insert (mapv deref new-rows)))))}}))
+                           (delete old-rows)
+                           (insert new-rows))))}}))
 
 (defmethod col-data* :agg
   [left [_ cols & aggs]]

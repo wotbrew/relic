@@ -145,3 +145,21 @@
     true {:a 42, :b 42} [= :a :b]
     false {:a 43, :b 42} [= :a :b]
     true {:a 43, :b 42} [= [inc :a] [+ :b 2]]))
+
+(deftest agg-test
+  (let [A [[:state :A]]
+        R [[:from A] [:agg [] [:n [r/sum :b]]]]
+        aid (volatile! 0)
+        a (fn [b] {:a (vswap! aid inc), :b b})
+
+        a0 (a 1)
+        a1 (a 1)
+        a2 (a 1)
+
+        st (r/materialize {} R)]
+
+    (is (= nil (r/query st R)))
+    (is (= #{{:n 3}} (r/what-if st R {A [a0 a1 a2]})))
+    (is (= #{{:n 2}} (r/what-if st R {A [a0 a1 a2]} [:delete A a0])))
+    (is (= #{{:n 1}} (r/what-if st R {A [a1]} [:delete A a1] [:insert A a1])))
+    (is (= #{{:n 2}} (r/what-if st R {A [a1, a2]} [:delete A a1] [:insert A a1])))))

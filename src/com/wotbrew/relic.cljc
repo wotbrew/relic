@@ -36,6 +36,12 @@
       (dissoc m k))
     m))
 
+(defn- disjoc [m k x]
+  (let [ns (disj (get m k) x)]
+    (if (empty? ns)
+      (dissoc m k)
+      (assoc m k ns))))
+
 (defn- disjoc-in [m ks x]
   (let [[k & ks] ks]
     (if ks
@@ -64,83 +70,124 @@
         `row-seqable identity}
        (with-meta #{})))
 
-(defn map-index [empty keyfns]
-  (let [path (apply juxt2 keyfns)
-        depth (count keyfns)
-        map-contains-row? (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))]
+(def map-index0
+  (vary-meta
+    empty-set-index
+    assoc
+    `seek-n (fn map-seekn [index ks] (if (seq ks) #{} index))))
+
+(defn map-index1 [empty keyfn]
+  (let [map-contains-row? (fn map-contains-row? [index row] (contains? (get index (keyfn row) #{}) row))]
     (with-meta
       empty
-      {`index-row (fn [index row] (update-in index (path row) set-conj row))
-       `unindex-row (fn [index row] (disjoc-in index (path row) row))
+      {`index-row (fn [index row] (update index (keyfn row) set-conj row))
+       `unindex-row (fn [index row] (disjoc index (keyfn row) row))
        `contains-row? map-contains-row?
-       `row-seqable
-       (fn enumerate-map
-         ([index] (enumerate-map index depth))
-         ([index depth]
-          (cond
-            (= 0 depth) (mapcat identity (vals index))
-            (= 1 depth) (mapcat identity (vals index))
-            :else
-            (for [v (vals index)
-                  v2 (enumerate-map v (dec depth))]
-              v2))))
+       `row-seqable (fn enumerate-map [index] (mapcat identity (vals index)))
        `seek-n
        (fn map-seekn [index ks]
-         (let [remaining-depth (- depth (count ks))
-               m-or-coll (if (seq ks) (get-in index ks) index)]
-           (case remaining-depth
-             0 m-or-coll
-             1 (mapcat identity (vals m-or-coll))
-             (if (<= 1 remaining-depth depth)
-               ((fn ! [m-or-coll remaining-depth]
-                  (case remaining-depth
-                    0 m-or-coll
-                    1 (mapcat identity (vals m-or-coll))
-                    (mapcat #(! % (dec remaining-depth)) (vals m-or-coll))))
-                m-or-coll
-                remaining-depth)
-               (throw (ex-info "Invalid remaining depth" {}))))))})))
+         (if (not= 1 (count ks))
+           #{}
+           (get index (first ks))))})))
+
+(defn map-index [empty keyfns]
+  (case (count keyfns)
+    0 map-index0
+    1 (map-index1 empty (first keyfns))
+    (let [path (apply juxt2 keyfns)
+          depth (count keyfns)
+          map-contains-row? (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))]
+      (with-meta
+        empty
+        {`index-row (fn [index row] (update-in index (path row) set-conj row))
+         `unindex-row (fn [index row] (disjoc-in index (path row) row))
+         `contains-row? map-contains-row?
+         `row-seqable
+         (fn enumerate-map
+           ([index] (enumerate-map index depth))
+           ([index depth]
+            (cond
+              (= 0 depth) (mapcat identity (vals index))
+              (= 1 depth) (mapcat identity (vals index))
+              :else
+              (for [v (vals index)
+                    v2 (enumerate-map v (dec depth))]
+                v2))))
+         `seek-n
+         (fn map-seekn [index ks]
+           (let [remaining-depth (- depth (count ks))
+                 m-or-coll (if (seq ks) (get-in index ks) (get index nil))]
+             (case remaining-depth
+               0 m-or-coll
+               1 (mapcat identity (vals m-or-coll))
+               (if (<= 1 remaining-depth depth)
+                 ((fn ! [m-or-coll remaining-depth]
+                    (case remaining-depth
+                      0 m-or-coll
+                      1 (mapcat identity (vals m-or-coll))
+                      (mapcat #(! % (dec remaining-depth)) (vals m-or-coll))))
+                  m-or-coll
+                  remaining-depth)
+                 (throw (ex-info "Invalid remaining depth" {}))))))}))))
+
+(defn map-unique-index1 [empty keyfn collision-fn]
+  (let [map-contains-row? (fn map-contains-row? [index row] (contains? index (keyfn row)))
+        replace (fn [a b] (if a (collision-fn a b) b))]
+    (with-meta
+      empty
+      {`index-row (fn [index row] (update index (keyfn row) replace row))
+       `unindex-row (fn [index row] (dissoc index (keyfn row)))
+       `contains-row? map-contains-row?
+       `row-seqable (fn enumerate-map [index] (vals index))
+       `seek-n
+       (fn map-seekn [index ks]
+         (if (not= 1 (count ks))
+           #{}
+           (when-some [res (get index (first ks))]
+             [res])))})))
 
 (defn map-unique-index
   ;; todo multi-nil?!
   ([empty keyfns] (map-unique-index empty keyfns (fn [& _] (raise "Unique key violation"))))
   ([empty keyfns collision-fn]
-   (let [path (apply juxt2 keyfns)
-         depth (count keyfns)
-         map-contains-row? (fn map-contains-row? [index row] (= (get-in index (path row) #{}) row))
-         replace (fn [a b] (if a (collision-fn a b) b))]
-     (with-meta
-       empty
-       {`index-row (fn [index row] (update-in index (path row) replace row))
-        `unindex-row (fn [index row] (dissoc-in index (path row)))
-        `contains-row? map-contains-row?
-        `row-seqable
-        (fn enumerate-map
-          ([index] (enumerate-map index depth))
-          ([index depth]
-           (cond
-             (= 0 depth) (vals index)
-             (= 1 depth) (vals index)
-             :else
-             (for [v (vals index)
-                   v2 (enumerate-map v (dec depth))]
-               v2))))
-        `seek-n
-        (fn map-seekn [index ks]
-          (let [remaining-depth (- depth (count ks))
-                m-or-coll (if (seq ks) (get-in index ks) index)]
-            (case remaining-depth
-              0 (when (some? m-or-coll) [m-or-coll])
-              1 (vals m-or-coll)
-              (if (<= 1 remaining-depth depth)
-                ((fn ! [m-or-coll remaining-depth]
-                   (case remaining-depth
-                     0 (when (some? m-or-coll) [m-or-coll])
-                     1 (vals m-or-coll)
-                     (mapcat #(! % (dec remaining-depth)) (vals m-or-coll))))
-                 m-or-coll
-                 remaining-depth)
-                (throw (ex-info "Invalid remaining depth" {}))))))}))))
+   (case (count keyfns)
+     1 (map-unique-index1 empty (first keyfns) collision-fn)
+     (let [path (apply juxt2 keyfns)
+           depth (count keyfns)
+           map-contains-row? (fn map-contains-row? [index row] (= (get-in index (path row) #{}) row))
+           replace (fn [a b] (if a (collision-fn a b) b))]
+       (with-meta
+         empty
+         {`index-row (fn [index row] (update-in index (path row) replace row))
+          `unindex-row (fn [index row] (dissoc-in index (path row)))
+          `contains-row? map-contains-row?
+          `row-seqable
+          (fn enumerate-map
+            ([index] (enumerate-map index depth))
+            ([index depth]
+             (cond
+               (= 0 depth) (vals index)
+               (= 1 depth) (vals index)
+               :else
+               (for [v (vals index)
+                     v2 (enumerate-map v (dec depth))]
+                 v2))))
+          `seek-n
+          (fn map-seekn [index ks]
+            (let [remaining-depth (- depth (count ks))
+                  m-or-coll (if (seq ks) (get-in index ks) (get index nil))]
+              (case remaining-depth
+                0 (when (some? m-or-coll) [m-or-coll])
+                1 (vals m-or-coll)
+                (if (<= 1 remaining-depth depth)
+                  ((fn ! [m-or-coll remaining-depth]
+                     (case remaining-depth
+                       0 (when (some? m-or-coll) [m-or-coll])
+                       1 (vals m-or-coll)
+                       (mapcat #(! % (dec remaining-depth)) (vals m-or-coll))))
+                   m-or-coll
+                   remaining-depth)
+                  (throw (ex-info "Invalid remaining depth" {}))))))})))))
 
 (defrecord AggIndexNode [size rm cache a b reduced combined results])
 
@@ -944,7 +991,7 @@
       (for [[k col] left-idx]
         (if (right-idx k)
           (if (= col (right-idx k))
-            ;; todo better = check
+            ;; todo looser check than = ?
             col
             {:k k})
           col))

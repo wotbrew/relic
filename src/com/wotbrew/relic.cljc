@@ -131,23 +131,35 @@
                  (throw (ex-info "Invalid remaining depth" {}))))))}))))
 
 (defn map-unique-index1 [empty keyfn collision-fn]
-  (let [map-contains-row? (fn map-contains-row? [index row] (contains? index (keyfn row)))
+  (let [map-contains-row? (fn map-contains-row? [index row]
+                            (if-some [k (keyfn row)]
+                              (contains? index k)
+                              (contains? (index nil #{}) row)))
         replace (fn [a b] (if a (collision-fn a b) b))]
     (with-meta
       empty
-      {`index-row (fn [index row] (update index (keyfn row) replace row))
-       `unindex-row (fn [index row] (dissoc index (keyfn row)))
+      {`index-row (fn [index row]
+                    (if-some [k (keyfn row)]
+                      (update index k replace row)
+                      (update index nil set-conj row)))
+       `unindex-row (fn [index row]
+                      (if-some [k (keyfn row)]
+                        (dissoc index k)
+                        (disjoc index nil row)))
        `contains-row? map-contains-row?
        `row-seqable (fn enumerate-map [index] (vals index))
        `seek-n
        (fn map-seekn [index ks]
-         (if (not= 1 (count ks))
-           #{}
-           (when-some [res (get index (first ks))]
-             [res])))})))
+         (let [k (first ks)]
+           (case (count ks)
+             0 (concat (vals (dissoc index nil)) (index nil))
+             1 (when-some [res (get index k)]
+                 (if (nil? k)
+                   res
+                   [res]))
+             #{})))})))
 
 (defn map-unique-index
-  ;; todo multi-nil?!
   ([empty keyfns] (map-unique-index empty keyfns (fn [& _] (raise "Unique key violation"))))
   ([empty keyfns collision-fn]
    (case (count keyfns)

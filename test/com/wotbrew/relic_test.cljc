@@ -260,3 +260,18 @@
     (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))
     (is (= #{a0} (r/what-if st R {A [a0] B [b0]} [:delete B b0])))
     (is (= #{a0, ab1} (r/what-if st R {A [a0, a1], B [b0, b1]} [:delete B b0])))))
+
+(deftest map-unique-index1-nil-test
+  (let [i (r/map-unique-index1 {} :a (fn [a b] b))
+        nil1 {:a nil}
+        nil2 {:a nil, :b 1}
+        i1 (r/index-row i nil1)
+        i2 (r/index-row i1 nil2)]
+    (is (= {nil #{{:a nil}}} i1))
+    (is (= {42 {:a 42}, nil #{nil1}} (r/index-row i1 {:a 42})))
+    (is (= {} (r/unindex-row i nil1)))
+    (is (= {} (r/unindex-row i1 nil1)))
+    (is (= [{:a 42} nil1] (r/seek-n (r/index-row i1 {:a 42}) nil)))
+    (is (empty? (r/seek-n i [nil])))
+    (is (= #{nil1} (r/seek-n i1 [nil])))
+    (is (= #{nil1 nil2} (r/seek-n i2 [nil])))))

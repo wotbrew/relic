@@ -7,7 +7,7 @@ A Clojure(Script) library for doing information programming using 'codd style' r
 - SQL-style relational programming
 - declarative 
 - data dsl
-- materialized views
+- incremental materialized views
 - decent performance
 
 ## Why 
@@ -47,17 +47,17 @@ db
 Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database.
 
 ```clojure 
-(r/query db [[:state :Customer] [:where [= :id 42]]]) 
+(r/q db [[:state :Customer] [:where [= :id 42]]]) 
 ;; => 
 #{{:id 42, :name "bob"}}
 
-(r/query db [[:state :Customer] [:where [= :name "alice"]]])
+(r/q db [[:state :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```
 
 Ok ok, not very cool. _What if I told you_ that you can materialize any relvar such that 
-it will be maintained for you as you modify the database. In other words `relic` has materialized views.
+it will be maintained for you as you modify the database. In other words `relic` has incremental materialized views.
 
 ```clojure 
 (r/materialize db [[:state :Customer] [:where [= :id 42]]])
@@ -153,13 +153,14 @@ construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
 
 ## TODO 
 
+- Recursive (fixed point?) relvars to enable logic type queries
 - Tests
 - Docs  
 - Constraints
 - Update / Upsert
 - Compile time relvars, the great unboxing, custom record types
 - Better docs 
-- Tooling, spec
+- Tooling, spec  
 - Uhhhh... Bigger datasets than memory
 
 ## Related work

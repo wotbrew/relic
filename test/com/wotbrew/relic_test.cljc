@@ -9,7 +9,7 @@
                            b #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
     (are [x ret]
 
-      (and (= ret (r/query st x))
+      (and (= ret (r/q st x))
            (= ret (get (meta (r/materialize st x)) x)))
 
       a
@@ -97,7 +97,7 @@
         a0 {:a 42}
         a1 {:a 43}
         a2 {:a 44}]
-    (is (= nil (r/query st A)))
+    (is (= nil (r/q st A)))
     (is (= st (r/materialize st A)))
     (is (= st (r/transact st {A []})))
     (is (= #{a0} (r/what-if st A {A [a0]})))
@@ -116,7 +116,7 @@
         a1 {:a 43}
         a2 {:a 44}
         st {}]
-    (is (= nil (r/query st F)))
+    (is (= nil (r/q st F)))
     (is (= st (r/materialize st F)))
     (is (= #{a0} (r/what-if st F {A [a0]})))
     (is (= #{a0} (r/what-if st (vec (concat A F)) {A [a0]})))
@@ -158,7 +158,7 @@
 
         st (r/materialize {} R)]
 
-    (is (= nil (r/query st R)))
+    (is (= nil (r/q st R)))
     (is (= #{{:n 3}} (r/what-if st R {A [a0 a1 a2]})))
     (is (= #{{:n 2}} (r/what-if st R {A [a0 a1 a2]} [:delete A a0])))
     (is (= #{{:n 1}} (r/what-if st R {A [a1]} [:delete A a1] [:insert A a1])))
@@ -186,7 +186,7 @@
 
         st (r/materialize {} R)]
 
-    (is (= nil (r/query st R)))
+    (is (= nil (r/q st R)))
     (is (= nil (r/what-if st R {A [a0]})))
     (is (= nil (r/what-if st R {B [b0]})))
     (is (= #{ab0} (r/what-if st R [:insert A a0], [:insert B b0])))
@@ -217,7 +217,7 @@
 
         st (r/materialize {} R)]
 
-    (is (= nil (r/query st R)))
+    (is (= nil (r/q st R)))
     (is (= nil (r/what-if st R {A [a0]})))
     (is (= nil (r/what-if st R {B [b0]})))
     (is (= #{ab0} (r/what-if st R [:insert A a0], [:insert B b0])))
@@ -250,7 +250,7 @@
 
         st (r/materialize {} R)]
 
-    (is (= nil (r/query st R)))
+    (is (= nil (r/q st R)))
     (is (= #{a0} (r/what-if st R {A [a0]})))
     (is (= nil (r/what-if st R {B [b0]})))
     (is (= #{ab0} (r/what-if st R [:insert A a0], [:insert B b0])))

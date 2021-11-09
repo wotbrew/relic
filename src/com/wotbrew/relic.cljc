@@ -746,37 +746,14 @@
     (reduce transactor st tx)
     (apply transact (vary-meta st assoc ::transactor (dataflow-transactor {})) tx)))
 
-(defn index [st relvar]
+(defn- materialized-relation [st relvar]
   (or (get st relvar)
-      (get (meta st) relvar)
+      (get (meta st) relvar)))
+
+(defn index [st relvar]
+  (or (materialized-relation st relvar)
       (let [st (materialize st relvar)]
         (get (meta st) relvar))))
-
-(defn query [st relvar]
-  (some-> (index st relvar) row-seqable))
-
-(defn what-if [st relvar & tx]
-  (query (apply transact st tx) relvar))
-
-(defn watch [st & relvars]
-  (let [st (vary-meta st update ::watched (fnil into #{}) relvars)]
-    (apply materialize st relvars)))
-
-(defn track-transact [st & tx]
-  (binding [*added* (zipmap (::watched (meta st)) (repeat #{}))
-            *deleted* (zipmap (::watched (meta st)) (repeat #{}))]
-    (let [ost st
-          st (apply transact st tx)
-          added (for [[relvar added] *added*
-                      :let [idx (index st relvar)]]
-                  [relvar {:added (filterv #(contains-row? idx %) added)}])
-          deleted (for [[relvar deleted] *deleted*
-                        :let [oidx (index ost relvar)
-                              idx (index st relvar)]]
-                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %))
-                                                           #(contains-row? oidx %)) deleted)}])]
-      {:result st
-       :changes (merge-with merge (into {} added) (into {} deleted))})))
 
 (defrecord Escape [x])
 
@@ -833,6 +810,66 @@
     (fn? expr) expr
 
     :else (constantly expr)))
+
+(defn q
+  ([st relvar-or-binds]
+   (if (map? relvar-or-binds)
+     (let [relvars (keep (fn [q] (if (map? q) (:q q) q)) (vals relvar-or-binds))
+           missing (remove #(materialized-relation st %) relvars)
+           st (apply materialize st missing)]
+       (reduce-kv
+         (fn [m k qr]
+           (if (map? q)
+             (assoc m k (q st (:q qr) qr))
+             (assoc m k (q st qr))))
+         {}
+         relvar-or-binds))
+     (some-> (index st relvar-or-binds) row-seqable)))
+  ([st relvar opts]
+   (let [rs (some-> (index st relvar) row-seqable)
+         {:keys [sort
+                 xf]
+          into-coll :into} opts
+
+         sort-asc-fn
+         (cond
+           (nil? sort) nil
+           (keyword? sort) sort
+           :else (apply juxt2 (map expr-row-fn sort)))
+
+         rs (if sort-asc-fn
+              (sort-by sort-asc-fn rs)
+              rs)
+
+         rs (cond
+             into-coll (if xf (into into-coll xf rs) (into into-coll rs))
+             xf (sequence xf rs)
+             :else rs)]
+     rs)))
+
+(defn what-if [st relvar & tx]
+  (q (apply transact st tx) relvar))
+
+(defn watch [st & relvars]
+  (let [st (vary-meta st update ::watched (fnil into #{}) relvars)]
+    (apply materialize st relvars)))
+
+(defn track-transact [st & tx]
+  (binding [*added* (zipmap (::watched (meta st)) (repeat #{}))
+            *deleted* (zipmap (::watched (meta st)) (repeat #{}))]
+    (let [ost st
+          st (apply transact st tx)
+          added (for [[relvar added] *added*
+                      :let [idx (index st relvar)]]
+                  [relvar {:added (filterv #(contains-row? idx %) added)}])
+          deleted (for [[relvar deleted] *deleted*
+                        :let [oidx (index ost relvar)
+                              idx (index st relvar)]]
+                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %))
+                                                           #(contains-row? oidx %)) deleted)}])]
+      {:result st
+       :changes (merge-with merge (into {} added) (into {} deleted))})))
+
 
 (defn- assoc-if-not-nil [m k v]
   (if (nil? v)

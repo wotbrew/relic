@@ -166,45 +166,47 @@
     [:total-commission [r/sum :commission]]]
    [:project :agent :total-commission]])
 
-(def db
+(def data
   (let [address1 "abc def 55"
         alice-address "wonderland 42"]
-    (-> {}
-        (r/materialize PropertyInfo)
-        (r/transact
-          {Property [{:address address1
-                      :price 344000M
-                      :photo "foo.jpg"
-                      :agent "bob"
-                      :date-registered #inst "2021-10-26"}]
-           Offer [{:address address1
-                   :offer-date #inst "2021-10-27"
-                   :offer-price 343000M
-                   :bidder-name "alice"
-                   :bidder-address alice-address}
-                  {:address address1
-                   :offer-date #inst "2021-10-26"
-                   :offer-price 150000M
-                   :bidder-name "alice"
-                   :bidder-address alice-address}]
-           Decision [{:address address1
-                      :offer-date #inst "2021-10-27"
-                      :bidder-name "alice"
-                      :bidder-address alice-address
-                      :decision-date #inst "2021-10-28"
-                      :accepted true}]
-           Room [{:address address1
-                  :room-name "Room 1"
-                  :width 10.0M
-                  :breadth 10.0M
-                  :type :living-room}]
-           Floor [{:address address1
-                   :room-name "Room 1"
-                   :floor 0}]
-           Commission [{:agent "bob"
-                        :price-band :med
-                        :area-code "55"
-                        :sale-speed :very-fast
-                        :commission 2000.0M}]}))))
+    {Property [{:address address1
+                :price 344000M
+                :photo "foo.jpg"
+                :agent "bob"
+                :date-registered #inst "2021-10-26"}]
+     Offer [{:address address1
+             :offer-date #inst "2021-10-27"
+             :offer-price 343000M
+             :bidder-name "alice"
+             :bidder-address alice-address}
+            {:address address1
+             :offer-date #inst "2021-10-26"
+             :offer-price 150000M
+             :bidder-name "alice"
+             :bidder-address alice-address}]
+     Decision [{:address address1
+                :offer-date #inst "2021-10-27"
+                :bidder-name "alice"
+                :bidder-address alice-address
+                :decision-date #inst "2021-10-28"
+                :accepted true}]
+     Room [{:address address1
+            :room-name "Room 1"
+            :width 10.0M
+            :breadth 10.0M
+            :type :living-room}]
+     Floor [{:address address1
+             :room-name "Room 1"
+             :floor 0}]
+     Commission [{:agent "bob"
+                  :price-band :med
+                  :area-code "55"
+                  :sale-speed :very-fast
+                  :commission 2000.0M}]}))
 
-(def q (partial r/query db))
+(def db
+  (-> {}
+      (r/materialize PropertyInfo)
+      (r/transact data)))
+
+(def q (partial r/q db))

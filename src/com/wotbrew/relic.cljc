@@ -828,18 +828,21 @@
   ([st relvar opts]
    (let [rs (some-> (index st relvar) row-seqable)
          {:keys [sort
+                 rsort
                  xf]
           into-coll :into} opts
 
-         sort-asc-fn
+         sort* (or sort rsort)
+         sort-fn
          (cond
-           (nil? sort) nil
-           (keyword? sort) sort
-           :else (apply juxt2 (map expr-row-fn sort)))
+           (nil? sort*) nil
+           (keyword? sort*) sort*
+           :else (apply juxt2 (map expr-row-fn sort*)))
 
-         rs (if sort-asc-fn
-              (sort-by sort-asc-fn rs)
-              rs)
+         rs (cond
+              sort (sort-by sort-fn rs)
+              rsort (sort-by sort-fn > rs)
+              :else rs)
 
          rs (cond
              into-coll (if xf (into into-coll xf rs) (into into-coll rs))

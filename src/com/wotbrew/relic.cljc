@@ -396,14 +396,14 @@
 
 (defn base-relvar? [relvar]
   (case (count relvar)
-    1 (= :state (operator (peek relvar)))
+    1 (= :table (operator (peek relvar)))
     false))
 
 (defn unwrap-base [relvar]
   (cond
     (base-relvar? relvar) relvar
     (= :from (operator (peek relvar))) (let [[_ relvar] (peek relvar)] (unwrap-base relvar))
-    (= :state (operator (peek relvar))) [(peek relvar)]
+    (= :table (operator (peek relvar))) [(peek relvar)]
     :else nil))
 
 (defn- base-mat-fns
@@ -963,13 +963,13 @@
 (defmethod col-data* :default [_ _]
   {})
 
-(defmethod graph-node :state
+(defmethod graph-node :table
   [left [_ _ {:keys [pk]} :as stmt]]
   (if (seq left)
     (graph-node left [:from [stmt]])
     {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)}))
 
-(defmethod col-data* :state
+(defmethod col-data* :table
   [_ [_ _ {:keys [req]} :as stmt]]
   (for [k req] {:k k}))
 
@@ -1696,17 +1696,26 @@
                      st)}
      :delete1 {dep mat-noop}}))
 
+(defn- check->pred [relvar check]
+  (if (map? check)
+    (let [{:keys [pred, error]} check
+          pred-fn (expr-row-fn pred)
+          error-fn (expr-row-fn (or error "Check constraint violation"))]
+      (fn [m]
+        (let [r (pred-fn m)]
+          (if r
+            m
+            (raise (error-fn m) {:expr pred, :check check, :row m, :relvar relvar}))))))
+  (let [f2 (expr-row-fn check)]
+    (fn [m]
+      (let [r (f2 m)]
+        (if r
+          m
+          (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar}))))))
+
 (defmethod graph-node ::check
-  [left [_ checks]]
-  (let [f (reduce-kv
-            (fn [f k v]
-              (let [f2 (expr-row-fn v)]
-                (comp (fn [m] (let [mv (m k)
-                                    r (f2 mv)]
-                                (if r
-                                  m
-                                  (raise "Check constraint violation" {:k k, :row m, :relvar left})))) f)))
-            identity checks)]
+  [left [_ & checks]]
+  (let [f (apply comp (map (partial check->pred left) checks))]
     {:deps [left]
      :insert1 {left (transform-insert1 f)}
      :delete1 {left (transform-delete1 f)}}))
@@ -1727,16 +1736,24 @@
     (conj relvar [::fk right clause])))
 
 (defmethod constraint->relvars :check [_ {:keys [relvar check]}]
-  [(conj relvar [::check check])])
+  [(conj relvar (into [::check] check))])
 
 (defn constrain
   "Applies constraints to the state.
 
-  constraints are maps with the following keys:
+  constraints are maps (or collections of maps) with the following keys:
 
-  :relvar The relvar that will recieve the constraint
-  :unique a vector unique keys / sets of keys, e.g :unique [[:a :b]] would create a composite unique key :a :b.
-  :fk a map of {relvar join-clause} to establish relationships to other relvars, e.g it holds that a :join is always possible across the fk"
+  :relvar The relvar that constraints apply to, any kind of relvar is acceptable.
+
+  :unique a vector of unique expressions / sets of expressions, e.g :unique [[:a :b]] would create a composite unique key across :a :b.
+
+  :fk a map of {relvar join-clause} to establish relationships to other relvars, e.g it holds that a :join is always possible across the fk
+
+  :check
+  A vector of checks, each check is a relic expr, or a map of
+
+    :pred (relic expr) e.g [< 0 :age 130]
+    :error (relic expr returning a string message) e.g [str \"not a valid age: \" :age] and \"not a valid age\" would be acceptable."
   [st & constraints]
   (let [get-relvars
         (fn cr [constraint]

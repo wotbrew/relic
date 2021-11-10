@@ -4,7 +4,7 @@
             [clojure.string :as str]))
 
 (def Property
-  [[:state ::Property
+  [[:table ::Property
     {:req [:address
            :price
            :photo
@@ -12,7 +12,7 @@
            :date-registered]}]])
 
 (def Offer
-  [[:state ::Offer
+  [[:table ::Offer
     {:req [:address
            :offer-price
            :offer-date
@@ -20,7 +20,7 @@
            :bidder-address]}]])
 
 (def Decision
-  [[:state ::Decision
+  [[:table ::Decision
     {:req [:address
            :offer-date
            :bidder-name
@@ -29,7 +29,7 @@
            :accepted]}]])
 
 (def Room
-  [[:state ::Room
+  [[:table ::Room
     {:req [:address
            :room-name
            :width
@@ -37,13 +37,13 @@
            :type]}]])
 
 (def Floor
-  [[:state ::Floor
+  [[:table ::Floor
     {:req [:address
            :room-name
            :floor]}]])
 
 (def Commission
-  [[:state ::Commission
+  [[:table ::Commission
     {:req [:area-code
            :price-band
            :sale-speed

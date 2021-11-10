@@ -3,8 +3,8 @@
   (:require [com.wotbrew.relic :as r]))
 
 (deftest basics-test
-  (let [a [[:state :A]]
-        b [[:state :B]]
+  (let [a [[:table :A]]
+        b [[:table :B]]
         st (r/transact {} {a #{{:a 42}, {:a 43}, {:a 45}}
                            b #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
     (are [x ret]
@@ -86,13 +86,13 @@
       #{{:x 44}})))
 
 (deftest base-relvar-test
-  (let [A [[:state :A]]]
+  (let [A [[:table :A]]]
     (is (r/base-relvar? A))
     (is (not (r/base-relvar? [])))
     (is (not (r/base-relvar? (conj A [:where [= 1 1]]))))))
 
 (deftest state-statement-test
-  (let [A [[:state :A]]
+  (let [A [[:table :A]]
         st {}
         a0 {:a 42}
         a1 {:a 43}
@@ -110,7 +110,7 @@
     (is (= #{a2} (r/what-if st A {A [a0 a1]} {A [a2]} [:delete A a0 a1])))))
 
 (deftest from-statement-test
-  (let [A [[:state :A]]
+  (let [A [[:table :A]]
         F [[:from A]]
         a0 {:a 42}
         a1 {:a 43}
@@ -127,8 +127,8 @@
 (deftest where-expr-test
   (are [result row expr]
     (if result
-      (= #{row} (r/what-if {} [[:state :A] [:where expr]] {[[:state :A]] [row]}))
-      (empty? (r/what-if {} [[:state :A] [:where expr]] {[[:state :A]] [row]})))
+      (= #{row} (r/what-if {} [[:table :A] [:where expr]] {[[:table :A]] [row]}))
+      (empty? (r/what-if {} [[:table :A] [:where expr]] {[[:table :A]] [row]})))
 
     true {} (constantly true)
     true {} [= 1 1]
@@ -147,7 +147,7 @@
     true {:a 43, :b 42} [= [inc :a] [+ :b 2]]))
 
 (deftest agg-test
-  (let [A [[:state :A]]
+  (let [A [[:table :A]]
         R [[:from A] [:agg [] [:n [r/sum :b]]]]
         aid (volatile! 0)
         a (fn [b] {:a (vswap! aid inc), :b b})
@@ -165,8 +165,8 @@
     (is (= #{{:n 2}} (r/what-if st R {A [a1, a2]} [:delete A a1] [:insert A a1])))))
 
 (deftest join-test
-  (let [A [[:state :A]]
-        B [[:state :B]]
+  (let [A [[:table :A]]
+        B [[:table :B]]
         R [[:from A] [:join B {:a :a}]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})
@@ -196,8 +196,8 @@
     (is (= #{ab0} (r/what-if st R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))))
 
 (deftest join-product-test
-  (let [A [[:state :A]]
-        B [[:state :B]]
+  (let [A [[:table :A]]
+        B [[:table :B]]
         R [[:from A] [:join B]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})
@@ -229,8 +229,8 @@
     (is (= #{(merge a0, b0), (merge a0 b1), (merge a1, b0), (merge a1 b1)} (r/what-if st R {A [a0, a1] B [b0, b1]})))))
 
 (deftest left-join-test
-  (let [A [[:state :A]]
-        B [[:state :B]]
+  (let [A [[:table :A]]
+        B [[:table :B]]
         R [[:from A] [:left-join B {:a :a}]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})

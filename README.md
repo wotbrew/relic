@@ -18,13 +18,13 @@ I re-read out-of-the-tarpit and found myself in a strange mood.
 
 This is a _relvar_, a _relvar_ is just a vector containing a series of relational statements.
 ``` clojure
-[[:state :Customer]]
+[[:table :Customer]]
 ```
 
 You derive new relvars by appending statements to the vector, there is a whole algebra of statements to choose from, like SQL.
 
 ```clojure 
- [[:state :Customer]
+ [[:table :Customer]
   [:where [= :id 42]]]
  ```
 
@@ -36,22 +36,22 @@ State is stored in a plain old clojure map which we'll call the `db` in this exa
 (require '[com.wotbrew.relic :as r])
 
 
-(def db (r/transact {} [:insert [[:state :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
+(def db (r/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
 db 
 ;; =>
-{[[:state :Customer]] #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
+{[[:table :Customer]] #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 
 ```
 
 Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database.
 
 ```clojure 
-(r/q db [[:state :Customer] [:where [= :id 42]]]) 
+(r/q db [[:table :Customer] [:where [= :id 42]]]) 
 ;; => 
 #{{:id 42, :name "bob"}}
 
-(r/q db [[:state :Customer] [:where [= :name "alice"]]])
+(r/q db [[:table :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```
@@ -60,7 +60,7 @@ Ok ok, not very cool. _What if I told you_ that you can materialize any relvar s
 it will be maintained for you as you modify the database. In other words `relic` has incremental materialized views.
 
 ```clojure 
-(r/materialize db [[:state :Customer] [:where [= :id 42]]])
+(r/materialize db [[:table :Customer] [:where [= :id 42]]])
 ```
 
 `materialize` will return a new _database_ that looks and smells the same, but will maintain the results
@@ -70,9 +70,9 @@ If you read the tarpit paper, you might find this [real estate example](https://
 
 ## Relational operators
 
-### `[:state ?name]` 
+### `[:table ?name]` 
 
-The base state relvar, at the moment just a name e.g [:state :Customer]
+The base state relvar, at the moment just a name e.g [:table :Customer]
 
 ### `[:from ?relvar]`
 

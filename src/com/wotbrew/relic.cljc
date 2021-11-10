@@ -133,7 +133,7 @@
 (defn map-unique-index1 [empty keyfn collision-fn]
   (let [map-contains-row? (fn map-contains-row? [index row]
                             (if-some [k (keyfn row)]
-                              (contains? index k)
+                              (= (index k) row)
                               (contains? (index nil #{}) row)))
         replace (fn [a b] (if a (collision-fn a b) b))]
     (with-meta
@@ -474,7 +474,9 @@
           (merge-node [a b relvar stmt]
             (cond
               (nil? a) (assoc b :relvar relvar)
-              (:mat (meta stmt)) (assoc b :relvar relvar :dependents (:dependents a #{}))
+              (:mat (meta stmt)) (assoc b :relvar relvar
+                                          :mat true
+                                          :dependents (:dependents a #{}))
               :else a))
           (add [g relvar]
             (let [left (pop relvar)
@@ -723,14 +725,18 @@
     (let [m (reduce init m deps)
           rows (delay (row-seqable (m relvar empty-set-index)))]
       (reduce (fn [m dependent]
-                (let [{:keys [mat-fns]} (g dependent)
+                (let [{:keys [mat-fns, mat]} (g dependent)
                       {:keys [insert]} (mat-fns relvar)
-                      init-key [::init dependent relvar]]
-                  (if (contains? m init-key)
-                    m
+                      init-key [::init dependent relvar mat]]
+                  ;; todo this
+                  (if-not mat
                     (-> m
-                        (assoc init-key true)
-                        (insert @rows))))) m dependents))))
+                        (insert @rows))
+                    (if (contains? m init-key)
+                      m
+                      (-> m
+                          (assoc init-key true)
+                          (insert @rows)))))) m dependents))))
 
 (defn materialize [st & relvars]
   (let [m (meta st)
@@ -1690,17 +1696,55 @@
                      st)}
      :delete1 {dep mat-noop}}))
 
-(defn constrain [st & constraints]
-  (let [constraint->relvars
-        (fn [{:keys [relvar, unique, fk]}]
-          (concat
-            (when (keyword? unique)
-              [(conj relvar [:unique unique])])
-            (when (vector? unique)
-              [(conj relvar (into [:unique] unique))])
-            (for [[right clause] fk]
-              (conj relvar [::fk right clause]))))]
-    (->> (for [constraint constraints
-               relvar (constraint->relvars constraint)]
-           relvar)
+(defmethod graph-node ::check
+  [left [_ checks]]
+  (let [f (reduce-kv
+            (fn [f k v]
+              (let [f2 (expr-row-fn v)]
+                (comp (fn [m] (let [mv (m k)
+                                    r (f2 mv)]
+                                (if r
+                                  m
+                                  (raise "Check constraint violation" {:k k, :row m, :relvar left})))) f)))
+            identity checks)]
+    {:deps [left]
+     :insert1 {left (transform-insert1 f)}
+     :delete1 {left (transform-delete1 f)}}))
+
+;; spec / malli checks can require extension of this multi
+(defmulti constraint->relvars (fn [k constraint] k))
+
+(defmethod constraint->relvars :default [_ _] nil)
+
+(defmethod constraint->relvars :unique [_ {:keys [relvar unique]}]
+  (for [k unique]
+    (if (keyword? k)
+      (conj relvar [:unique k])
+      (conj relvar (into [:unique] k)))))
+
+(defmethod constraint->relvars :fk [_ {:keys [relvar fk]}]
+  (for [[right clause] fk]
+    (conj relvar [::fk right clause])))
+
+(defmethod constraint->relvars :check [_ {:keys [relvar check]}]
+  [(conj relvar [::check check])])
+
+(defn constrain
+  "Applies constraints to the state.
+
+  constraints are maps with the following keys:
+
+  :relvar The relvar that will recieve the constraint
+  :unique a vector unique keys / sets of keys, e.g :unique [[:a :b]] would create a composite unique key :a :b.
+  :fk a map of {relvar join-clause} to establish relationships to other relvars, e.g it holds that a :join is always possible across the fk"
+  [st & constraints]
+  (let [get-relvars
+        (fn cr [constraint]
+          (if-not (map? constraint)
+            (mapcat cr constraint)
+            (concat
+              (for [k (keys constraint)
+                    relvar (constraint->relvars k constraint)]
+                relvar))))]
+    (->> (get-relvars constraints)
          (apply materialize st))))

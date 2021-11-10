@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.10.0"]]
   :repl-options {:init-ns com.wotbrew.relic}
   :profiles {:dev {:source-paths ["dev"]
-                   :dependencies [[com.clojure-goes-fast/clj-async-profiler "0.5.1"]]}})
+                   :dependencies [[com.clojure-goes-fast/clj-async-profiler "0.5.1"]
+                                  [org.clojure/data.csv "1.0.0"]]}})

@@ -1177,12 +1177,12 @@
            (join-ext? (first extensions))
            (for [[binding {:keys [relvar clause]}] extensions
                  :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]]
-             [:join-as-coll relvar clause binding])
+             [::join-as-coll relvar clause binding])
 
            (join-first-ext? (first extensions))
            (for [[binding {:keys [relvar clause]}] extensions
                  :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]
-                 stmt [[:join-as-coll relvar clause binding]
+                 stmt [[::join-as-coll relvar clause binding]
                        (into [::extend*] (for [[binding] extensions] [binding [first binding]]))]]
              stmt)
 
@@ -1668,3 +1668,39 @@
 (defn ed-transact [& tx]
   #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/transact) tx)
      :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+
+(defn- bad-fk [left relvar clause row]
+  (raise "Foreign key violation" {:relvar left
+                                  :references relvar
+                                  :clause clause
+                                  :row (dissoc row ::fk)}))
+
+(defn- good-fk [left relvar clause row])
+
+(defmethod graph-node ::fk
+  [left [_ relvar clause]]
+  (let [dep (conj left [::join-as-coll relvar clause ::fk])
+        check-fk (fn [{::keys [fk] :as row}]
+                   (if (empty? fk)
+                     (bad-fk left relvar clause row)
+                     (good-fk left relvar clause row)))]
+    {:deps [dep]
+     :insert1 {dep (fn [st row insert insert1 delete delete1]
+                     (check-fk row)
+                     st)}
+     :delete1 {dep mat-noop}}))
+
+(defn constrain [st & constraints]
+  (let [constraint->relvars
+        (fn [{:keys [relvar, unique, fk]}]
+          (concat
+            (when (keyword? unique)
+              [(conj relvar [:unique unique])])
+            (when (vector? unique)
+              [(conj relvar (into [:unique] unique))])
+            (for [[right clause] fk]
+              (conj relvar [::fk right clause]))))]
+    (->> (for [constraint constraints
+               relvar (constraint->relvars constraint)]
+           relvar)
+         (apply materialize st))))

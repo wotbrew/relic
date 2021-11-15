@@ -372,6 +372,8 @@
 ;; statements
 
 (defn- operator [stmt] (nth stmt 0))
+(defn- left-relvar [relvar] (pop relvar))
+(defn- head-stmt [relvar] (peek relvar))
 
 (defmulti dataflow-node
   "Return a map describing the stmt in relation to the left relvar.
@@ -395,21 +397,21 @@
 
 ;; dataflow
 
-(defn base-relvar? [relvar]
+(defn table-relvar? [relvar]
   (case (count relvar)
-    1 (= :table (operator (peek relvar)))
+    1 (= :table (operator (head-stmt relvar)))
     false))
 
-(defn unwrap-base [relvar]
+(defn unwrap-table [relvar]
   (cond
-    (base-relvar? relvar) relvar
-    (= :from (operator (peek relvar))) (let [[_ relvar] (peek relvar)] (unwrap-base relvar))
-    (= :table (operator (peek relvar))) [(peek relvar)]
+    (table-relvar? relvar) relvar
+    (= :from (operator (head-stmt relvar))) (let [[_ relvar] (head-stmt relvar)] (unwrap-table relvar))
+    (= :table (operator (head-stmt relvar))) [(head-stmt relvar)]
     :else nil))
 
 (defn- base-mat-fns
   [g relvar flow]
-  (let [{:keys [empty-index]} (if g (g relvar) (dataflow-node [] (peek relvar)))
+  (let [{:keys [empty-index]} (if g (g relvar) (dataflow-node [] (head-stmt relvar)))
         {:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
@@ -480,8 +482,8 @@
                                           :dependents (:dependents a #{}))
               :else a))
           (add [g relvar]
-            (let [left (pop relvar)
-                  stmt (peek relvar)
+            (let [left (left-relvar relvar)
+                  stmt (head-stmt relvar)
                   {:keys [deps, implicit]
                    :as node} (dataflow-node left stmt)
                   contains (contains? g relvar)
@@ -510,7 +512,7 @@
         delete (get delete edge)
         delete1 (get delete1 edge)
 
-        empty-index (or empty-index (when (:mat (meta (peek relvar))) empty-set-index))
+        empty-index (or empty-index (when (:mat (meta (head-stmt relvar))) empty-set-index))
 
         inserted1
         (if empty-index
@@ -630,7 +632,7 @@
         rf (fn rf [g relvar edge]
              (assert (g relvar) "Should only request inserter for relvars in dataflow graph")
              (when (nil? edge)
-               (when-not (base-relvar? relvar)
+               (when-not (table-relvar? relvar)
                  (raise "Can only modify base relvars" {:relvar relvar})))
              (if (contains? @visited relvar)
                g
@@ -685,7 +687,7 @@
 
         bases
         (reduce (fn ! [acc relvar]
-                  (if (base-relvar? relvar)
+                  (if (table-relvar? relvar)
                     (conj acc relvar)
                     (let [{:keys [deps]} (g relvar)]
                       (reduce ! acc deps))))
@@ -695,7 +697,7 @@
 (defn- dataflow-transactor [g]
   (let [mat-fns (memoize
                   (fn [relvar]
-                    (assert (base-relvar? relvar) "Can only modify :state relvars")
+                    (assert (table-relvar? relvar) "Can only modify :state relvars")
                     (or (get-in g [relvar :mat-fns nil])
                         (-> {}
                             (add-mat-fns [relvar])
@@ -946,15 +948,15 @@
 (defn col-data [relvar]
   (if (empty? relvar)
     []
-    (let [stmt (peek relvar)
-          left (pop relvar)]
+    (let [stmt (head-stmt relvar)
+          left (left-relvar relvar)]
       (col-data* left stmt))))
 
 (defn state-deps [relvar]
-  (if-some [state (unwrap-base relvar)]
+  (if-some [state (unwrap-table relvar)]
     #{state}
-    (let [left (pop relvar)
-          stmt (peek relvar)
+    (let [left (left-relvar relvar)
+          stmt (head-stmt relvar)
           {:keys [deps]} (dataflow-node left stmt)]
       (set (mapcat state-deps deps)))))
 
@@ -1196,7 +1198,7 @@
            :else [(into [::extend*] extensions)]))
        (transduce cat conj left)
        ((fn [relvar]
-          (dataflow-node (pop relvar) (peek relvar))))))
+          (dataflow-node (left-relvar relvar) (head-stmt relvar))))))
 
 (defmethod col-data* :extend
   [left [_ & extensions]]
@@ -1364,7 +1366,7 @@
 
 (defmethod dataflow-node :fk
   [left [_ right clause]]
-  (let [left-base (unwrap-base left)
+  (let [left-base (unwrap-table left)
         _ (when-not left-base (raise "FK can only depend on base relvar"))
         left-exprs (keys clause)
         left (conj left-base (into [:hash] left-exprs))

@@ -87,9 +87,9 @@
 
 (deftest base-relvar-test
   (let [A [[:table :A]]]
-    (is (r/base-relvar? A))
-    (is (not (r/base-relvar? [])))
-    (is (not (r/base-relvar? (conj A [:where [= 1 1]]))))))
+    (is (r/table-relvar? A))
+    (is (not (r/table-relvar? [])))
+    (is (not (r/table-relvar? (conj A [:where [= 1 1]]))))))
 
 (deftest state-statement-test
   (let [A [[:table :A]]

@@ -373,7 +373,7 @@
 
 (defn- operator [stmt] (nth stmt 0))
 
-(defmulti graph-node
+(defmulti dataflow-node
   "Return a map describing the stmt in relation to the left relvar.
 
   Return keys:
@@ -409,7 +409,7 @@
 
 (defn- base-mat-fns
   [g relvar flow]
-  (let [{:keys [empty-index]} (if g (g relvar) (graph-node [] (peek relvar)))
+  (let [{:keys [empty-index]} (if g (g relvar) (dataflow-node [] (peek relvar)))
         {:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
@@ -483,7 +483,7 @@
             (let [left (pop relvar)
                   stmt (peek relvar)
                   {:keys [deps, implicit]
-                   :as node} (graph-node left stmt)
+                   :as node} (dataflow-node left stmt)
                   contains (contains? g relvar)
                   g (update g relvar merge-node node relvar stmt)]
               (if contains
@@ -955,7 +955,7 @@
     #{state}
     (let [left (pop relvar)
           stmt (peek relvar)
-          {:keys [deps]} (graph-node left stmt)]
+          {:keys [deps]} (dataflow-node left stmt)]
       (set (mapcat state-deps deps)))))
 
 (defn known-keys [relvar]
@@ -964,17 +964,17 @@
 (defmethod col-data* :default [_ _]
   {})
 
-(defmethod graph-node :table
+(defmethod dataflow-node :table
   [left [_ _ {:keys [pk]} :as stmt]]
   (if (seq left)
-    (graph-node left [:from [stmt]])
+    (dataflow-node left [:from [stmt]])
     {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)}))
 
 (defmethod col-data* :table
   [_ [_ _ {:keys [req]} :as stmt]]
   (for [k req] {:k k}))
 
-(defmethod graph-node :from
+(defmethod dataflow-node :from
   [_ [_ relvar]]
   {:deps [relvar]
    :insert {relvar pass-through-insert}
@@ -986,7 +986,7 @@
   [_ [_ relvar]]
   (col-data relvar))
 
-(defmethod graph-node :project
+(defmethod dataflow-node :project
   [left [_ & cols]]
   (let [cols (vec (set cols))
         f (fn [row] (select-keys row cols))]
@@ -1000,7 +1000,7 @@
   [left [_ & cols]]
   (filter (comp (set cols) :k) (col-data left)))
 
-(defmethod graph-node :project-away
+(defmethod dataflow-node :project-away
   [left [_ & cols]]
   (let [cols (vec (set cols))
         f (fn [row] (apply dissoc row cols))]
@@ -1014,7 +1014,7 @@
   [left [_ & cols]]
   (remove (comp (set cols) :k) (col-data left)))
 
-(defmethod graph-node :union
+(defmethod dataflow-node :union
   [left [_ right]]
   (let [left (mat-head left)
         right (mat-head right)]
@@ -1058,7 +1058,7 @@
             :when (not (left-idx k))]
         col))))
 
-(defmethod graph-node :intersection
+(defmethod dataflow-node :intersection
   [left [_ right]]
   (let [left (mat-head left)
         right (mat-head right)]
@@ -1090,7 +1090,7 @@
   [left [_ _]]
   (col-data left))
 
-(defmethod graph-node :difference
+(defmethod dataflow-node :difference
   [left [_ right]]
   (let [left (mat-head left)
         right (mat-head right)]
@@ -1136,7 +1136,7 @@
   [left [_ _]]
   (col-data left))
 
-(defmethod graph-node :where
+(defmethod dataflow-node :where
   [left [_ & exprs]]
   (let [expr-preds (mapv expr-row-fn exprs)
         pred-fn (apply every-pred expr-preds)]
@@ -1165,7 +1165,7 @@
 (defn- join-first-expr? [expr] (instance? JoinFirst expr))
 (defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
 
-(defmethod graph-node ::extend*
+(defmethod dataflow-node ::extend*
   [left [_ & extensions]]
   (let [f (apply comp (map extend-form-fn (reverse extensions)))]
     {:deps [left]
@@ -1174,7 +1174,7 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod graph-node :extend
+(defmethod dataflow-node :extend
   [left [_ & extensions]]
   (->> (for [extensions (partition-by (fn [ext] (cond
                                                   (join-ext? ext) :join
@@ -1196,7 +1196,7 @@
            :else [(into [::extend*] extensions)]))
        (transduce cat conj left)
        ((fn [relvar]
-          (graph-node (pop relvar) (peek relvar))))))
+          (dataflow-node (pop relvar) (peek relvar))))))
 
 (defmethod col-data* :extend
   [left [_ & extensions]]
@@ -1208,7 +1208,7 @@
       (for [k ext-keys]
         {:k k}))))
 
-(defmethod graph-node :qualify
+(defmethod dataflow-node :qualify
   [left [_ namespace]]
   (let [namespace (name namespace)
         f #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]
@@ -1223,7 +1223,7 @@
   (for [col (col-data left)]
     (assoc col :k (keyword namespace (name (:k col))))))
 
-(defmethod graph-node :rename
+(defmethod dataflow-node :rename
   [left [_ renames]]
   (let [extensions (for [[from to] renames] [to from])
         away (keys renames)
@@ -1242,7 +1242,7 @@
       (assoc col :k nk)
       col)))
 
-(defmethod graph-node :expand
+(defmethod dataflow-node :expand
   [left [_ & expansions]]
   (let [exp-fns (mapv expand-form-xf expansions)
         exp-xf (apply comp (reverse exp-fns))]
@@ -1262,7 +1262,7 @@
       (for [k exp-keys]
         {:k k}))))
 
-(defmethod graph-node :select
+(defmethod dataflow-node :select
   [left [_ & selections]]
   (let [[cols exts] ((juxt filter remove) keyword? selections)
         cols (set (concat cols (mapcat extend-form-cols exts)))
@@ -1284,7 +1284,7 @@
       (for [k cols]
         {:k k}))))
 
-(defmethod graph-node :hash
+(defmethod dataflow-node :hash
   [left [_ & exprs]]
   (let [expr-fns (mapv expr-row-fn exprs)]
     {:empty-index (map-index {} expr-fns)
@@ -1294,7 +1294,7 @@
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
 
-(defmethod graph-node :unique
+(defmethod dataflow-node :unique
   [left [_ & exprs]]
   (let [expr-fns (mapv expr-row-fn exprs)]
     {:empty-index (map-unique-index {} expr-fns)
@@ -1308,7 +1308,7 @@
   [left _]
   (col-data left))
 
-(defmethod graph-node :btree
+(defmethod dataflow-node :btree
   [left [_ & exprs]]
   (let [expr-fns (mapv expr-row-fn exprs)]
     {:empty-index (map-index (sorted-map) expr-fns)
@@ -1322,7 +1322,7 @@
   [left _]
   (col-data left))
 
-(defmethod graph-node :join
+(defmethod dataflow-node :join
   [left [_ right clause]]
   (let [left-exprs (keys clause)
         left (conj left (into [:hash] left-exprs))
@@ -1362,7 +1362,7 @@
                                       (join-row match row))]
                         (deleted db matches)))}}))
 
-(defmethod graph-node :fk
+(defmethod dataflow-node :fk
   [left [_ right clause]]
   (let [left-base (unwrap-base left)
         _ (when-not left-base (raise "FK can only depend on base relvar"))
@@ -1405,7 +1405,7 @@
       right-cols)))
 
 
-(defmethod graph-node ::join-as-coll
+(defmethod dataflow-node ::join-as-coll
   [left [_ right clause k]]
   (let [left-exprs (keys clause)
         right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
@@ -1469,7 +1469,7 @@
                             (deleted deletes)
                             (inserted inserts))))}}))
 
-(defmethod graph-node :left-join
+(defmethod dataflow-node :left-join
   [left [_ right clause]]
   (let [join-as-coll (conj left [::join-as-coll right clause ::left-join])
         join-row merge
@@ -1727,7 +1727,7 @@
   (when-some [n (:custom-node (agg-expr-agg expr))]
     (n left stmt)))
 
-(defmethod graph-node :agg
+(defmethod dataflow-node :agg
   [left [_ cols & aggs :as stmt]]
   (or
     (when (= 1 (count aggs)) (special-agg left stmt (first aggs)))
@@ -1789,7 +1789,7 @@
 
 (defn- good-fk [left relvar clause row])
 
-(defmethod graph-node ::fk
+(defmethod dataflow-node ::fk
   [left [_ relvar clause]]
   (let [dep (conj left [::join-as-coll relvar clause ::fk])
         check-fk (fn [{::keys [fk] :as row}]
@@ -1819,7 +1819,7 @@
           m
           (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar}))))))
 
-(defmethod graph-node ::check
+(defmethod dataflow-node ::check
   [left [_ & checks]]
   (let [f (apply comp (map (partial check->pred left) checks))]
     {:deps [left]

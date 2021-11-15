@@ -259,6 +259,7 @@
     (is (= #{ab0} (r/what-if db R {A [a0] B [b0]} [:delete A a0] [:insert A a0])))
     (is (= #{ab0} (r/what-if db R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))
     (is (= #{a0} (r/what-if db R {A [a0] B [b0]} [:delete B b0])))
+    (is (= #{a0} (r/what-if db R {A [a0]} [:delete B b0])))
     (is (= #{a0, ab1} (r/what-if db R {A [a0, a1], B [b0, b1]} [:delete B b0])))))
 
 (deftest map-unique-index1-nil-test

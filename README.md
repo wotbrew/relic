@@ -1,16 +1,15 @@
 # relic
 
-`STATUS: EXPERIMENTAL`
+`STATUS: PRIMORDIAL TAR, not ready quite yet...`
 
 A Clojure(Script) library for doing functional relational programming in clojure.
 
-- SQL-style relational programming
-- declarative 
-- data dsl
+- in memory relational programming for your clojure data  
+- declarative data dsl
 - incremental materialized views
-- decent performance
+- constraints 
 
-## Why 
+## Pitch 
 
 Do you ever feel like this when programming with business data and pipelines of maps with maps and more maps, maps for 
 breakfast, dinner and supper?
@@ -26,7 +25,7 @@ This is a _relvar_, a _relvar_ is just a vector containing a series of relationa
 [[:table :Customer]]
 ```
 
-You derive new relvars by appending statements to the vector, statements are relational operators, like SQL.
+You derive relvars from relvars using operators, like `:where`, `:extend`, `:join`, `:agg` and so on.
 
 ```clojure 
  [[:table :Customer]
@@ -38,10 +37,9 @@ Relvars on their own don't do anything, to get a _relation_ we have to pair them
 State is stored in a plain old clojure map which we'll call the `db` in this example, you manipulate the state with the `transact` function.
 
 ```clojure 
-(require '[com.wotbrew.relic :as r])
+(require '[com.wotbrew.relic :as rel])
 
-
-(def db (r/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
+(def db (rel/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
 db 
 ;; =>
@@ -52,11 +50,11 @@ db
 Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database.
 
 ```clojure 
-(r/q db [[:table :Customer] [:where [= :id 42]]]) 
+(rel/q db [[:table :Customer] [:where [= :id 42]]]) 
 ;; => 
 #{{:id 42, :name "bob"}}
 
-(r/q db [[:table :Customer] [:where [= :name "alice"]]])
+(rel/q db [[:table :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```
@@ -65,25 +63,40 @@ Ok ok, not very cool. _What if I told you_ that you can materialize any relvar s
 it will be maintained for you as you modify the database. In other words `relic` has incremental materialized views.
 
 ```clojure 
-(r/materialize db [[:table :Customer] [:where [= :id 42]]])
+(rel/materialize db [[:table :Customer] [:where [= :id 42]]])
 ```
 
 `materialize` will return a new _database_ that looks and smells the same, but will maintain the results
 of the passed relvars as you `transact` against the database __incrementally__.
 
-If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
+If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/masterel/dev/examples/real_estate.clj) informative.
 
-## Relational operators
+## Relvar reference
 
-### `[:table ?name]` 
+Relvars are always vectors, a each element being some kind of relational statement. 
 
-The base state relvar, at the moment just a name e.g [:table :Customer]
+e.g 
 
-### `[:from ?relvar]`
+```clojure 
+[[:from Customer]
+ [:where [= :firstname "fred"]]
+ [:extend [:fullname [str :firstname :lastname]]
+ [:join Order {:customer-id :customer-id}]]
+```
 
-Provides some convenience for deriving relvars without conj, e.g `[[:from A] ...]`  
+As they are just data, you can def them, just type them as literals or construct/manipulate them programmatically. Each statement depends on the above statements, this forms a dataflow graph. 
+Unlike SQL, order matters e.g you cannot use a column that has not been defined in some preceding statement.
+### Naming your state `[[:table ?name]]` 
 
-### `[:where & ?exprs]` 
+Your tables contain the input to relic, normally data from the outside world or that is inputted by the user. You update/insert/delete against tables.
+
+The idea is you only need tables for _essential_ state, you derive information by joining/slicing/dicing your state tables via relational operators.
+
+### Nesting `[[:from ?relvar]]`
+
+Provides some convenience for deriving relvars without conj, e.g `[[:from A] [:where [= :foo 42]]]` instead of `(conj A [:where [= :foo 42]])`  
+
+### Filtering `[... [:where & ?exprs]]` 
 
 Restricts results to those matching some set of expressions, expressions are vectors where keywords are templated in as cols
 e.g `[= :age 42]` the first value needs to be a function, rows will be tested using a form like `(= (:age row) 42)`
@@ -95,7 +108,7 @@ e.g `[:where {:a 42, :b 42} ...]` will consult an index to discover rows where :
 
 This is mostly useful in updates/deletes and ad-hoc queries as joins always use indexes.
   
-### `[:extend & ?extensions]`
+### Adding new keys `[... [:extend & ?extensions]]`
 
 Extension adds new values to rows, an extension looks like this: 
 
@@ -108,67 +121,109 @@ In this case it says provide the column `:foo` by concating `:a` and `:b` with `
 - `[k expr]` bind result of expr to k
 - `[[& k] expr]` merge keys from the result of expr
 
-You can use the functions r/join-first and r/join-coll in expression position for sub-selects.
+You can use the functions `rel/join-first` and `rel/join-coll` in expression position for sub-selects.
 
 e.g 
 
 ```clojure
-(def FooSum [[:from Foo] [:agg [:foo] [:n-sum [r/sum :n]]]])
-[:extend [[:n-sum] (r/join-first FooSum {:foo :foo})]]
+(def TotalSpend
+  [[:from Order] 
+   [:agg [:customer-id] [:total-spend [rel/sum :total]]]])
+
+;; join-first to splice columns from another row, i.e an implicit left-join.
+(def CustomerStats 
+  [[:from Customer] 
+   [:extend [[:total-spend] (rel/join-first TotalSpend {:customer-id :customer-id})]]])
+;; would result in a relation something like:
+#{{:customer 42, :total-spend 340.0M}}
+
+;; join coll to get a set of rows as a column
+(def Order 
+  [[:from Order]
+   [:extend [:item (rel/join-coll OrderItem {:order-id :order-id})]]])
+;; would result in a relation something like:
+#{{:customer-id 42,
+   :total 340.0M
+   :items #{{:product-id 43, :quantity 1} ...}}
+
 ```
 
 
-### `[:project & keys]`
+### Keeping a subset of columns `[... [:project & cols]]`
 
 Like `select-keys` or `set/project` the resulting relation will contain only the projected keys.
   
-### `[:project-away & keys]`  
+### Removing columns `[... [:project-away & cols]]`  
 
-Inverse of `:project` will instead omit the keys in `keys` from the resulting relation.
+Inverse of `:project` will instead omit the keys in `cols` from the resulting relation.
 
-### `[:select & ?binding|key]`
+### SQL style select `[... [:select & ?binding|col]]`
 
 A mix and match expressions suitable for `:project` and `:extend` resulting in a SQL-style `:select`.
   
-### `[:join ?relvar ?clause]` 
+### SQL style join `[... [:join ?relvar ?clause]]` 
 
-Like `set/join`, clause is a map of keys on the left to keys on the right.
+Like `set/join`, clause is a map of expressions on the left to expressions on the right.
   
-### `[:left-join ?relvar ?clause]`
+### SQL style left join `[... [:left-join ?relvar ?clause]]`
 
-SQL-style left join.
+?clause is a map of {left-expr, right-expr}, e.g` [[:from Customer] [:join Order {:customer-id :customer-id}]]`
   
-### `[:agg [& ?keys] & aggregations]`
+### Aggregation & grouping `[... [:agg [& ?keys] & aggregations]]`
 
-The aggregation / grouping operator.  Groups rows under the keys and performs aggregation on them to
-construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
-  
-### `[:expand & ?expansion]`
-  
-### `[:union ?relvar]`
-  
-### `[:difference ?relvar]`
-  
-### `[:intersection ?relvar]`
-  
-### `[:rename ?renames]`
-  
-### `[:qualify ?namespace]`
+Groups rows under the keys and performs aggregation on them to
+construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 
-## Transact forms 
+### Flattening trees `[... [:expand & ?expansion]]`
+  
+### Set union `[... [:union ?relvar]]`
+  
+### Set difference `[... [:difference ?relvar]]`
+  
+### Set intersection `[... [:intersection ?relvar]]`
+  
+### Rename columns `[... [:rename ?renames]]`
+  
+### Qualify columns `[... [:qualify ?namespace]]`
 
-### `[:insert ?relvar & ?row]`
-### `[:delete ?relvar & ?row]`
-### `{?relvar ?rows}`
+## Query reference 
+
+### Get rows with `q`
+### Apply a sort with `:sort` and `:rsort` 
+### Use a transducer with `:xf`
+
+## Transact reference 
+
+### Modify state with `transact`
+### Insert one or more rows `[:insert ?relvar & ?row]`
+### Delete one or more rows `[:delete ?relvar & ?row-or-expr]`
+### Terse insert `{?relvar1 ?rows, relvar2 ?rows}`
 ### `TODO update`
 ### `TODO upsert`
+
+## Constraint reference 
+
+### Apply constraints with `constrain`
+### Ensure only one row exists for a set of columns `:unique` 
+### Ensure a referenced row exists `:fk`
+### Check columns or rows always meet some predicate `:check`
+
+## Tracking changes
+
+### Tag relvars you want to track with `watch`
+### Transact with change tracking `tracked-transact`
+
+## Other cool stuff
+
+### Speculate with `what-if`
+### Explore your data `ed`
+### Get raw indexes with `index`
 
 ## TODO 
 
 - Recursive (fixed point?) relvars to enable logic type queries
 - Tests
 - Docs  
-- Constraints
 - Update / Upsert
 - Compile time relvars, the great unboxing, custom record types
 - Better docs 
@@ -179,7 +234,7 @@ construct new values. e.g `[:agg [:a] [:summed-b [r/sum :b]]]` WIP.
 
 - [core.logic](https://github.com/clojure/core.logic) 
 - [datascript](https://github.com/tonsky/datascript)
-- [clara-rules](https://github.com/cerner/clara-rules)
+- [clara-rules](https://github.com/cernerel/clara-rules)
 - [odoyle-rules](https://github.com/oakes/odoyle-rules)
 - [fyra](https://github.com/yanatan16/fyra)
 

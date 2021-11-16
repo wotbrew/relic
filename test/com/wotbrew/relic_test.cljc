@@ -101,8 +101,8 @@
     (is (= db (r/materialize db A)))
     (is (= db (r/transact db {A []})))
     (is (= #{a0} (r/what-if db A {A [a0]})))
-    (is (= {A #{a0}} (r/transact db [:insert A a0])))
-    (is (= {A #{}} (r/transact db [:insert A a0] [:delete A a0])))
+    (is (= {:A #{a0}} (r/transact db [:insert A a0])))
+    (is (= {:A #{}} (r/transact db [:insert A a0] [:delete A a0])))
     (is (= {} (r/transact db [:delete A a0])))
     (is (= #{a0} (r/what-if db (vec (concat A A)) {A [a0]})))
     (is (= #{a0 a1 a2} (r/what-if db A {A [a0 a1 a2 a0 a1]})))
@@ -276,3 +276,21 @@
     (is (empty? (r/seek-n i [nil])))
     (is (= #{nil1} (r/seek-n i1 [nil])))
     (is (= #{nil1 nil2} (r/seek-n i2 [nil])))))
+
+(deftest migrate-table-state-test
+ #_ (let [db {}
+        A [[:table :A {:req [:a]}]]
+        A2 [[:table :A {:req [:a, :b]}]]
+        B [[:table :A {:req [:a]}] [:project :b]]
+        B2 [[:table :A {:req [:a :b]}] [:project :b]]
+        db (r/transact db {A [{:a 1}]})
+        db (r/transact db {A2 [{:a 2, :b 2}]})]
+
+    ;; what should happen too old table references
+    (is (= nil (r/q db A)))
+    (is (= nil (r/q db B)))
+
+    (is (= #{{:a 1}, {:a 2, :b 2}} (r/q db A2)))
+    (is (= #{{:a 1}, {:a 2, :b 2}} ((meta db) A2)))
+    (is (= #{{:a 1}, {:a 2, :b 2}} (r/q db :A)))
+    (is (= #{{} {:b 2}} (r/q db B2)))))

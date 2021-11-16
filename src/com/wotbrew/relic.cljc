@@ -1696,6 +1696,18 @@
   (let [agg (apply set-concat exprs)]
     (comp-complete agg count)))
 
+(defn any [expr]
+  (let [f (expr-row-fn expr)]
+    {:reducer #(some f %)
+     :combiner #(and %1 %2)
+     :complete boolean}))
+
+(defn not-any [expr]
+  (let [f (expr-row-fn expr)]
+    {:reducer #(not-any? f %)
+     :combiner #(and %1 %2)
+     :complete boolean}))
+
 (defn- agg-expr-agg [expr]
   (cond
     (map? expr) expr

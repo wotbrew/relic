@@ -464,7 +464,26 @@
   ([db rows] db)
   ([db rows inserted inserted1 deleted deleted1] db))
 
-(defn- add-to-graph [g relvars]
+(defn- delete-from-graph [g relvar]
+  (letfn [(orphan? [g relvar]
+            (let [{:keys [dependents]} (g relvar)]
+              (empty? dependents)))
+          (materialized? [g relvar] (contains? (::materialized g) relvar))
+          (watched? [g relvar] (contains? (::watched g) relvar))
+          (delete-if-safe [g relvar]
+            (cond
+              (not (orphan? g relvar)) g
+              (watched? g relvar) g
+              (materialized? g relvar) g
+              (table-relvar? relvar) g
+              :else
+              (let [{:keys [deps]} (g relvar)
+                    g (dissoc g relvar)
+                    g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)]
+                (reduce delete-if-safe g deps))))]
+    (delete-if-safe g relvar)))
+
+(defn- add-to-graph [g relvar]
   (letfn [(edit-flow [node dependent]
             (let [dependents (:dependents node #{})
                   new-dependents (conj dependents dependent)]
@@ -494,7 +513,7 @@
                 (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
                       g (reduce add g implicit)]
                   g))))]
-    (reduce add g relvars)))
+    (add g relvar)))
 
 (defn- derived-mat-fns [node edge flow]
   (let [{:keys [flow-inserts-n
@@ -610,7 +629,7 @@
 
 (defn add-mat-fns [g relvars]
   (let [og g
-        g (add-to-graph og relvars)
+        g (reduce add-to-graph og relvars)
 
         wrap-insertn
         (fn wrap-insertn
@@ -755,15 +774,35 @@
 
 (declare transact)
 
-(defn materialize [db & relvars]
+(defn- materialize* [db opts relvars]
   (let [m (meta db)
         relvars (map mat-head relvars)
-        g (add-mat-fns (::graph m {}) relvars)
+        g (::graph m {})
+        g (add-mat-fns g relvars)
+        g (if (:ephemeral opts) g (update g ::materialized (fnil into #{}) relvars))
         transactor (dataflow-transactor g)
         m (assoc m ::transactor transactor, ::graph g)
         m (reduce init m relvars)
         db (with-meta db m)]
     db))
+
+(defn- dematerialize* [db opts relvars]
+  (let [m (meta db)
+        g (::graph m {})
+        g (if (:ephemeral opts) g (update g ::materialized (fnil set/difference #{}) (set relvars)))
+        g (reduce delete-from-graph g relvars)
+        g (add-mat-fns g (::materialized g))
+        transactor (dataflow-transactor g)
+        m (assoc m ::transactor transactor, ::graph g)
+        m (reduce (fn [m relvar]
+                    (if (and (contains? m relvar) (not (contains? g relvar)))
+                      (dissoc m relvar)
+                      m)) m relvars)
+        db (with-meta db m)]
+    db))
+
+(defn materialize [db & relvars] (materialize* db {} relvars))
+(defn dematerialize [db & relvars] (dematerialize* db {} relvars))
 
 (defn transact [db & tx]
   (if-some [transactor (::transactor (meta db))]
@@ -884,7 +923,11 @@
 
 (defn watch [db & relvars]
   (let [db (vary-meta db update ::watched (fnil into #{}) relvars)]
-    (apply materialize db relvars)))
+    (materialize* db {:ephemeral true} relvars)))
+
+(defn unwatch [db & relvars]
+  (let [db (vary-meta db update ::watched (fnil set/difference #{}) (set relvars))]
+    (dematerialize* db {:ephemeral true} relvars)))
 
 (defn track-transact [db & tx]
   (binding [*added* (zipmap (::watched (meta db)) (repeat #{}))
@@ -901,7 +944,6 @@
                                                            #(contains-row? oidx %)) deleted)}])]
       {:result db
        :changes (merge-with merge (into {} added) (into {} deleted))})))
-
 
 (defn- assoc-if-not-nil [m k v]
   (if (nil? v)

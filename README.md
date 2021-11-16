@@ -201,6 +201,11 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 ### `TODO update`
 ### `TODO upsert`
 
+## Materialization reference 
+
+### materialize relations with `materialize`
+### save memory with `dematerialize`
+
 ## Constraint reference 
 
 ### Apply constraints with `constrain`

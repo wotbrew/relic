@@ -1222,8 +1222,8 @@
 
 (defmethod dataflow-node ::index-lookup
   [_ [_ relvar m]]
-  (let [exprs (keys m)
-        path (vals m)
+  (let [exprs (set (keys m))
+        path (map m exprs)
         hash-index (conj relvar (into [:hash] exprs))
         path-fn (apply juxt (map expr-row-fn exprs))]
     {:deps [hash-index]
@@ -1432,11 +1432,11 @@
 
 (defmethod dataflow-node :join
   [left [_ right clause]]
-  (let [left-exprs (keys clause)
+  (let [left-exprs (set (keys clause))
         left (conj left (into [:hash] left-exprs))
         right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
 
-        right-exprs (vals clause)
+        right-exprs (map clause left-exprs)
         right (conj right (into [:hash] right-exprs))
         left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
         join-row merge]
@@ -1483,10 +1483,10 @@
 
 (defmethod dataflow-node ::join-as-coll
   [left [_ right clause k]]
-  (let [left-exprs (keys clause)
+  (let [left-exprs (set (keys clause))
         right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
 
-        right-exprs (vals clause)
+        right-exprs (map clause left-exprs)
         right (conj right (into [:hash] right-exprs))
         left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
         join-matches (fn [m rows] (assoc m k (set rows)))

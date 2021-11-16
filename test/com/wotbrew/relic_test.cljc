@@ -107,7 +107,7 @@
     (is (= #{a0} (rel/what-if db (vec (concat A A)) {A [a0]})))
     (is (= #{a0 a1 a2} (rel/what-if db A {A [a0 a1 a2 a0 a1]})))
     (is (= #{a2} (rel/what-if db A {A [a2 a2 a2]})))
-    (is (= #{a2} (rel/what-if db A {A [a0 a1]} {A [a2]} [:delete A a0 a1])))))
+    (is (= #{a2} (rel/what-if db A {A [a0 a1]} {A [a2]} [:delete-exact A a0 a1])))))
 
 (deftest from-statement-test
   (let [A [[:table :A]]
@@ -122,7 +122,7 @@
     (is (= #{a0} (rel/what-if db (vec (concat A F)) {A [a0]})))
     (is (= #{a0 a1 a2} (rel/what-if db F {A [a0 a1 a2 a0 a1]})))
     (is (= #{a2} (rel/what-if db F {A [a2 a2 a2]})))
-    (is (= #{a2} (rel/what-if db F {A [a0 a1]} {A [a2]} [:delete A a0 a1])))))
+    (is (= #{a2} (rel/what-if db F {A [a0 a1]} {A [a2]} [:delete-exact A a0 a1])))))
 
 (deftest where-expr-test
   (are [result row expr]

@@ -379,3 +379,19 @@
 
     (is (some? (-> db meta ::rel/graph (get A1))))
     (is (= #{{:a 43}} (-> db meta (get A2))))))
+
+(deftest update-test
+  (let [A [[:table :A]]
+        db (rel/transact {} {A [{:a 42} {:a 44}]})]
+    (is (= #{{:a 43}, {:a 45}} (rel/what-if db A [:update A {:a [inc :a]}])))
+    (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} {:a 42}])))
+    (is (= #{{:a 42}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} {:a 41}])))
+    (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A {:a 43} [= :a 42]])))
+    (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A #(assoc % :a 43) [= :a 42]])))))
+
+(deftest delete-test
+  (let [A [[:table :A]]
+        db (rel/transact {} {A [{:a 42} {:a 44}]})]
+    (is (= #{} (rel/what-if db A [:delete A])))
+    (is (= #{{:a 42}} (rel/what-if db A [:delete A {:a 44}])))
+    (is (= #{{:a 42}} (rel/what-if db A [:delete A [< 43 :a] [:or [= 1 2] [= 1 1]]])))))

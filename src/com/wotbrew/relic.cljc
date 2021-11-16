@@ -716,25 +716,43 @@
                 [] relvars)]
     (reduce #(rf %1 %2 nil) g bases)))
 
-(declare materialize)
+(declare materialize q expr-row-fn)
 
 (defn- dataflow-transactor [g]
-  (let [insert-n (fn insert-n
-                   [relvar db rows retry]
-                   (let [{:keys [insert]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
-                     (if insert
-                       (insert db rows)
-                       (if retry
-                         (raise "Could not create mat-fns for table" {:relvar relvar})
-                         (insert-n relvar (materialize db relvar) rows true)))))
-        delete-n (fn delete-n
-                   [relvar db rows retry]
-                   (let [{:keys [delete]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
-                     (if delete
-                       (delete db rows)
-                       (if retry
-                         (raise "Could not create mat-fns for table" {:relvar relvar})
-                         (delete-n relvar (materialize db relvar) rows true)))))]
+  (let [insert-n
+        (fn insert-n
+          [relvar db rows retry]
+          (let [{:keys [insert]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+            (if insert
+              (insert db rows)
+              (if retry
+                (raise "Could not create mat-fns for table" {:relvar relvar})
+                (insert-n relvar (materialize db relvar) rows true)))))
+        delete-n
+        (fn delete-n
+          [relvar db rows retry]
+          (let [{:keys [delete]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+            (if delete
+              (delete db rows)
+              (if retry
+                (raise "Could not create mat-fns for table" {:relvar relvar})
+                (delete-n relvar (materialize db relvar) rows true)))))
+        update-where
+        (fn update-where
+          [relvar db f-or-set-map exprs]
+          (let [f (if (map? f-or-set-map)
+                    (reduce-kv (fn [f k e] (comp f (let [f2 (expr-row-fn e)] #(assoc % k (f2 %))))) identity f-or-set-map)
+                    f-or-set-map)
+                matched-rows (q db (conj relvar (into [:where] exprs)))
+                new-rows (mapv f matched-rows)
+                db (delete-n relvar db matched-rows false)
+                db (insert-n relvar db new-rows false)]
+            db))
+        delete-where
+        (fn delete-where
+          [relvar db exprs]
+          (let [rows (q db (conj relvar (into [:where] exprs)))]
+            (delete-n relvar db rows false)))]
     (fn transact
       [db tx]
       (cond
@@ -742,10 +760,12 @@
         (seq? tx) (reduce transact db tx)
         (nil? tx) db
         :else
-        (let [[op relvar & rows] tx]
+        (let [[op relvar & args] tx]
           (case op
-            :insert (insert-n relvar db rows false)
-            :delete (delete-n relvar db rows false)))))))
+            :insert (insert-n relvar db args false)
+            :delete-exact (delete-n relvar db args false)
+            :delete (delete-where relvar db args)
+            :update (let [[f-or-set-map & exprs] args] (update-where relvar db f-or-set-map exprs))))))))
 
 (defn- mat-head [relvar]
   (case (count relvar)

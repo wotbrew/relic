@@ -196,9 +196,12 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 
 ### Modify state with `transact`
 ### Insert one or more rows `[:insert ?relvar & ?row]`
-### Delete one or more rows `[:delete ?relvar & ?row-or-expr]`
 ### Terse insert `{?relvar1 ?rows, relvar2 ?rows}`
-### `TODO update`
+### Update rows `[:update ?relvar ?f-or-set-map & where-expr]`
+### Delete rows by where filter `[:delete ?relvar & where-expr]`
+### Delete rows`[:delete-exact ?relvar & ?row]` 
+
+
 ### `TODO upsert`
 
 ## Materialization reference 

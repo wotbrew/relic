@@ -419,7 +419,7 @@
                 flow-delete1]} flow]
     {:insert
      (fn base-insert [db rows]
-       (let [oidx (db relvar empty-index)
+       (let [oidx (db table-key empty-index)
              new-rows (filterv #(not (contains-row? oidx %)) rows)]
          (if (seq new-rows)
            (let [nidx (reduce index-row oidx new-rows)
@@ -430,7 +430,7 @@
            db)))
      :insert1
      (fn base-insert1 [db row]
-       (let [oidx (db relvar empty-index)]
+       (let [oidx (db table-key empty-index)]
          (if (contains-row? oidx row)
            db
            (let [nidx (index-row oidx row)
@@ -440,7 +440,7 @@
              db))))
      :delete
      (fn base-delete [db rows]
-       (let [oidx (db relvar empty-index)
+       (let [oidx (db table-key empty-index)
              deleted-rows (filterv #(contains-row? oidx %) rows)]
          (if (seq deleted-rows)
            (let [nidx (reduce unindex-row oidx deleted-rows)
@@ -451,7 +451,7 @@
            db)))
      :delete1
      (fn base-delete1 [db row]
-       (let [oidx (db relvar empty-index)]
+       (let [oidx (db table-key empty-index)]
          (if-not (contains-row? oidx row)
            db
            (let [nidx (unindex-row oidx row)
@@ -695,27 +695,36 @@
                 [] relvars)]
     (reduce #(rf %1 %2 nil) g bases)))
 
+(declare materialize)
+
 (defn- dataflow-transactor [g]
-  (let [mat-fns (memoize
-                  (fn [relvar]
-                    (assert (table-relvar? relvar) "Can only modify :state relvars")
-                    (or (get-in g [relvar :mat-fns nil])
-                        (-> {}
-                            (add-mat-fns [relvar])
-                            (get-in [relvar :mat-fns nil])))))
-        insert-n (memoize (comp :insert mat-fns))
-        delete-n (memoize (comp :delete mat-fns))]
+  (let [insert-n (fn insert-n
+                   [relvar db rows retry]
+                   (let [{:keys [insert]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+                     (if insert
+                       (insert db rows)
+                       (if retry
+                         (raise "Could not create mat-fns for table" {:relvar relvar})
+                         (insert-n relvar (materialize db relvar) rows true)))))
+        delete-n (fn delete-n
+                   [relvar db rows retry]
+                   (let [{:keys [delete]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+                     (if delete
+                       (delete db rows)
+                       (if retry
+                         (raise "Could not create mat-fns for table" {:relvar relvar})
+                         (delete-n relvar (materialize db relvar) rows true)))))]
     (fn transact
       [db tx]
       (cond
-        (map? tx) (reduce-kv (fn [db relvar rows] ((insert-n relvar) db rows)) db tx)
+        (map? tx) (reduce-kv (fn [db relvar rows] (insert-n relvar db rows false)) db tx)
         (seq? tx) (reduce transact db tx)
         (nil? tx) db
         :else
         (let [[op relvar & rows] tx]
           (case op
-            :insert ((insert-n relvar) db rows)
-            :delete ((delete-n relvar) db rows)))))))
+            :insert (insert-n relvar db rows false)
+            :delete (delete-n relvar db rows false)))))))
 
 (defn- mat-head [relvar]
   (case (count relvar)
@@ -742,14 +751,17 @@
                           (assoc init-key true)
                           (insert @rows)))))) m dependents))))
 
+(declare transact)
+
 (defn materialize [db & relvars]
   (let [m (meta db)
         relvars (map mat-head relvars)
         g (add-mat-fns (::graph m {}) relvars)
         transactor (dataflow-transactor g)
         m (assoc m ::transactor transactor, ::graph g)
-        m (reduce init m relvars)]
-    (with-meta db m)))
+        m (reduce init m relvars)
+        db (with-meta db m)]
+    db))
 
 (defn transact [db & tx]
   (if-some [transactor (::transactor (meta db))]

@@ -411,7 +411,8 @@
 
 (defn- base-mat-fns
   [g relvar flow]
-  (let [{:keys [empty-index]} (if g (g relvar) (dataflow-node [] (head-stmt relvar)))
+  (let [[_ table-key :as stmt] (head-stmt relvar)
+        {:keys [empty-index]} (if g (g relvar) (dataflow-node [] stmt))
         {:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
@@ -422,7 +423,7 @@
              new-rows (filterv #(not (contains-row? oidx %)) rows)]
          (if (seq new-rows)
            (let [nidx (reduce index-row oidx new-rows)
-                 db (assoc db relvar nidx)
+                 db (assoc db table-key nidx)
                  db (vary-meta db assoc relvar nidx)
                  db (vary-meta db flow-inserts-n new-rows)]
              db)
@@ -433,7 +434,7 @@
          (if (contains-row? oidx row)
            db
            (let [nidx (index-row oidx row)
-                 db (assoc db relvar nidx)
+                 db (assoc db table-key nidx)
                  db (vary-meta db assoc relvar nidx)
                  db (vary-meta db flow-insert1 row)]
              db))))
@@ -443,7 +444,7 @@
              deleted-rows (filterv #(contains-row? oidx %) rows)]
          (if (seq deleted-rows)
            (let [nidx (reduce unindex-row oidx deleted-rows)
-                 db (assoc db relvar nidx)
+                 db (assoc db table-key nidx)
                  db (vary-meta db assoc relvar nidx)
                  db (vary-meta db flow-deletes-n deleted-rows)]
              db)
@@ -454,7 +455,7 @@
          (if-not (contains-row? oidx row)
            db
            (let [nidx (unindex-row oidx row)
-                 db (assoc db relvar nidx)
+                 db (assoc db table-key nidx)
                  db (vary-meta db assoc relvar nidx)
                  db (vary-meta db flow-delete1 row)]
              db))))}))
@@ -943,14 +944,14 @@
   (fn [db row inserted inserted1 deleted deleted1]
     (deleted1 db (f row))))
 
-(defmulti col-data* (fn [_ stmt] (operator stmt)))
+(defmulti columns* (fn [_ stmt] (operator stmt)))
 
-(defn col-data [relvar]
+(defn columns [relvar]
   (if (empty? relvar)
     []
     (let [stmt (head-stmt relvar)
           left (left-relvar relvar)]
-      (col-data* left stmt))))
+      (columns* left stmt))))
 
 (defn state-deps [relvar]
   (if-some [state (unwrap-table relvar)]
@@ -960,10 +961,10 @@
           {:keys [deps]} (dataflow-node left stmt)]
       (set (mapcat state-deps deps)))))
 
-(defn known-keys [relvar]
-  (map :k (col-data relvar)))
+(defn col-keys [relvar]
+  (map :k (columns relvar)))
 
-(defmethod col-data* :default [_ _]
+(defmethod columns* :default [_ _]
   {})
 
 (defmethod dataflow-node :table
@@ -972,7 +973,7 @@
     (dataflow-node left [:from [stmt]])
     {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)}))
 
-(defmethod col-data* :table
+(defmethod columns* :table
   [_ [_ _ {:keys [req]} :as stmt]]
   (for [k req] {:k k}))
 
@@ -984,9 +985,9 @@
    :delete {relvar pass-through-delete}
    :delete1 {relvar pass-through-delete1}})
 
-(defmethod col-data* :from
+(defmethod columns* :from
   [_ [_ relvar]]
-  (col-data relvar))
+  (columns relvar))
 
 (defmethod dataflow-node :project
   [left [_ & cols]]
@@ -998,9 +999,9 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod col-data* :project
+(defmethod columns* :project
   [left [_ & cols]]
-  (filter (comp (set cols) :k) (col-data left)))
+  (filter (comp (set cols) :k) (columns left)))
 
 (defmethod dataflow-node :project-away
   [left [_ & cols]]
@@ -1012,9 +1013,9 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod col-data* :project-away
+(defmethod columns* :project-away
   [left [_ & cols]]
-  (remove (comp (set cols) :k) (col-data left)))
+  (remove (comp (set cols) :k) (columns left)))
 
 (defmethod dataflow-node :union
   [left [_ right]]
@@ -1044,10 +1045,10 @@
                            db
                            (deleted1 db row))))}}))
 
-(defmethod col-data* :union
+(defmethod columns* :union
   [left [_ right]]
-  (let [left-idx (index-by :k (col-data left))
-        right-idx (index-by :k (col-data right))]
+  (let [left-idx (index-by :k (columns left))
+        right-idx (index-by :k (columns right))]
     (concat
       (for [[k col] left-idx]
         (if (right-idx k)
@@ -1088,9 +1089,9 @@
      :delete1 {left pass-through-delete1
                right pass-through-delete1}}))
 
-(defmethod col-data* :intersection
+(defmethod columns* :intersection
   [left [_ _]]
-  (col-data left))
+  (columns left))
 
 (defmethod dataflow-node :difference
   [left [_ right]]
@@ -1134,9 +1135,9 @@
                            (inserted1 db row)
                            db)))}}))
 
-(defmethod col-data* :difference
+(defmethod columns* :difference
   [left [_ _]]
-  (col-data left))
+  (columns left))
 
 (defmethod dataflow-node :where
   [left [_ & exprs]]
@@ -1152,9 +1153,9 @@
      :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
      :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}}))
 
-(defmethod col-data* :where
+(defmethod columns* :where
   [left _]
-  (col-data left))
+  (columns left))
 
 (defrecord JoinColl [relvar clause])
 (defn join-coll [relvar clause] (->JoinColl relvar clause))
@@ -1200,11 +1201,11 @@
        ((fn [relvar]
           (dataflow-node (left-relvar relvar) (head-stmt relvar))))))
 
-(defmethod col-data* :extend
+(defmethod columns* :extend
   [left [_ & extensions]]
   (let [ext-keys (set (mapcat extend-form-cols extensions))]
     (concat
-      (for [col (col-data left)
+      (for [col (columns left)
             :when (not (ext-keys (:k col)))]
         col)
       (for [k ext-keys]
@@ -1220,9 +1221,9 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod col-data* :qualify
+(defmethod columns* :qualify
   [left [_ namespace] _]
-  (for [col (col-data left)]
+  (for [col (columns left)]
     (assoc col :k (keyword namespace (name (:k col))))))
 
 (defmethod dataflow-node :rename
@@ -1236,9 +1237,9 @@
      :delete {dep pass-through-delete}
      :delete1 {dep pass-through-delete1}}))
 
-(defmethod col-data* :rename
+(defmethod columns* :rename
   [left [_ renames]]
-  (for [col (col-data left)
+  (for [col (columns left)
         :let [nk (get renames (:k col))]]
     (if nk
       (assoc col :k nk)
@@ -1252,13 +1253,13 @@
      :insert {left (fn [db rows inserted inserted1 deleted deleted1] (inserted db (into [] exp-xf rows)))}
      :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (into [] exp-xf rows)))}}))
 
-(defmethod col-data* :expand
+(defmethod columns* :expand
   [left [_ & expansions]]
   (let [exp-keys (set (for [[binding] expansions
                             k (if (vector? binding) binding [binding])]
                         k))]
     (concat
-      (for [col (col-data left)
+      (for [col (columns left)
             :when (not (exp-keys (:k col)))]
         col)
       (for [k exp-keys]
@@ -1275,12 +1276,12 @@
      :delete {left (transform-delete select-fn)}
      :delete1 {left (transform-delete1 select-fn)}}))
 
-(defmethod col-data* :select
+(defmethod columns* :select
   [left [_ & selections]]
   (let [[cols exts] ((juxt filter remove) keyword? selections)
         cols (set (concat cols (mapcat extend-form-cols exts)))]
     (concat
-      (for [col (col-data left)
+      (for [col (columns left)
             :when (not (cols (:k col)))]
         col)
       (for [k cols]
@@ -1306,9 +1307,9 @@
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
 
-(defmethod col-data* :hash
+(defmethod columns* :hash
   [left _]
-  (col-data left))
+  (columns left))
 
 (defmethod dataflow-node :btree
   [left [_ & exprs]]
@@ -1320,9 +1321,9 @@
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
 
-(defmethod col-data* :btree
+(defmethod columns* :btree
   [left _]
-  (col-data left))
+  (columns left))
 
 (defmethod dataflow-node :join
   [left [_ right clause]]
@@ -1396,10 +1397,10 @@
                           (raise "FK violation (right)")
                           db)))}}))
 
-(defmethod col-data* :join
+(defmethod columns* :join
   [left [_ right]]
-  (let [left-cols (col-data left)
-        right-cols (col-data right)
+  (let [left-cols (columns left)
+        right-cols (columns right)
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
@@ -1492,11 +1493,11 @@
                              (->> (into [] xf rows)
                                   (deleted db)))}}))
 
-(defmethod col-data* :left-join
+(defmethod columns* :left-join
   [left [_ right clause]]
   [left [_ right]]
-  (let [left-cols (col-data left)
-        right-cols (col-data right)
+  (let [left-cols (columns left)
+        right-cols (columns right)
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
@@ -1762,10 +1763,10 @@
                              (delete old-rows)
                              (insert new-rows))))}})))
 
-(defmethod col-data* :agg
+(defmethod columns* :agg
   [left [_ cols & aggs]]
   (let [agg-keys (set (for [[binding] aggs] binding))
-        left-cols (filter (comp (set cols) :k) (col-data left))]
+        left-cols (filter (comp (set cols) :k) (columns left))]
     (concat
       (remove agg-keys left-cols)
       (for [agg agg-keys]

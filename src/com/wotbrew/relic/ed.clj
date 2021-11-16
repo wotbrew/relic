@@ -40,14 +40,14 @@
             rows (r/q st relvar)
             _ (ref-set db st)
 
-            cols (r/col-data relvar)
+            cols (r/columns relvar)
             col-keys (mapv :k cols)
 
             mdl-state
             (ref (vec rows))
 
             mdl
-            (if-some [base (r/unwrap-base relvar)]
+            (if-some [base (r/unwrap-table relvar)]
               (proxy [AbstractTableModel] []
                 (getColumnCount [] (count cols))
                 (getRowCount [] (count @mdl-state))
@@ -98,7 +98,7 @@
                            (.fireTableDataChanged table))))))))
 
 (defn ed [relvar]
-  (let [p (JFrame. (if-some [[[_ n]] (r/unwrap-base relvar)] (str "Base " n) "Derived View"))
+  (let [p (JFrame. (if-some [[[_ n]] (r/unwrap-table relvar)] (str "Base " n) "Derived View"))
         mdl (init relvar)
         table (JTable. mdl)
         _ (.setFillsViewportHeight table true)

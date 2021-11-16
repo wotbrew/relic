@@ -186,6 +186,8 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
   
 ### Qualify columns `[... [:qualify ?namespace]]`
 
+### Constant relations `[[:const ?coll]]`
+
 ## Query reference 
 
 ### Get rows with `q`
@@ -199,7 +201,7 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 ### Terse insert `{?relvar1 ?rows, relvar2 ?rows}`
 ### Update rows `[:update ?relvar ?f-or-set-map & where-expr]`
 ### Delete rows by where filter `[:delete ?relvar & where-expr]`
-### Delete rows`[:delete-exact ?relvar & ?row]` 
+### Delete rows`[:delete-exact ?relvar & ?row]`
 
 
 ### `TODO upsert`

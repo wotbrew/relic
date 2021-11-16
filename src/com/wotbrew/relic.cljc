@@ -525,8 +525,7 @@
                 insert
                 insert1
                 delete
-                delete1
-                provide]} node
+                delete1]} node
 
         insert (get insert edge)
         insert1 (get insert1 edge)
@@ -597,8 +596,7 @@
      (cond
        delete (fn [db rows] (delete db rows inserted inserted1 deleted deleted1))
        delete1 (fn [db rows] (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) db rows))
-       :else mat-noop)
-     :provide (when provide (fn [db] (provide db inserted inserted1 deleted deleted1)))}))
+       :else mat-noop)}))
 
 (def ^:private ^:dynamic *added* nil)
 (def ^:private ^:dynamic *deleted* nil)
@@ -653,9 +651,6 @@
 
         rf (fn rf [g relvar edge]
              (assert (g relvar) "Should only request inserter for relvars in dataflow graph")
-             (when (nil? edge)
-               (when-not (table-relvar? relvar)
-                 (raise "Can only modify base relvars" {:relvar relvar})))
              (if (contains? @visited relvar)
                g
                (let [{:keys [dependents] :as node} (g relvar)
@@ -703,15 +698,19 @@
                       :flow-deletes-n (with-deleted-hook relvar flow-deletes-n)
                       :flow-delete1 (with-deleted-hook1 relvar flow-delete1)}
 
-                     mat-fns (if (nil? edge) (base-mat-fns g relvar flow) (derived-mat-fns node edge flow))
+                     mat-fns (if (nil? edge)
+                               (if (table-relvar? relvar)
+                                 (base-mat-fns g relvar flow)
+                                 (derived-mat-fns node edge flow))
+                               (derived-mat-fns node edge flow))
                      mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))]
                  (assoc-in g [relvar :mat-fns edge] mat-fns))))
 
         bases
         (reduce (fn ! [acc relvar]
-                  (if (table-relvar? relvar)
-                    (conj acc relvar)
-                    (let [{:keys [deps]} (g relvar)]
+                  (let [{:keys [deps]} (g relvar)]
+                    (if (empty? deps)
+                      (conj acc relvar)
                       (reduce ! acc deps))))
                 [] relvars)]
     (reduce #(rf %1 %2 nil) g bases)))
@@ -775,15 +774,20 @@
 (defn- init [m relvar]
   (let [g (::graph m {})
         {:keys [deps
-                dependents]} (g relvar)]
+                dependents
+                provide]} (g relvar)]
     (let [m (reduce init m deps)
+          m (cond
+              (seq deps) m
+              (contains? m relvar) m
+              provide (assoc m relvar (provide m))
+              :else m)
           rows (delay (row-seqable (m relvar empty-set-index)))]
       (reduce (fn [m dependent]
-                (let [{:keys [mat-fns, mat]} (g dependent)
-                      {:keys [insert
-                              provide]} (mat-fns relvar)
+                (let [{:keys [mat-fns, mat, provide]} (g dependent)
+                      {:keys [insert]} (mat-fns relvar)
                       init-key [::init dependent relvar mat]
-                      f (or provide #(insert % @rows))]
+                      f (if provide #(insert % (provide %)) #(insert % @rows))]
                   (cond
                     (not mat) (f m)
                     (contains? m init-key) m
@@ -1233,11 +1237,10 @@
      :delete {hash-index (fn [db rows inserted inserted1 deleted deleted1]
                            (let [rows (filter #(= path (path-fn %)) rows)]
                              (deleted db rows)))}
-     :provide (fn [db inserted inserted1 deleted deleted1]
+     :provide (fn [db]
                 (let [idx (db hash-index)]
-                  (if idx
-                    (inserted db (seek-n idx path))
-                    db)))}))
+                  (when idx
+                    (seek-n idx path))))}))
 
 (defmethod dataflow-node :where
   [left [_ & exprs]]
@@ -1959,3 +1962,8 @@
                 relvar))))]
     (->> (get-relvars constraints)
          (apply materialize db))))
+
+(defmethod dataflow-node :const
+  [left [_ relation]]
+  (let [relation (into empty-set-index relation)]
+    {:provide (fn [db] relation)}))

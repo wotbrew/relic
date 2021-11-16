@@ -83,7 +83,16 @@
        [:agg [:a] [:n count]]
        [:select [:x [+ :a :n]]]]
       ;; =>
-      #{{:x 44}})))
+      #{{:x 44}}
+
+      [[:from a]
+       [:join [[:const [{:b 1}]]]]]
+      ;;=>
+      #{{:a 42, :b 1}, {:a 43, :b 1}, {:a 45, :b 1}}
+
+      [[:const [{:a 42}, {:b 43}]]]
+      ;;=>
+      #{{:a 42} {:b 43}})))
 
 (deftest base-relvar-test
   (let [A [[:table :A]]]

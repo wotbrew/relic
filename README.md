@@ -2,7 +2,7 @@
 
 `STATUS: EXPERIMENTAL`
 
-A Clojure(Script) library for doing information programming using 'codd style' relational algebra.
+A Clojure(Script) library for doing functional relational programming in clojure.
 
 - SQL-style relational programming
 - declarative 
@@ -12,7 +12,12 @@ A Clojure(Script) library for doing information programming using 'codd style' r
 
 ## Why 
 
-I re-read out-of-the-tarpit and found myself in a strange mood.
+Do you ever feel like this when programming with business data and pipelines of maps with maps and more maps, maps for 
+breakfast, dinner and supper?
+
+![tarpit](doc/tar.jpeg)
+
+`relic` might help.
 
 ## Tutorial
 
@@ -21,7 +26,7 @@ This is a _relvar_, a _relvar_ is just a vector containing a series of relationa
 [[:table :Customer]]
 ```
 
-You derive new relvars by appending statements to the vector, there is a whole algebra of statements to choose from, like SQL.
+You derive new relvars by appending statements to the vector, statements are relational operators, like SQL.
 
 ```clojure 
  [[:table :Customer]

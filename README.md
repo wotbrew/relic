@@ -87,6 +87,13 @@ Provides some convenience for deriving relvars without conj, e.g `[[:from A] ...
 
 Restricts results to those matching some set of expressions, expressions are vectors where keywords are templated in as cols
 e.g `[= :age 42]` the first value needs to be a function, rows will be tested using a form like `(= (:age row) 42)`
+
+#### Using indexes
+
+expressions can be maps, rows are matched by testing `[= k v]`. `v` must be a constant value. if the first expression is a map then an index will be consulted.
+e.g `[:where {:a 42, :b 42} ...]` will consult an index to discover rows where :a is 42 and :b is 42.
+
+This is mostly useful in updates/deletes and ad-hoc queries as joins always use indexes.
   
 ### `[:extend & ?extensions]`
 

@@ -294,3 +294,16 @@
     (is (= #{{:a 1}, {:a 2, :b 2}} ((meta db) A2)))
     (is (= #{{:a 1}, {:a 2, :b 2}} (r/q db :A)))
     (is (= #{{} {:b 2}} (r/q db B2)))))
+
+(deftest where-lookup-test
+  (let [A [[:table :A]]
+        db {}]
+    (is (= #{{:a 42}} (r/what-if db [[:from A] [:where {:a 42}]] {A [{:a 42}, {:a 43}]})))
+    (is (= #{{:a 43}} (-> (r/materialize db [[:from A] [:where {:a 43}]])
+                          (r/transact {A [{:a 42}, {:a 43}]})
+                          meta
+                          (get [[:from A] [:where {:a 43}]]))))
+
+    (is (= #{{:a 42}} (r/what-if db [[:from A] [:where {:a 42} {[:b ::r/% (r/esc ::missing)] ::missing}]] {A [{:a 42}, {:a 43}]})))
+    (is (= nil (r/what-if db [[:from A] [:where {:a 42} {:a 43}]])))
+    (is (= nil (r/what-if db [[:from A] [:where [:or {:a 42} {:a 43}]]])))))

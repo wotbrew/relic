@@ -506,7 +506,8 @@
                 insert
                 insert1
                 delete
-                delete1]} node
+                delete1
+                provide]} node
 
         insert (get insert edge)
         insert1 (get insert1 edge)
@@ -577,7 +578,8 @@
      (cond
        delete (fn [db rows] (delete db rows inserted inserted1 deleted deleted1))
        delete1 (fn [db rows] (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) db rows))
-       :else mat-noop)}))
+       :else mat-noop)
+     :provide (when provide (fn [db] (provide db inserted inserted1 deleted deleted1)))}))
 
 (def ^:private ^:dynamic *added* nil)
 (def ^:private ^:dynamic *deleted* nil)
@@ -739,17 +741,17 @@
           rows (delay (row-seqable (m relvar empty-set-index)))]
       (reduce (fn [m dependent]
                 (let [{:keys [mat-fns, mat]} (g dependent)
-                      {:keys [insert]} (mat-fns relvar)
-                      init-key [::init dependent relvar mat]]
-                  ;; todo this
-                  (if-not mat
+                      {:keys [insert
+                              provide]} (mat-fns relvar)
+                      init-key [::init dependent relvar mat]
+                      f (or provide #(insert % @rows))]
+                  (cond
+                    (not mat) (f m)
+                    (contains? m init-key) m
+                    :else
                     (-> m
-                        (insert @rows))
-                    (if (contains? m init-key)
-                      m
-                      (-> m
-                          (assoc init-key true)
-                          (insert @rows)))))) m dependents))))
+                        (assoc init-key true)
+                        (f))))) m dependents))))
 
 (declare transact)
 
@@ -830,6 +832,11 @@
     (symbol? expr) @(resolve expr)
 
     (fn? expr) expr
+
+    (map? expr)
+    (if (seq expr)
+      (apply every-pred (map (fn [[k v]] (let [kf (expr-row-fn k)] #(= v (kf %)))) expr))
+      (constantly true))
 
     :else (constantly expr)))
 
@@ -1151,10 +1158,34 @@
   [left [_ _]]
   (columns left))
 
+(defmethod dataflow-node ::index-lookup
+  [_ [_ relvar m]]
+  (let [exprs (keys m)
+        path (vals m)
+        hash-index (conj relvar (into [:hash] exprs))
+        path-fn (apply juxt (map expr-row-fn exprs))]
+    {:deps [hash-index]
+     :insert {hash-index (fn [db rows inserted inserted1 deleted deleted1]
+                           (let [rows (filter #(= path (path-fn %)) rows)]
+                             (inserted db rows)))}
+     :delete {hash-index (fn [db rows inserted inserted1 deleted deleted1]
+                           (let [rows (filter #(= path (path-fn %)) rows)]
+                             (deleted db rows)))}
+     :provide (fn [db inserted inserted1 deleted deleted1]
+                (let [idx (db hash-index)]
+                  (if idx
+                    (inserted db (seek-n idx path))
+                    db)))}))
+
 (defmethod dataflow-node :where
   [left [_ & exprs]]
-  (let [expr-preds (mapv expr-row-fn exprs)
-        pred-fn (apply every-pred expr-preds)]
+  (let [index-pred (when (map? (first exprs)) (first exprs))
+        exprs (if index-pred (rest exprs) exprs)
+        expr-preds (mapv expr-row-fn exprs)
+        pred-fn (if (seq exprs) (apply every-pred expr-preds) (constantly true))
+        left (if index-pred
+               [[::index-lookup left index-pred]]
+               left)]
     {:deps [left]
      :insert {left (fn [db rows inserted inserted1 deleted deleted1]
                      (inserted db (filterv pred-fn rows)))}

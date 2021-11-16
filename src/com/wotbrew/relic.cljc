@@ -483,6 +483,10 @@
                 (reduce delete-if-safe g deps))))]
     (delete-if-safe g relvar)))
 
+(def ^:private Env [[:table ::Env]])
+(def ^:dynamic ^:private *env-deps* nil)
+(defn- track-env-dep [k] (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
+
 (defn- add-to-graph [g relvar]
   (letfn [(edit-flow [node dependent]
             (let [dependents (:dependents node #{})
@@ -494,20 +498,35 @@
           (depend [g dependent dependency]
             (let [g (add g dependency)]
               (update g dependency edit-flow dependent)))
-          (merge-node [a b relvar stmt]
+          (merge-node [a b relvar]
             (cond
               (nil? a) (assoc b :relvar relvar)
-              (:mat (meta stmt)) (assoc b :relvar relvar
-                                          :mat true
-                                          :dependents (:dependents a #{}))
+              (:mat (meta (head-stmt relvar))) (assoc b :relvar relvar
+                                                        :mat true
+                                                        :dependents (:dependents a #{}))
               :else a))
-          (add [g relvar]
+
+          (create-node [relvar]
             (let [left (left-relvar relvar)
                   stmt (head-stmt relvar)
-                  {:keys [deps, implicit]
-                   :as node} (dataflow-node left stmt)
+
+                  [node env-deps]
+                  (if (::env-satisfied (meta stmt))
+                    [(dataflow-node left stmt)]
+                    (binding [*env-deps* #{}]
+                      [(dataflow-node left stmt) *env-deps*]))]
+              (if (seq env-deps)
+                (dataflow-node (conj left
+                                     [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
+                                     (vary-meta stmt assoc ::env-satisfied true))
+                               [:project-away ::env])
+                node)))
+
+          (add [g relvar]
+            (let [{:keys [deps, implicit]
+                   :as node} (create-node relvar)
                   contains (contains? g relvar)
-                  g (update g relvar merge-node node relvar stmt)]
+                  g (update g relvar merge-node node relvar)]
               (if contains
                 g
                 (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
@@ -876,6 +895,10 @@
                            (fn [row]
                              (if (c row)
                                (t row))))])
+            (= f ::env)
+            (let [[k not-found] args]
+              (track-env-dep k)
+              [(fn [row] (-> row ::env (get k not-found)))])
             :else [f args])
           args (map expr-row-fn args)]
       (case (count args)
@@ -903,6 +926,13 @@
 
     :else (constantly expr)))
 
+(defn- add-implicit-expr-joins [relvar exprs]
+  (binding [*env-deps* #{}]
+    (let [expr-fns (mapv expr-row-fn exprs)]
+      (if (seq *env-deps*)
+        [(conj relvar [:left-join (conj Env [:extend [:env [select-keys :env *env-deps*]]])]) expr-fns true]
+        [relvar expr-fns]))))
+
 (defn q
   ([db relvar-or-binds]
    (if (map? relvar-or-binds)
@@ -918,23 +948,25 @@
          relvar-or-binds))
      (some-> (index db relvar-or-binds) row-seqable)))
   ([db relvar opts]
-   (let [rs (some-> (index db relvar) row-seqable)
-         {:keys [sort
+   (let [{:keys [sort
                  rsort
                  xf]
           into-coll :into} opts
 
          sort* (or sort rsort)
-         sort-fn
-         (cond
-           (nil? sort*) nil
-           (keyword? sort*) sort*
-           :else (apply juxt2 (map expr-row-fn sort*)))
+         sort-exprs (if (keyword? sort*) [sort*] sort*)
+         [relvar sort-fns drop-env] (if sort* (add-implicit-expr-joins relvar sort-exprs) [relvar])
+         rs (some-> (index db relvar) row-seqable)
+         sort-fn (when sort-fns (apply juxt2 sort-fns))
 
          rs (cond
               sort (sort-by sort-fn rs)
               rsort (sort-by sort-fn > rs)
               :else rs)
+
+         xf (if drop-env
+              (comp (map #(dissoc % ::env)) (or xf identity))
+              xf)
 
          rs (cond
              into-coll (if xf (into into-coll xf rs) (into into-coll rs))
@@ -1228,8 +1260,9 @@
   [_ [_ relvar m]]
   (let [exprs (set (keys m))
         path (map m exprs)
+        expr-fns (mapv expr-row-fn exprs)
         hash-index (conj relvar (into [:hash] exprs))
-        path-fn (apply juxt (map expr-row-fn exprs))]
+        path-fn (apply juxt expr-fns)]
     {:deps [hash-index]
      :insert {hash-index (fn [db rows inserted inserted1 deleted deleted1]
                            (let [rows (filter #(= path (path-fn %)) rows)]
@@ -1244,27 +1277,29 @@
 
 (defmethod dataflow-node :where
   [left [_ & exprs]]
-  (let [index-pred (when (map? (first exprs)) (first exprs))
-        exprs (if index-pred (rest exprs) exprs)
-        expr-preds (mapv expr-row-fn exprs)
-        pred-fn (if (seq exprs) (apply every-pred expr-preds) (constantly true))
-        left (if index-pred
-               [[::index-lookup left index-pred]]
-               left)]
-    {:deps [left]
-     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
-                     (inserted db (filterv pred-fn rows)))}
-     :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
-                      (if (pred-fn row)
-                        (inserted1 db row)
-                        db))}
-     :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
-     :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}}))
+  (binding [*env-deps* #{}]
+    (let [index-pred (when (map? (first exprs)) (first exprs))
+          exprs (if index-pred (rest exprs) exprs)
+          expr-preds (mapv expr-row-fn exprs)
+          pred-fn (if (seq exprs) (apply every-pred expr-preds) (constantly true))
+          left (if index-pred
+                 [[::index-lookup left index-pred]]
+                 left)]
+      {:deps [left]
+       :insert {left (fn [db rows inserted inserted1 deleted deleted1]
+                       (inserted db (filterv pred-fn rows)))}
+       :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
+                        (if (pred-fn row)
+                          (inserted1 db row)
+                          db))}
+       :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
+       :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}})))
 
 (defmethod columns* :where
   [left _]
   (columns left))
 
+;; todo reformulate in terms of implicit-joins
 (defrecord JoinColl [relvar clause])
 (defn join-coll [relvar clause] (->JoinColl relvar clause))
 (defn- join-expr? [expr] (instance? JoinColl expr))
@@ -1278,7 +1313,8 @@
 
 (defmethod dataflow-node ::extend*
   [left [_ & extensions]]
-  (let [f (apply comp (map extend-form-fn (reverse extensions)))]
+  (let [extend-fns (mapv extend-form-fn extensions)
+        f (apply comp (rseq extend-fns))]
     {:deps [left]
      :insert {left (transform-insert f)}
      :insert1 {left (transform-insert1 f)}
@@ -1355,8 +1391,8 @@
 
 (defmethod dataflow-node :expand
   [left [_ & expansions]]
-  (let [exp-fns (mapv expand-form-xf expansions)
-        exp-xf (apply comp (reverse exp-fns))]
+  (let [exp-xforms (mapv expand-form-xf expansions)
+        exp-xf (apply comp (rseq exp-xforms))]
     {:deps [left]
      :insert {left (fn [db rows inserted inserted1 deleted deleted1] (inserted db (into [] exp-xf rows)))}
      :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (into [] exp-xf rows)))}}))
@@ -1377,7 +1413,8 @@
   [left [_ & selections]]
   (let [[cols exts] ((juxt filter remove) keyword? selections)
         cols (set (concat cols (mapcat extend-form-cols exts)))
-        select-fn (apply comp #(select-keys % cols) (map extend-form-fn (reverse exts)))]
+        ext-fns (mapv extend-form-fn exts)
+        select-fn (apply comp #(select-keys % cols) (rseq ext-fns))]
     {:deps [left]
      :insert {left (transform-insert select-fn)}
      :insert1 {left (transform-insert1 select-fn)}
@@ -1967,3 +2004,7 @@
   [left [_ relation]]
   (let [relation (into empty-set-index relation)]
     {:provide (fn [db] relation)}))
+
+(defn get-env [db] (first (q db Env)))
+(defn with-env [db env] (transact db [:delete Env] [:insert Env {::env env}]))
+(defn update-env [db f & args] (with-env db (apply f (get-env db) args)))

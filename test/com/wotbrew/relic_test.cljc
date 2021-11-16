@@ -404,3 +404,40 @@
     (is (= #{} (rel/what-if db A [:delete A])))
     (is (= #{{:a 42}} (rel/what-if db A [:delete A {:a 44}])))
     (is (= #{{:a 42}} (rel/what-if db A [:delete A [< 43 :a] [:or [= 1 2] [= 1 1]]])))))
+
+(deftest env-test
+  (let [A [[:table :A]]
+        A2 [[:from A] [:extend [:b [str [::rel/env :b]]]]]]
+
+    (is (= #{{:a 1, :b ""}}
+          (-> {}
+              (rel/with-env {})
+              (rel/transact {A [{:a 1}]})
+              (rel/q A2))))
+
+    (is (= #{{:a 1, :b "1"}}
+           (-> {}
+               (rel/with-env {:b 1})
+               (rel/transact {A [{:a 1}]})
+               (rel/q A2))))
+
+    (is (= #{{:a 1, :b "1"}}
+           (-> {}
+               (rel/transact {A [{:a 1}]})
+               (rel/with-env {:b 1})
+               (rel/q A2))))
+
+    (is (= #{{:a 1, :b "2"}}
+           (-> {}
+               (rel/transact {A [{:a 1}]})
+               (rel/with-env {:b 1})
+               (rel/update-env assoc :b 2)
+               (rel/q A2))))
+
+
+    (is (= #{{:a 1, :b ""}}
+           (-> {}
+               (rel/transact {A [{:a 1}]})
+               (rel/with-env {:b 1})
+               (rel/update-env dissoc :b)
+               (rel/q A2))))))

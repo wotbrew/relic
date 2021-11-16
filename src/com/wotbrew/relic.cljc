@@ -1377,38 +1377,6 @@
                                       (join-row match row))]
                         (deleted db matches)))}}))
 
-(defmethod dataflow-node :fk
-  [left [_ right clause]]
-  (let [left-base (unwrap-table left)
-        _ (when-not left-base (raise "FK can only depend on base relvar"))
-        left-exprs (keys clause)
-        left (conj left-base (into [:hash] left-exprs))
-        right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
-
-        right-exprs (vals clause)
-        right (conj right (into [:hash] right-exprs))
-        left-path-fn (apply juxt2 (map expr-row-fn right-exprs))]
-    {:deps [left right]
-     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
-                     (let [idx (db right)
-                           matches (for [row rows
-                                         :let [path (right-path-fn row)]
-                                         match (seek-n idx path)]
-                                     match)]
-                       (when (empty? matches) (raise "FK violation (left)"))
-                       db))
-              right mat-noop}
-     :delete {left mat-noop
-              right (fn [db rows inserted inserted1 deleted deleted1]
-                      (let [idx (db left)
-                            matches (for [row rows
-                                          :let [path (left-path-fn row)]
-                                          match (seek-n idx path)]
-                                      match)]
-                        (if (seq matches)
-                          (raise "FK violation (right)")
-                          db)))}}))
-
 (defmethod columns* :join
   [left [_ right]]
   (let [left-cols (columns left)

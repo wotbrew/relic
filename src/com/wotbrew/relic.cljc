@@ -1,9 +1,25 @@
-(ns com.wotbrew.relic
+(ns ^{:author "Dan Stone <wotbrew@gmail.com>"}
+  com.wotbrew.relic
+  "Functional relational programming for clojure.
+
+
+  Quick hints:
+
+  a relic database is a map.
+
+  - put data in with `transact`, see also `what-if`.
+  - get data out with `q`, see also `index`.
+  - go faster maybe with `materialize`, see also `dematerialize`
+  - constrain your domain with `constrain`
+  - track changes with `track-transact`, `watch` and `unwatch`.
+
+  I like to alias :as rel. @wotbrew"
   (:require [clojure.set :as set]))
 
 ;; protocols
 
 (defprotocol Index
+  "Index protocol for all structures that hold rows, implementation detail - do not change."
   :extend-via-metadata true
   (index-row [index row])
   (unindex-row [index row])
@@ -11,6 +27,9 @@
   (row-seqable [index]))
 
 (defprotocol SeekN
+  "Index extension to seek rows using some (partial) path vector, e.g {:foo {:bar [row1, row2...]}} can be seeked using paths [:foo] or [:foo :bar].
+
+  Implementation detail, not considered public."
   :extend-via-metadata true
   (seek-n [index ks]))
 
@@ -20,13 +39,21 @@
 
 ;; utilities
 
-(defn- index-by [k coll]
+(defn- index-by
+  "Returns (k elem) to elem for each element in coll. Duplicate elements are dropped."
+  [k coll]
   (reduce #(assoc % (k %2) %2) {} coll))
 
-(defn- juxt2 [& args]
+(defn- juxt2
+  "Version of juxt that accepts 0 fns (result fn will yield the empty vector)."
+  [& args]
   (if (empty? args) (constantly []) (apply juxt args)))
 
-(defn- dissoc-in [m ks]
+(defn- dissoc-in
+  "Recursive dissoc, like assoc-in.
+  Removes intermediates.
+  Not safe on records or vectors. Map only."
+  [m ks]
   (if-let [[k & ks] (seq ks)]
     (if (seq ks)
       (let [v (dissoc-in (get m k) ks)]
@@ -36,13 +63,19 @@
       (dissoc m k))
     m))
 
-(defn- disjoc [m k x]
+(defn- disjoc
+  "Convenience for remove the element x of the set at (m k) returning a new map.
+  If the resulting set is empty, drop k from the map."
+  [m k x]
   (let [ns (disj (get m k) x)]
     (if (empty? ns)
       (dissoc m k)
       (assoc m k ns))))
 
-(defn- disjoc-in [m ks x]
+(defn- disjoc-in
+  "Recursive disjoc for a set nested in a map given a path, see disjoc.
+  Removes intermediates. Not safe on records or vectors. Map only."
+  [m ks x]
   (let [[k & ks] ks]
     (if ks
       (let [nm (disjoc-in (get m k) ks x)]
@@ -63,20 +96,16 @@
 
 ;; indexes
 
-(def empty-set-index
+(def ^:private empty-set-index
   (->> {`index-row conj
         `unindex-row disj
         `contains-row? contains?
-        `row-seqable identity}
+        `row-seqable identity
+        `seek-n (fn map-seekn [index ks] (if (seq ks) #{} index))}
        (with-meta #{})))
 
-(def map-index0
-  (vary-meta
-    empty-set-index
-    assoc
-    `seek-n (fn map-seekn [index ks] (if (seq ks) #{} index))))
-
-(defn map-index1 [empty keyfn]
+(defn- map-index1
+  [empty keyfn]
   (let [map-contains-row? (fn map-contains-row? [index row] (contains? (get index (keyfn row) #{}) row))]
     (with-meta
       empty
@@ -90,9 +119,10 @@
            #{}
            (get index (first ks))))})))
 
-(defn map-index [empty keyfns]
+(defn- map-index
+  [empty keyfns]
   (case (count keyfns)
-    0 map-index0
+    0 empty-set-index
     1 (map-index1 empty (first keyfns))
     (let [path (apply juxt2 keyfns)
           depth (count keyfns)
@@ -130,7 +160,7 @@
                   remaining-depth)
                  (throw (ex-info "Invalid remaining depth" {}))))))}))))
 
-(defn map-unique-index1 [empty keyfn collision-fn]
+(defn- map-unique-index1 [empty keyfn collision-fn]
   (let [map-contains-row? (fn map-contains-row? [index row]
                             (if-some [k (keyfn row)]
                               (= (index k) row)
@@ -159,7 +189,7 @@
                    [res]))
              #{})))})))
 
-(defn map-unique-index
+(defn- map-unique-index
   ([empty keyfns] (map-unique-index empty keyfns (fn [& _] (raise "Unique key violation"))))
   ([empty keyfns collision-fn]
    (case (count keyfns)
@@ -201,9 +231,13 @@
                    remaining-depth)
                   (throw (ex-info "Invalid remaining depth" {}))))))})))))
 
+;; worth the custom type I think, might specialise further for java vs js
 (defrecord AggIndexNode [size rm cache a b reduced combined results])
 
-(defn- agg-index [key-fn reduce-fn combine-fn complete-fn merge-fn cache-size]
+(defn- agg-index
+  "The general aggregation index using a branching tree and combine-reduce. Hopefully will be a last resort
+  as most aggs should have specialised indexes."
+  [key-fn reduce-fn combine-fn complete-fn merge-fn cache-size]
   (letfn [(combine-results [tree1 tree2]
             (combine-reduced (:results tree1) (:results tree2)))
 
@@ -375,8 +409,38 @@
 (defn- left-relvar [relvar] (pop relvar))
 (defn- head-stmt [relvar] (peek relvar))
 
+(defn table-relvar?
+  "True if the relvar is a table."
+  [relvar]
+  (case (count relvar)
+    1 (= :table (operator (head-stmt relvar)))
+    false))
+
+(defn unwrap-table
+  "If the relvar is a table (or :from chain containing a table) then unwrap the underlying table relvar and return it."
+  [relvar]
+  (cond
+    (table-relvar? relvar) relvar
+    (= :from (operator (head-stmt relvar))) (let [[_ relvar] (head-stmt relvar)] (unwrap-table relvar))
+    (= :table (operator (head-stmt relvar))) [(head-stmt relvar)]
+    :else nil))
+
+;; --
+;; Env tracking
+;; ::rel/env forms get special casing to introduce implicit joins, as otherwise programming
+;; with things like time would be a real pain in the bum.
+
+(def Env [[:table ::Env]])
+(def ^:dynamic ^:private *env-deps* nil)
+(defn- track-env-dep [k] (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
+
+;; --
+;; dataflow
+
 (defmulti dataflow-node
-  "Return a map describing the stmt in relation to the left relvar.
+  "Return a map describing how to flow data through this relational node.
+
+  ADVANCED, I wouldn't recommend extending this. Better think of it as an implementation detail.
 
   Return keys:
 
@@ -386,28 +450,130 @@
   :deps
   A collection of relvars this relvar is dependent on, will normally include 'left' but not always.
 
+  :extras
+  A collection of keys that should be removed with this node when dematerializing.
+
   :insert1,, :delete1,
   A function of [db row flow-inserts flow-insert1 flow-deletes flow-delete1], the function should return a new state,
   by calling flow-insert*/flow-delete* functions for new/deleted rows. You do not have to maintain any indexes, the flow functions
   include self-index maintenance, the state should just be threaded through.
 
   :insert, :delete
-  Like :insert1/:delete1 but taking a 'rows' collection instead of a single 'row', otherwise arg order is the same and the same rules apply."
+  Like :insert1/:delete1 but taking a 'rows' collection instead of a single 'row', otherwise arg order is the same and the same rules apply.
+
+  :provide "
   (fn [left stmt] (operator stmt)))
 
-;; dataflow
+(defn- mat-noop
+  ([db rows] db)
+  ([db rows inserted inserted1 deleted deleted1] db))
 
-(defn table-relvar? [relvar]
-  (case (count relvar)
-    1 (= :table (operator (head-stmt relvar)))
-    false))
+;; --
+;; dataflow graph functions
+;; stored under ::graph key in metadata
 
-(defn unwrap-table [relvar]
-  (cond
-    (table-relvar? relvar) relvar
-    (= :from (operator (head-stmt relvar))) (let [[_ relvar] (head-stmt relvar)] (unwrap-table relvar))
-    (= :table (operator (head-stmt relvar))) [(head-stmt relvar)]
-    :else nil))
+(defn- delete-from-graph [g relvar]
+  (letfn [(orphan? [g relvar]
+            (let [{:keys [dependents]} (g relvar)]
+              (empty? dependents)))
+          (materialized? [g relvar] (contains? (::materialized g) relvar))
+          (watched? [g relvar] (contains? (::watched g) relvar))
+          (delete-if-safe [g relvar]
+            (cond
+              (not (orphan? g relvar)) g
+              (watched? g relvar) g
+              (materialized? g relvar) g
+              (table-relvar? relvar) g
+              :else
+              (let [{:keys [deps]} (g relvar)
+                    g (dissoc g relvar)
+                    g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)]
+                (reduce delete-if-safe g deps))))]
+    (delete-if-safe g relvar)))
+
+(defn- add-to-graph [g relvar]
+  (letfn [(edit-flow [node dependent]
+            (let [dependents (:dependents node #{})
+                  new-dependents (conj dependents dependent)]
+              (if (identical? new-dependents dependents)
+                node
+                (-> node
+                    (assoc :dependents new-dependents)))))
+          (depend [g dependent dependency]
+            (let [g (add g dependency)]
+              (update g dependency edit-flow dependent)))
+          (merge-node [a b relvar]
+            (cond
+              (nil? a) (assoc b :relvar relvar)
+              (:mat (meta (head-stmt relvar))) (assoc b :relvar relvar
+                                                        :mat true
+                                                        :dependents (:dependents a #{}))
+              :else a))
+
+          (create-node [relvar]
+            (let [left (left-relvar relvar)
+                  stmt (head-stmt relvar)
+
+                  [node env-deps]
+                  (if (::env-satisfied (meta stmt))
+                    [(dataflow-node left stmt)]
+                    (binding [*env-deps* #{}]
+                      [(dataflow-node left stmt) *env-deps*]))]
+              (if (seq env-deps)
+                (dataflow-node (conj (or left [])
+                                     [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
+                                     (vary-meta stmt assoc ::env-satisfied true))
+                               [:project-away ::env])
+                node)))
+
+          (add [g relvar]
+            (let [{:keys [deps, implicit]
+                   :as node} (create-node relvar)
+                  contains (contains? g relvar)
+                  g (update g relvar merge-node node relvar)]
+              (if contains
+                g
+                (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
+                      g (reduce add g implicit)]
+                  g))))]
+    (add g relvar)))
+
+;; --
+;; state tracking vars
+;; for e.g reactive UI's or hooking into other signal graphs or callback systems
+;; we want a way to watch for change without comparing databases or relations.
+
+(def ^:private ^:dynamic *added* nil)
+(def ^:private ^:dynamic *deleted* nil)
+
+(defn- record-added [relvar rows]
+  (when (and *added* (*added* relvar)) (set! *added* (update *added* relvar into rows))))
+
+(defn- record-deleted [relvar rows]
+  (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar into rows))))
+
+(defn- record-added1 [relvar row]
+  (when (and *added* (*added* relvar)) (set! *added* (update *added* relvar conj row))))
+
+(defn- record-deleted1 [relvar row]
+  (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar conj row))))
+
+(defn- with-added-hook [relvar f]
+  (fn [db rows] (record-added relvar rows) (f db rows)))
+
+(defn- with-deleted-hook [relvar f]
+  (fn [db rows] (record-deleted relvar rows) (f db rows)))
+
+(defn- with-added-hook1 [relvar f]
+  (fn [db row] (record-added1 relvar row) (f db row)))
+
+(defn- with-deleted-hook1 [relvar f]
+  (fn [db row] (record-deleted1 relvar row) (f db row)))
+
+;; --
+;; materialized function dynamic composition
+;; constructs function chains that realise dataflow graphs
+;; function changes are stored against graph nodes
 
 (defn- base-mat-fns
   [g relvar flow]
@@ -459,80 +625,6 @@
                  db (vary-meta db assoc relvar nidx)
                  db (vary-meta db flow-delete1 row)]
              db))))}))
-
-(defn- mat-noop
-  ([db rows] db)
-  ([db rows inserted inserted1 deleted deleted1] db))
-
-(defn- delete-from-graph [g relvar]
-  (letfn [(orphan? [g relvar]
-            (let [{:keys [dependents]} (g relvar)]
-              (empty? dependents)))
-          (materialized? [g relvar] (contains? (::materialized g) relvar))
-          (watched? [g relvar] (contains? (::watched g) relvar))
-          (delete-if-safe [g relvar]
-            (cond
-              (not (orphan? g relvar)) g
-              (watched? g relvar) g
-              (materialized? g relvar) g
-              (table-relvar? relvar) g
-              :else
-              (let [{:keys [deps]} (g relvar)
-                    g (dissoc g relvar)
-                    g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)]
-                (reduce delete-if-safe g deps))))]
-    (delete-if-safe g relvar)))
-
-(def Env [[:table ::Env]])
-(def ^:dynamic ^:private *env-deps* nil)
-(defn- track-env-dep [k] (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
-
-(defn- add-to-graph [g relvar]
-  (letfn [(edit-flow [node dependent]
-            (let [dependents (:dependents node #{})
-                  new-dependents (conj dependents dependent)]
-              (if (identical? new-dependents dependents)
-                node
-                (-> node
-                    (assoc :dependents new-dependents)))))
-          (depend [g dependent dependency]
-            (let [g (add g dependency)]
-              (update g dependency edit-flow dependent)))
-          (merge-node [a b relvar]
-            (cond
-              (nil? a) (assoc b :relvar relvar)
-              (:mat (meta (head-stmt relvar))) (assoc b :relvar relvar
-                                                        :mat true
-                                                        :dependents (:dependents a #{}))
-              :else a))
-
-          (create-node [relvar]
-            (let [left (left-relvar relvar)
-                  stmt (head-stmt relvar)
-
-                  [node env-deps]
-                  (if (::env-satisfied (meta stmt))
-                    [(dataflow-node left stmt)]
-                    (binding [*env-deps* #{}]
-                      [(dataflow-node left stmt) *env-deps*]))]
-              (if (seq env-deps)
-                (dataflow-node (conj (or left [])
-                                     [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
-                                     (vary-meta stmt assoc ::env-satisfied true))
-                               [:project-away ::env])
-                node)))
-
-          (add [g relvar]
-            (let [{:keys [deps, implicit]
-                   :as node} (create-node relvar)
-                  contains (contains? g relvar)
-                  g (update g relvar merge-node node relvar)]
-              (if contains
-                g
-                (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
-                      g (reduce add g implicit)]
-                  g))))]
-    (add g relvar)))
 
 (defn- derived-mat-fns [node edge flow]
   (let [{:keys [flow-inserts-n
@@ -713,33 +805,6 @@
                inserted-no-flow)))
        :else (fn [db rows] [db]))}))
 
-(def ^:private ^:dynamic *added* nil)
-(def ^:private ^:dynamic *deleted* nil)
-
-(defn- record-added [relvar rows]
-  (when (and *added* (*added* relvar)) (set! *added* (update *added* relvar into rows))))
-
-(defn- record-deleted [relvar rows]
-  (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar into rows))))
-
-(defn- record-added1 [relvar row]
-  (when (and *added* (*added* relvar)) (set! *added* (update *added* relvar conj row))))
-
-(defn- record-deleted1 [relvar row]
-  (when (and *deleted* (*deleted* relvar)) (set! *deleted* (update *deleted* relvar conj row))))
-
-(defn- with-added-hook [relvar f]
-  (fn [db rows] (record-added relvar rows) (f db rows)))
-
-(defn- with-deleted-hook [relvar f]
-  (fn [db rows] (record-deleted relvar rows) (f db rows)))
-
-(defn- with-added-hook1 [relvar f]
-  (fn [db row] (record-added1 relvar row) (f db row)))
-
-(defn- with-deleted-hook1 [relvar f]
-  (fn [db row] (record-deleted1 relvar row) (f db row)))
-
 (defn add-mat-fns [g relvars]
   (let [og g
         g (reduce add-to-graph og relvars)
@@ -863,6 +928,12 @@
 
 (declare materialize q expr-row-fn)
 
+;; --
+;; create a transactor from a dataflow graph
+;; stored under ::transactor in metadata
+;; right now doesn't use the graph, and references mat function changes on demand
+;; but knowing the graph might be useful to optimise the transactor in the future
+
 (defn- dataflow-transactor [g]
   (let [insert-n
         (fn insert-n
@@ -917,6 +988,11 @@
     0 (raise "Invalid relvar, no statements" {:relvar relvar})
     (update relvar (dec (count relvar)) vary-meta assoc :mat true)))
 
+;; --
+;; initialisation
+;; the bane of my existence
+;; this function is responsible for triggering insert flow on materialization
+
 (defn- init [m relvar]
   (let [g (::graph m {})
         {:keys [deps
@@ -931,14 +1007,13 @@
           rows (delay (row-seqable (m relvar empty-set-index)))
           [db acc]
           (reduce (fn [[db acc] dependent]
-                    (let [{:keys [mat-fns, mat, provide]} (g dependent)
+                    (let [{:keys [mat-fns, provide]} (g dependent)
                           {:keys [insert-await inserted deleted]} (mat-fns relvar)
-                          init-key [::init dependent relvar mat]
+                          init-key [::init dependent relvar]
                           f (if provide
                               #(insert-await % (provide %))
                               #(insert-await % @rows))]
                       (cond
-                        #_#_(not mat) (let [[db i d] (f db)] [db (conj acc [i d inserted deleted])])
                         (contains? m init-key) [db acc]
                         :else
                         (let [[db i d]
@@ -951,6 +1026,9 @@
       db)))
 
 (declare transact)
+
+;; --
+;; materialize/dematerialize api
 
 (defn- materialize* [db opts relvars]
   (let [m (meta db)
@@ -976,8 +1054,8 @@
                     (if (not (contains? g relvar))
                       (let [{:keys [deps extras]} (og relvar)]
                         (-> (apply dissoc m relvar (concat (for [dep (cons nil deps)
-                                                                 init-key [[::init relvar dep nil]
-                                                                           [::init relvar dep true]]]
+                                                                 init-key [[::init relvar dep]
+                                                                           [::init relvar dep]]]
                                                              init-key)
                                                            extras))
                             (as-> m (reduce ! m deps))))
@@ -988,6 +1066,9 @@
 (defn materialize [db & relvars] (materialize* db {} relvars))
 (defn dematerialize [db & relvars] (dematerialize* db {} relvars))
 
+;; --
+;; transact api
+
 (defn transact [db & tx]
   (if-some [transactor (::transactor (meta db))]
     (reduce transactor db tx)
@@ -997,24 +1078,37 @@
   (or (get db relvar)
       (get (meta db) relvar)))
 
-(defn index [db relvar]
+;; --
+;; query is based of index lookup
+;; in certain cases, e.g for :hash or :btree
+;; it might be useful for library users to have raw index access.
+
+(defn index
+  "Returns the raw index storing rows for relvar.
+
+  Normally a set, but if the last statement in the relvar is an index statement, you will get a specialised
+  datastructure, this can form the bases of using materialized relic indexes in other high-performance work on your data.
+
+
+  :hash will yield nested maps (path being the expressions in the hash e.g [:hash :a :b :c]
+  will yield an index {(a ?row) {(b ?row) {(:c ?row) #{?row}}}
+
+
+  :btree is the same as hash but gives you a sorted map instead.
+
+  :unique will give you an index where the keys map to exactly one row, so [:unique :a :b :c]
+  will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
+  [db relvar]
   (or (materialized-relation db relvar)
       (let [db (materialize db relvar)]
         (get (meta db) relvar))))
 
-(defrecord Escape [x])
-
-(defn esc
-  "Escapes `x` so it is not treated differently in an expression, useful for 'quoting' keywords as they
-  would normally be interpreted as columns."
-  [x]
-  (->Escape x))
+;; --
+;; relic expr to function
 
 (defn- expr-row-fn [expr]
   (cond
     (= [] expr) (constantly [])
-
-    (instance? Escape expr) (constantly (.-x ^Escape expr))
 
     (= ::% expr) identity
 
@@ -1040,6 +1134,8 @@
             (let [[k not-found] args]
               (track-env-dep k)
               [(fn [row] (-> row ::env (get k not-found)))])
+
+            (= f ::esc) (let [[v] args] [(constantly v)])
             :else [f args])
           args (map expr-row-fn args)]
       (case (count args)
@@ -1067,6 +1163,11 @@
 
     :else (constantly expr)))
 
+;; -- query
+
+;; as :sort/:rsort can use relic expressions
+;; we need to deal with the possibility you might use expressions requiring
+;; joins
 (defn- add-implicit-expr-joins [relvar exprs]
   (binding [*env-deps* #{}]
     (let [expr-fns (mapv expr-row-fn exprs)]
@@ -1075,6 +1176,71 @@
         [relvar expr-fns]))))
 
 (defn q
+  "Queries relic for a collection of unique rows (relation).
+
+  Takes a relvar, or a map form [1].
+
+  Relvars are relational expressions, they describe some data that you might want.
+
+  Think SQL table, View & Query rolled up into one idea.
+
+  They are modelled as vectors of statements.
+
+   e.g [stmt1, stmt2, stmt3]
+
+  Each statement is also a vector, a complete relvar would look like:
+
+  [[:table :Customer]
+   [:where [= :name \"alice\"]]]
+
+  Operators quick guide:
+
+  [:table name]
+  [:where & expr]
+  [:extend & [col|[& col] expr]]
+  [:expand & [col expr]]
+  [:agg [& group-col] & [col agg-expr]]
+  [:join relvar {left-col right-col, ...}]
+  [:left-join relvar {left-col right-col, ...}]
+  [:from relvar]
+  [:project & col]
+  [:project-away & col]
+  [:select & col|[col|[& col] expr]]
+  [:difference relvar]
+  [:union relvar]
+  [:intersection relvar]
+  [:qualify namespace-string]
+  [:rename {existing-col new-col, ...}]
+  [:const collection-of-rows]
+
+  ---
+
+   Transducing:
+
+   If you want a different collection back, you can apply a transducer to the relations rows with :xf
+   e.g :xf (map :a) will instead of returning you a collection of rows, will return a collection of (:a row)
+
+  ---
+
+  Sorting:
+
+   Sort with :sort / :rsort
+
+   Pass either a relic expr (e.g a column keyword or function, or relic vector), or coll of expressions to sort by those expressions.
+   e.g :sort :a == sort by :a
+       :sort [:a :b] == sort by :a then :b
+       :sort [[inc a]] == sort by (inc (:a row))
+
+   Note: indexes are not used yet for ad-hoc sorts, but you can use rel/index and :btree for that if you are brave.
+
+  ---
+
+  [1] map forms can be used to issue multiple queries at once, this allows relic to share indexes and intermediate structures
+  and can be more efficient.
+
+    {key relvar|{:q relvar, :rsort ...}}
+
+  Note: Expect only that the result is seqable/reducable, custom Relation type might follow in a later release"
   ([db relvar-or-binds]
    (if (map? relvar-or-binds)
      (let [relvars (keep (fn [q] (if (map? q) (:q q) q)) (vals relvar-or-binds))
@@ -1115,18 +1281,42 @@
               :else rs)]
      rs)))
 
-(defn what-if [db relvar & tx]
+(defn what-if
+  "Returns the relation for relvar if you were to apply the transactions with transact.
+  Because databases are immutable, its not hard to do this anyway with q & transact. This is just sugar."
+  [db relvar & tx]
   (q (apply transact db tx) relvar))
 
-(defn watch [db & relvars]
+;; --
+;; change tracking api
+
+(defn watch
+  "Establishes watches on the relvars, watched relvars are change tracked for subsequent transactions
+  such that track-transact will return changes to those relvars in its results.
+
+  Returns a new database.
+
+  See track-transact."
+  [db & relvars]
   (let [db (vary-meta db update ::watched (fnil into #{}) relvars)]
     (materialize* db {:ephemeral true} relvars)))
 
-(defn unwatch [db & relvars]
+(defn unwatch
+  "Removes a watched relvar, changes for that relvar will no longer be tracked.
+
+  See track-transact."
+  [db & relvars]
   (let [db (vary-meta db update ::watched (fnil set/difference #{}) (set relvars))]
     (dematerialize* db {:ephemeral true} relvars)))
 
-(defn track-transact [db & tx]
+(defn track-transact
+  "Like transact, but instead of returning you a database, returns a map of
+
+    :result the result of (apply transact db tx)
+    :changes a map of {relvar {:added [row1, row2 ...], :deleted [row1, row2, ..]}, ..}
+
+  The :changes allow you to react to additions/removals from derived relvars, and build reactive systems."
+  [db & tx]
   (binding [*added* (zipmap (::watched (meta db)) (repeat #{}))
             *deleted* (zipmap (::watched (meta db)) (repeat #{}))]
     (let [ost db
@@ -1141,6 +1331,40 @@
                                                            #(contains-row? oidx %)) deleted)}])]
       {:result db
        :changes (merge-with merge (into {} added) (into {} deleted))})))
+
+;; --
+;; relvar analysis
+;; analysis of relvars will get better later... be patient :)
+
+(defmulti columns* (fn [_ stmt] (operator stmt)))
+
+(defmethod columns* :default [_ _] [])
+
+(defn columns [relvar]
+  (if (empty? relvar)
+    []
+    (let [stmt (head-stmt relvar)
+          left (left-relvar relvar)]
+      (columns* left stmt))))
+
+(defn state-deps [relvar]
+  (if-some [state (unwrap-table relvar)]
+    #{state}
+    (let [left (left-relvar relvar)
+          stmt (head-stmt relvar)
+          {:keys [deps]} (dataflow-node left stmt)]
+      (set (mapcat state-deps deps)))))
+
+(defn col-keys [relvar]
+  (map :k (columns relvar)))
+
+;; -
+;; going to be starting specific statement implementation about now...
+
+;; -
+;; extension forms [col|[& col] expr]
+;; used by :extend and :select
+;; for arbitrary relic expressions, allows computing new columns
 
 (defn- assoc-if-not-nil [m k v]
   (if (nil? v)
@@ -1167,7 +1391,12 @@
       #{binding}
       (set binding))))
 
-(defn expand-form-xf [form]
+;; --
+;; expansion forms [col expr]
+;; used by :expand
+;; for expressions that yield collections
+
+(defn- expand-form-xf [form]
   (let [[binding expr] form
         expr-fn (expr-row-fn expr)]
     (if (keyword? binding)
@@ -1180,11 +1409,21 @@
           (for [v (expr-fn row)]
             (merge row (select-keys v binding))))))))
 
+;; --
+;; helpers for common dataflow patterns
+
+
+;; --
+;; pass through just flows rows to the next guy in dataflow
+
 (defn- pass-through-insert [db rows inserted inserted1 deleted deleted1] (inserted db rows))
 (defn- pass-through-delete [db rows inserted inserted1 deleted deleted1] (deleted db rows))
 
 (defn- pass-through-insert1 [db row inserted inserted1 deleted deleted1] (inserted1 db row))
 (defn- pass-through-delete1 [db row inserted inserted1 deleted deleted1] (deleted1 db row))
+
+;; --
+;; transform applies a function to each row then flows
 
 (defn- transform-insert [f]
   (fn [db rows inserted inserted1 deleted deleted1]
@@ -1202,28 +1441,8 @@
   (fn [db row inserted inserted1 deleted deleted1]
     (deleted1 db (f row))))
 
-(defmulti columns* (fn [_ stmt] (operator stmt)))
-
-(defn columns [relvar]
-  (if (empty? relvar)
-    []
-    (let [stmt (head-stmt relvar)
-          left (left-relvar relvar)]
-      (columns* left stmt))))
-
-(defn state-deps [relvar]
-  (if-some [state (unwrap-table relvar)]
-    #{state}
-    (let [left (left-relvar relvar)
-          stmt (head-stmt relvar)
-          {:keys [deps]} (dataflow-node left stmt)]
-      (set (mapcat state-deps deps)))))
-
-(defn col-keys [relvar]
-  (map :k (columns relvar)))
-
-(defmethod columns* :default [_ _]
-  {})
+;; --
+;; :table
 
 (defmethod dataflow-node :table
   [left [_ _ {:keys [pk]} :as stmt]]
@@ -1234,6 +1453,9 @@
 (defmethod columns* :table
   [_ [_ _ {:keys [req]} :as stmt]]
   (for [k req] {:k k}))
+
+;; --
+;; :from
 
 (defmethod dataflow-node :from
   [_ [_ relvar]]
@@ -1246,6 +1468,9 @@
 (defmethod columns* :from
   [_ [_ relvar]]
   (columns relvar))
+
+;; --
+;; :project
 
 (defmethod dataflow-node :project
   [left [_ & cols]]
@@ -1261,6 +1486,9 @@
   [left [_ & cols]]
   (filter (comp (set cols) :k) (columns left)))
 
+;; --
+;; :project-away
+
 (defmethod dataflow-node :project-away
   [left [_ & cols]]
   (let [cols (vec (set cols))
@@ -1274,6 +1502,9 @@
 (defmethod columns* :project-away
   [left [_ & cols]]
   (remove (comp (set cols) :k) (columns left)))
+
+;; --
+;; :union
 
 (defmethod dataflow-node :union
   [left [_ right]]
@@ -1319,6 +1550,9 @@
             :when (not (left-idx k))]
         col))))
 
+;; --
+;; :intersection
+
 (defmethod dataflow-node :intersection
   [left [_ right]]
   (let [left (mat-head left)
@@ -1350,6 +1584,9 @@
 (defmethod columns* :intersection
   [left [_ _]]
   (columns left))
+
+;; --
+;; :difference
 
 (defmethod dataflow-node :difference
   [left [_ right]]
@@ -1397,6 +1634,9 @@
   [left [_ _]]
   (columns left))
 
+;; --
+;; :index-lookup
+
 (defmethod dataflow-node ::index-lookup
   [_ [_ relvar m]]
   (let [exprs (set (keys m))
@@ -1415,6 +1655,9 @@
                 (let [idx (db hash-index)]
                   (when idx
                     (seek-n idx path))))}))
+
+;; --
+;; :where
 
 (defmethod dataflow-node :where
   [left [_ & exprs]]
@@ -1438,6 +1681,9 @@
 (defmethod columns* :where
   [left _]
   (columns left))
+
+;; --
+;; :extend
 
 ;; todo reformulate in terms of implicit-joins
 (defrecord JoinColl [relvar clause])
@@ -1495,6 +1741,9 @@
       (for [k ext-keys]
         {:k k}))))
 
+;; --
+;; :qualify
+
 (defmethod dataflow-node :qualify
   [left [_ namespace]]
   (let [namespace (name namespace)
@@ -1509,6 +1758,9 @@
   [left [_ namespace] _]
   (for [col (columns left)]
     (assoc col :k (keyword namespace (name (:k col))))))
+
+;; --
+;; :rename
 
 (defmethod dataflow-node :rename
   [left [_ renames]]
@@ -1529,6 +1781,9 @@
       (assoc col :k nk)
       col)))
 
+;; --
+;; :expand
+
 (defmethod dataflow-node :expand
   [left [_ & expansions]]
   (let [exp-xforms (mapv expand-form-xf expansions)
@@ -1548,6 +1803,9 @@
         col)
       (for [k exp-keys]
         {:k k}))))
+
+;; --
+;; :select
 
 (defmethod dataflow-node :select
   [left [_ & selections]]
@@ -1572,6 +1830,9 @@
       (for [k cols]
         {:k k}))))
 
+;; --
+;; :hash (index)
+
 (defmethod dataflow-node :hash
   [left [_ & exprs]]
   (let [expr-fns (mapv expr-row-fn exprs)]
@@ -1581,6 +1842,13 @@
      :insert1 {left pass-through-insert1}
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
+
+(defmethod columns* :hash
+  [left _]
+  (columns left))
+
+;; --
+;; :unique (index)
 
 (defmethod dataflow-node :unique
   [left [_ & exprs]]
@@ -1592,9 +1860,8 @@
      :delete {left pass-through-delete}
      :delete1 {left pass-through-delete1}}))
 
-(defmethod columns* :hash
-  [left _]
-  (columns left))
+;; --
+;; :btree (index)
 
 (defmethod dataflow-node :btree
   [left [_ & exprs]]
@@ -1609,6 +1876,9 @@
 (defmethod columns* :btree
   [left _]
   (columns left))
+
+;; --
+;; :join
 
 (defmethod dataflow-node :join
   [left [_ right clause]]
@@ -1660,6 +1930,8 @@
       ;; todo switch :opt if could-be-right
       right-cols)))
 
+;; --
+;; join as coll, implementation detail, a royal pain. Can somebody with a PHD help me?!
 
 (defmethod dataflow-node ::join-as-coll
   [left [_ right clause k]]
@@ -1732,6 +2004,9 @@
                             (deleted deletes)
                             (inserted inserts))))}}))
 
+;; --
+;; :left-join
+
 (defmethod dataflow-node :left-join
   [left [_ right clause]]
   (let [join-as-coll (conj left [::join-as-coll right clause ::left-join])
@@ -1763,6 +2038,18 @@
       (remove (comp right-idx :k) left-cols)
       ;; todo flag optionality
       right-cols)))
+
+;; --
+;; aggregates and utilities
+
+(defn- comp-complete [agg f]
+  (let [{:keys [complete]} agg]
+    (if complete
+      (assoc agg :complete (comp f complete))
+      (assoc agg :complete f))))
+
+;; --
+;; rel/row-count specialisation
 
 (defn- row-count-node [left [_ cols [binding]]]
   (let [left (mat-head left)
@@ -1869,12 +2156,19 @@
                               (cond-> (not= 0 oc) (deleted1 (assoc k binding oc)))
                               (inserted1 (assoc k binding nc))))))}}))
 
-(defn row-count []
+(defn row-count
+  "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
+  []
   {:combiner +
    :reducer count
    :custom-node row-count-node})
 
-(defn greatest-by [expr]
+;; --
+;; greatest / least
+
+(defn greatest-by
+  "A relic agg function that returns the greatest row by some function. e.g [rel/greatest-by :a] will return the row for which :a is biggest."
+  [expr]
   (let [f (expr-row-fn expr)
         rf (fn
              ([] nil)
@@ -1891,7 +2185,9 @@
     {:combiner rf
      :reducer (fn [rows] (reduce rf rows))}))
 
-(defn least-by [expr]
+(defn least-by
+  "A relic agg function that returns the smallest row by some function. e.g [rel/least-by :a] will return the row for which :a is smallest."
+  [expr]
   (let [f (expr-row-fn expr)
         rf (fn
              ([] nil)
@@ -1908,19 +2204,24 @@
     {:combiner rf
      :reducer (fn [rows] (reduce rf rows))}))
 
-(defn- comp-complete [agg f]
-  (let [{:keys [complete]} agg]
-    (if complete
-      (assoc agg :complete (comp f complete))
-      (assoc agg :complete f))))
-
-(defn greatest [expr]
+(defn greatest
+  "A relic agg function that returns the greatest value for the expression as applied to each row."
+  [expr]
   (comp-complete (greatest-by expr) (expr-row-fn expr)))
 
-(defn least [expr]
+(defn least
+  "A relic agg function that returns the smallest value for the expression as applied to each row."
+  [expr]
   (comp-complete (least-by expr) (expr-row-fn expr)))
 
-(defn sum [& exprs]
+;; --
+;; sum
+
+(defn sum
+  "A relic agg function that returns the sum of the expressions across each row.
+
+  e.g [rel/sum :a] will return the sum of (:a row) applied to each row in the aggregation."
+  [& exprs]
   (case (count exprs)
     0 {:combiner (constantly 0) :reducer (constantly 0)}
     1
@@ -1935,15 +2236,24 @@
       {:combiner +'
        :reducer #(transduce xf +' %)})))
 
+;; --
+;; set-concat
+
 (defn set-concat [& exprs]
   (let [f (apply juxt (map expr-row-fn exprs))
         xf (comp (mapcat f) (remove nil?))]
     {:combiner set/union
      :reducer (fn [rows] (into #{} xf rows))}))
 
-(defn distinct-count [& exprs]
+;; --
+;; count-distinct
+
+(defn count-distinct [& exprs]
   (let [agg (apply set-concat exprs)]
     (comp-complete agg count)))
+
+;; --
+;; any, like some but this one is called any.
 
 (defn any [expr]
   (let [f (expr-row-fn expr)]
@@ -1956,6 +2266,9 @@
     {:reducer #(not-any? f %)
      :combiner #(and %1 %2)
      :complete boolean}))
+
+;; --
+;; top / bottom
 
 (defn top-by [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
@@ -1985,6 +2298,9 @@
      :combiner #(reduce conj %1 %2)
      :complete #(into [] (take n) (seq %))}))
 
+;; --
+;; agg expressions e.g [rel/sum :foo]
+
 (defn- agg-expr-agg [expr]
   (cond
     (map? expr) expr
@@ -2000,6 +2316,9 @@
         (apply f args)))
 
     :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr}))))
+
+;; --
+;;
 
 (defn- agg-form-fn [form]
   (let [[binding expr] form
@@ -2030,6 +2349,9 @@
 (defn- special-agg [left stmt [_ expr]]
   (when-some [n (:custom-node (agg-expr-agg expr))]
     (n left stmt)))
+
+;; --
+;; :agg
 
 (defmethod dataflow-node :agg
   [left [_ cols & aggs :as stmt]]
@@ -2074,6 +2396,9 @@
       (for [agg agg-keys]
         {:k agg}))))
 
+;; --
+;; ed. probably best not to use right now.
+
 (defn ed [relvar]
   #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
      :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library!")))
@@ -2085,6 +2410,9 @@
 (defn ed-transact [& tx]
   #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/transact) tx)
      :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+
+;; --
+;; foreign keys
 
 (defn- bad-fk [left relvar clause row]
   (raise "Foreign key violation" {:relvar left
@@ -2106,6 +2434,9 @@
                      (check-fk row)
                      db)}
      :delete1 {dep mat-noop}}))
+
+;; --
+;; constraint helpers
 
 (defn- check->pred [relvar check]
   (if (map? check)
@@ -2177,10 +2508,16 @@
     (->> (get-relvars constraints)
          (apply materialize db))))
 
+;; --
+;; :const
+
 (defmethod dataflow-node :const
   [left [_ relation]]
   (let [relation (into empty-set-index relation)]
     {:provide (fn [db] relation)}))
+
+;; --
+;; env api
 
 (defn get-env [db] (first (q db Env)))
 (defn with-env [db env] (transact db [:delete Env] [:insert Env {::env env}]))

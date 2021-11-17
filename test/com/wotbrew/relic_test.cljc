@@ -33,7 +33,7 @@
 
       [[:from a]
        [:where [even? :a]]
-       [:extend [:b (rel/esc [:a])]]]
+       [:extend [:b [::rel/esc [:a]]]]]
       ;; =>
       #{{:a 42, :b [:a]}}
 
@@ -151,7 +151,7 @@
     false {:a 43} [even? :a]
     true {:a 43} [odd? :a]
     true {:a 43} [even? [+ :a 1]]
-    true {:a :b} [= (rel/esc :b) :a]
+    true {:a :b} [= [::rel/esc :b] :a]
     true {:a 42, :b 42} [= :a :b]
     false {:a 43, :b 42} [= :a :b]
     true {:a 43, :b 42} [= [inc :a] [+ :b 2]]))
@@ -273,7 +273,7 @@
     (is (= #{a0, ab1} (rel/what-if db R {A [a0, a1], B [b0, b1]} [:delete B b0])))))
 
 (deftest map-unique-index1-nil-test
-  (let [i (rel/map-unique-index1 {} :a (fn [a b] b))
+  (let [i (#'rel/map-unique-index1 {} :a (fn [a b] b))
         nil1 {:a nil}
         nil2 {:a nil, :b 1}
         i1 (rel/index-row i nil1)
@@ -314,7 +314,7 @@
                           meta
                           (get [[:from A] [:where {:a 43}]]))))
 
-    (is (= #{{:a 42}} (rel/what-if db [[:from A] [:where {:a 42} {[:b ::rel/% (rel/esc ::missing)] ::missing}]] {A [{:a 42}, {:a 43}]})))
+    (is (= #{{:a 42}} (rel/what-if db [[:from A] [:where {:a 42} {[:b ::rel/% [::rel/esc ::missing]] ::missing}]] {A [{:a 42}, {:a 43}]})))
     (is (= nil (rel/what-if db [[:from A] [:where {:a 42} {:a 43}]])))
     (is (= nil (rel/what-if db [[:from A] [:where [:or {:a 42} {:a 43}]]])))))
 

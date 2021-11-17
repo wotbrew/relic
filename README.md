@@ -2,30 +2,42 @@
 
 `STATUS: PRIMORDIAL TAR, not ready quite yet...`
 
-A Clojure(Script) library for doing functional relational programming in clojure.
-
-- in memory relational programming for your clojure data  
-- declarative data dsl
-- incremental materialized views
-- constraints 
+A Clojure(Script) functional __relational__ programming library. `FRelP` perhaps.
 
 ## Pitch 
 
-Do you ever feel like this when programming with business data and pipelines of maps with maps and more maps, maps for 
-breakfast, dinner and supper?
+Do you ever feel _map fatigue_ programming with business data with all its silly associations and rules and dependencies?
 
-![tarpit](doc/tar.jpeg)
+![despair](doc/tar2.png)
 
-`relic` might help.
+Are you spending too much time writing mechanical wiring and glue that is not directly expressing the actual business logic?
+
+![in the tar pit](doc/tar.jpeg)
+
+Did you try [meander](https://github.com/noprompt/meander), [core.logic](https://github.com/clojure/core.logic), [datascript](https://github.com/tonsky/datascript) and every graph-map-database under the sun but still do not feel [out of the tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf)?
+
+`relic` might help, but its not a medical professional. Its a functional relational programming library.
+
+- relational expressions as __data__, and open to introspection and analysis. Gives static tools a fighting chance.
+- laugh at cache invalidation problems with __incremental materialized views__ via relics dataflow black magic
+- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like each 'order can have at most 10 items if its associated customer is called bob' via a constraint across a join.
+- like SQL for clojure data. _but awesome_.
+
+  
+Definitely not at all like the other graph databases in clojure. this time its different, really.
 
 ## Tutorial
 
-This is a _relvar_, a _relvar_ is just a vector containing a series of relational statements.
+This is a _relvar_, a _relvar_. Think SQL view/tables/queries all as one idea, a relational expression.
+
+in `relic`, relvars are modelled as data.
+
+This is the simplest form, a `:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
 ``` clojure
 [[:table :Customer]]
 ```
 
-You derive relvars from relvars using operators, like `:where`, `:extend`, `:join`, `:agg` and so on.
+You derive relvars from relvars using operators, like `:where`, `:extend`, joins with `:join` & `:left-join`, grouping and aggregation`:agg` and so on.
 
 ```clojure 
  [[:table :Customer]
@@ -244,7 +256,7 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 - Compile time relvars, the great unboxing, custom record types
 - Better docs 
 - Tooling, spec  
-- Uhhhh... Bigger datasets than memory
+- *gulp*... Bigger datasets than memory
 
 ## Related work
 
@@ -253,6 +265,24 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 - [clara-rules](https://github.com/cernerel/clara-rules)
 - [odoyle-rules](https://github.com/oakes/odoyle-rules)
 - [fyra](https://github.com/yanatan16/fyra)
+- [meander](https://github.com/noprompt/meander)
+- [doxa](https://github.com/ribelo/doxa)
+
+Any many, many more, sorry if I forgot you, give me a PR.
+
+## Thanks 
+
+- [@bradb](https://github.com/bradb) for early sketch sessions
+- [@tom-riverford](https://github.com/tom-riverford) for indulging me
+- [@riverford](https://github.com/riverford) for being the greatest green grocers in devon that uses clojure
+
+## LETS GO
+
+![lets go](doc/tar3.png)
+
+`#relic` on clojurians
+
+Email and raise issues. PR welcome, ideas and discussion encouraged.
 
 ## License
 

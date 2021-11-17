@@ -1135,6 +1135,8 @@
               (track-env-dep k)
               [(fn [row] (-> row ::env (get k not-found)))])
 
+            (= f ::get) (let [[k not-found] args] [(fn [row] (row k not-found))])
+
             (= f ::esc) (let [[v] args] [(constantly v)])
             :else [f args])
           args (map expr-row-fn args)]
@@ -1689,7 +1691,7 @@
 (defrecord JoinColl [relvar clause])
 (defn join-coll [relvar clause] (->JoinColl relvar clause))
 (defn- join-expr? [expr] (instance? JoinColl expr))
-(defn- extend-expr [[_ _ expr]] expr)
+(defn- extend-expr [[_ expr]] expr)
 (defn- join-ext? [extension] (join-expr? (extend-expr extension)))
 
 (defrecord JoinFirst [relvar clause])
@@ -1716,14 +1718,13 @@
          (cond
            (join-ext? (first extensions))
            (for [[binding {:keys [relvar clause]}] extensions
-                 :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]]
+                  :let [_ (assert (keyword? binding) "only keyword bindings allowed for join-coll expressions")]]
              [::join-as-coll relvar clause binding])
 
            (join-first-ext? (first extensions))
            (for [[binding {:keys [relvar clause]}] extensions
-                 :let [_ (assert (keyword? binding) "only keyword bindings accepted for join-as-coll")]
                  stmt [[::join-as-coll relvar clause binding]
-                       (into [::extend*] (for [[binding] extensions] [binding [first binding]]))]]
+                       (into [::extend*] (for [[binding] extensions] [binding [first [::get binding]]]))]]
              stmt)
 
            :else [(into [::extend*] extensions)]))

@@ -1534,13 +1534,17 @@
      :insert {left (fn [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db right)
                            mem (db mem-key {})
+                           old-rows (into #{} (comp (map right-path-fn) (mapcat mem)) rows)
+                           deletes old-rows
                            matches (for [row rows
                                          :let [path (right-path-fn row)
                                                matches (seek-n idx path)]]
                                      (join-matches row matches))
-                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem matches)]
+                           mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem old-rows)
+                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem2 matches)]
                        (-> db
                            (assoc mem-key mem2)
+                           (deleted deletes)
                            (inserted matches))))
               right (fn [db rows inserted inserted1 deleted deleted1]
                       (let [right-idx (db right)
@@ -1560,13 +1564,17 @@
      :delete {left (fn [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db right)
                            mem (db mem-key {})
+                           old-rows (into #{} (comp (map right-path-fn) (mapcat mem)) rows)
+                           deletes old-rows
                            matches (for [row rows
                                          :let [path (right-path-fn row)
                                                matches (seek-n idx path)]]
                                      (join-matches row matches))
-                           mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem matches)]
+                           mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem old-rows)
+                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem2 matches)]
                        (-> db
                            (assoc mem-key mem2)
+                           (deleted deletes)
                            (deleted matches))))
               right (fn [db rows inserted inserted1 deleted deleted1]
                       (let [right-idx (db right)

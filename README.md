@@ -2,7 +2,13 @@
 
 `STATUS: PRIMORDIAL TAR, not ready quite yet...`
 
-A Clojure(Script) functional __relational__ programming library. `FRelP` perhaps.
+A Clojure(Script) functional __relational__ programming library. 
+
+``` 
+Show me your flowchart and conceal your tables, and I shall continue to be mystified.
+Show me your tables, and I won't usually need your flowchart; it'll be obvious." 
+-- Fred Brooks, The Mythical Man Month
+```
 
 ## Pitch 
 
@@ -18,48 +24,55 @@ Did you try [meander](https://github.com/noprompt/meander), [core.logic](https:/
 
 `relic` might help, but its not a medical professional. Its a functional relational programming library.
 
-- relational expressions as __data__, and open to introspection and analysis. Gives static tools a fighting chance.
-- laugh at cache invalidation problems with __incremental materialized views__ via relics dataflow black magic
-- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like each 'order can have at most 10 items if its associated customer is called bob' via a constraint across a join.
+- seperates essential (minimal state, relationship expression) from incidental (accidental data, mechanisms, and ad-hoc structure)
 - like SQL for clojure data. _but awesome_.
+- munge with joy via the glorious relational open access information model, great for sloppy domains with lots of change.
+- laugh at cache invalidation problems with __incremental materialized views__ via relics dataflow black magic
+- relational expressions as __data__, and open to introspection and analysis. Gives static tools a fighting chance.
+- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like each 'order can have at most 10 items if its associated customer is called bob' via a constraint across a join.
 
-  
 Definitely not at all like the other graph databases in clojure. this time its different, really.
 
-## Tutorial
+## Brief tour
 
-This is a _relvar_, a _relvar_. Think SQL view/tables/queries all as one idea, a relational expression.
+I like to use `rel` as an alias.
 
-in `relic`, relvars are modelled as data.
-
-This is the simplest form, a `:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
-``` clojure
-[[:table :Customer]]
+```clojure
+(require '[com.wotbrew.relic :as rel])
 ```
 
-You derive relvars from relvars using operators, like `:where`, `:extend`, joins with `:join` & `:left-join`, grouping and aggregation`:agg` and so on.
+This is a _relvar_, Think SQL view/tables/queries all as one idea, a relational expression.
 
 ```clojure 
  [[:table :Customer]
   [:where [= :id 42]]]
  ```
 
-Relvars on their own don't do anything, to get a _relation_ we have to pair them with some state.
+All `relic` systems that are worth anything will need at least one`:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
 
-State is stored in a plain old clojure map which we'll call the `db` in this example, you manipulate the state with the `transact` function.
+
+``` clojure
+[[:table :Customer]]
+```
+
+You can see the relvar itself doesn't contain the rows. A relvar is a description of data, not the data itself - _good design is just breaking things apart_.
+
+You can derive relvars from relvars. All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
+
+A relvar on their own don't do anything, they are just vectors that just sort of lounge around. To put them to work to get a _relation_ we have to feed some data into our tables.
+
+`relic` databases are just plain old clojure maps, you manipulate data in tables with the `transact` function. These databases are immutable, we are still programming in clojure after all, no nasty surprises.
 
 ```clojure 
-(require '[com.wotbrew.relic :as rel])
-
 (def db (rel/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
 db 
 ;; =>
-{[[:table :Customer]] #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
+{:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 
 ```
 
-Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database.
+Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database. You see how relvars and queries _are the same_.
 
 ```clojure 
 (rel/q db [[:table :Customer] [:where [= :id 42]]]) 
@@ -71,15 +84,21 @@ Now we have our state, we can ask questions of relic to find _relations_, as you
 #{{:id 43, :name "alice"}}
 ```
 
-Ok ok, not very cool. _What if I told you_ that you can materialize any relvar such that 
-it will be maintained for you as you modify the database. In other words `relic` has incremental materialized views.
+Ok ok, neat but not _cool_.
+
+Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like cave man technology - it is powered by a data flow graph.
+`relic` knows when your data changes, and it knows how to modify dependent relations in a smart way.
 
 ```clojure 
 (rel/materialize db [[:table :Customer] [:where [= :id 42]]])
+;; => returns the database, its value will be the same (hint: metadata).
+{:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 ```
+You can materialize any relvar such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
 
-`materialize` will return a new _database_ that looks and smells the same, but will maintain the results
-of the passed relvars as you `transact` against the database __incrementally__.
+`materialize` will return a new _database_ that looks and smells the same, but queries against materialized relvars will be instant, and as you change data in tables, those changes will flow to materialized relvars automatically.
+
+relic attempts to deliver on the promise of seperating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
 
 If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/masterel/dev/examples/real_estate.clj) informative.
 

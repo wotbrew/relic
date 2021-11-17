@@ -223,10 +223,10 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 ### Tag relvars you want to track with `watch`
 ### Transact with change tracking `tracked-transact`
 
-## Environment (time, variables and such)
+## Environment (e.g for `$now`)
 
-### Set an environment with `with-env`
-### Update an environment with `update-env`
+### Set the environment with `with-env`
+### Update the environment with `update-env`
 ### Use the environment in relvars with `::rel/env`
 
 ## Other cool stuff

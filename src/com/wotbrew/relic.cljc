@@ -483,7 +483,7 @@
                 (reduce delete-if-safe g deps))))]
     (delete-if-safe g relvar)))
 
-(def ^:private Env [[:table ::Env]])
+(def Env [[:table ::Env]])
 (def ^:dynamic ^:private *env-deps* nil)
 (defn- track-env-dep [k] (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
 
@@ -516,7 +516,7 @@
                     (binding [*env-deps* #{}]
                       [(dataflow-node left stmt) *env-deps*]))]
               (if (seq env-deps)
-                (dataflow-node (conj left
+                (dataflow-node (conj (or left [])
                                      [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
                                      (vary-meta stmt assoc ::env-satisfied true))
                                [:project-away ::env])
@@ -875,7 +875,7 @@
 
     (instance? Escape expr) (constantly (.-x ^Escape expr))
 
-    (identical? ::% expr) identity
+    (= ::% expr) identity
 
     (vector? expr)
     (let [[f & args] expr
@@ -1277,23 +1277,22 @@
 
 (defmethod dataflow-node :where
   [left [_ & exprs]]
-  (binding [*env-deps* #{}]
-    (let [index-pred (when (map? (first exprs)) (first exprs))
-          exprs (if index-pred (rest exprs) exprs)
-          expr-preds (mapv expr-row-fn exprs)
-          pred-fn (if (seq exprs) (apply every-pred expr-preds) (constantly true))
-          left (if index-pred
-                 [[::index-lookup left index-pred]]
-                 left)]
-      {:deps [left]
-       :insert {left (fn [db rows inserted inserted1 deleted deleted1]
-                       (inserted db (filterv pred-fn rows)))}
-       :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
-                        (if (pred-fn row)
-                          (inserted1 db row)
-                          db))}
-       :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
-       :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}})))
+  (let [index-pred (when (map? (first exprs)) (first exprs))
+        exprs (if index-pred (rest exprs) exprs)
+        expr-preds (mapv expr-row-fn exprs)
+        pred-fn (if (seq exprs) (apply every-pred expr-preds) (constantly true))
+        left (if index-pred
+               [[::index-lookup left index-pred]]
+               left)]
+    {:deps [left]
+     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
+                     (inserted db (filterv pred-fn rows)))}
+     :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
+                      (if (pred-fn row)
+                        (inserted1 db row)
+                        db))}
+     :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
+     :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}}))
 
 (defmethod columns* :where
   [left _]

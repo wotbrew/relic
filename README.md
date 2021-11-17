@@ -59,9 +59,9 @@ You can see the relvar itself doesn't contain the rows. A relvar is a descriptio
 
 You can derive relvars from relvars. All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
 
-A relvar on their own don't do anything, they are just vectors that just sort of lounge around. To put them to work to get a _relation_ we have to feed some data into our tables.
+Because relvars are just vectors, they just sort of lounge around being values. To put them to work to get a _relation_ we have to feed some data into our tables.
 
-`relic` databases are just plain old clojure maps, you manipulate data in tables with the `transact` function. These databases are immutable, we are still programming in clojure after all, no nasty surprises.
+`relic` databases are boring clojure maps, you manipulate data in tables with the `transact` function. These databases are immutable, they are literally just maps. We are still programming in clojure after all, no nasty surprises.
 
 ```clojure 
 (def db (rel/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])

@@ -218,8 +218,8 @@
               (if (seq cache)
                 (let [grow-a (< (:size a 0) (:size b 0))
                       branch-id (if grow-a :a :b)
-                      a (if grow-a (push-cache a cache reduced) a)
-                      b (if grow-a b (push-cache b cache reduced))
+                      a (if grow-a (push-cache a cache (:reduced tree)) a)
+                      b (if grow-a b (push-cache b cache (:reduced tree)))
                       rm (persistent! (reduce-kv (fn [m k v] (assoc! m k branch-id)) (transient (or rm {})) cache))
                       combined (combine-results a b)]
                   (->AggIndexNode
@@ -553,6 +553,7 @@
 
         empty-index (or empty-index (when (:mat (meta (head-stmt relvar))) empty-set-index))
 
+
         inserted1
         (if empty-index
           (fn inserted1 [db row]
@@ -563,8 +564,20 @@
                       db (assoc db relvar nidx)]
                   (flow-insert1 db row)))))
           flow-insert1)
+
         inserted
-        (if empty-index
+        (cond
+          (set? empty-index)
+          (fn insertedn-set [db rows]
+            (let [idx (db relvar empty-index)
+                  new-rows (into [] (remove idx) rows)]
+              (if (seq new-rows)
+                (-> db
+                    (assoc relvar (into idx new-rows))
+                    (flow-inserts-n new-rows))
+                db)))
+
+          empty-index
           (fn insertedn [db rows]
             (let [idx (db relvar empty-index)
                   new-rows (into [] (remove #(contains-row? idx %)) rows)]
@@ -573,7 +586,18 @@
                     (assoc relvar (reduce index-row idx new-rows))
                     (flow-inserts-n new-rows))
                 db)))
+          :else
           flow-inserts-n)
+
+        inserted-no-flow
+        (if empty-index
+          (fn inserted-no-flow [[db rows deleted]]
+            (let [idx (db relvar empty-index)
+                  new-rows (into [] (remove #(contains-row? idx %)) rows)]
+              (if (seq new-rows)
+                [(-> db (assoc relvar (reduce index-row idx new-rows))) new-rows deleted]
+                [db [] deleted])))
+          identity)
 
         deleted1
         (if empty-index
@@ -585,6 +609,7 @@
                   (flow-delete1 db row))
                 db)))
           flow-delete1)
+
         deleted
         (if empty-index
           (fn deleted [db rows]
@@ -595,7 +620,17 @@
                     (assoc relvar (reduce unindex-row idx del-rows))
                     (flow-deletes-n del-rows))
                 db)))
-          flow-deletes-n)]
+          flow-deletes-n)
+
+        deleted-no-flow
+        (if empty-index
+          (fn inserted-no-flow [[db inserted rows]]
+            (let [idx (db relvar empty-index)
+                  del-rows (filterv #(contains-row? idx %) rows)]
+              (if (seq del-rows)
+                [(-> db (assoc relvar (reduce unindex-row idx del-rows))) inserted del-rows]
+                [db inserted []])))
+          identity)]
     {:insert1
      (cond
        insert1 (fn [db row] (insert1 db row inserted inserted1 deleted deleted1))
@@ -615,7 +650,68 @@
      (cond
        delete (fn [db rows] (delete db rows inserted inserted1 deleted deleted1))
        delete1 (fn [db rows] (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) db rows))
-       :else mat-noop)}))
+       :else mat-noop)
+
+     :inserted flow-inserts-n
+     :deleted flow-deletes-n
+     :inserted1 flow-insert1
+     :deleted1 flow-delete1
+
+     :insert-await
+     (cond
+       insert
+       (fn [db rows]
+         (let [ibuf (volatile! [])
+               dbuf (volatile! [])
+               inserted (fn [db rows] (vswap! ibuf into rows) db)
+               inserted1 (fn [db row] (vswap! ibuf conj row) db)
+               deleted (fn [db rows] (vswap! dbuf into rows) db)
+               deleted1 (fn [db row] (vswap! dbuf conj row) db)
+               db (insert db rows inserted inserted1 deleted deleted1)]
+           (-> [db @ibuf @dbuf]
+               deleted-no-flow
+               inserted-no-flow)))
+       insert1
+       (fn [db rows]
+         (let [ibuf (volatile! [])
+               dbuf (volatile! [])
+               inserted (fn [db rows] (vswap! ibuf into rows) db)
+               inserted1 (fn [db row] (vswap! ibuf conj row) db)
+               deleted (fn [db rows] (vswap! dbuf into rows) db)
+               deleted1 (fn [db row] (vswap! dbuf conj row) db)
+               db (reduce #(insert1 %1 %2 inserted inserted1 deleted deleted1) db rows)]
+           (-> [db @ibuf @dbuf]
+               deleted-no-flow
+               inserted-no-flow)))
+       :else (fn [db rows] [db]))
+
+     :delete-await
+     (cond
+       delete
+       (fn [db rows]
+         (let [ibuf (volatile! [])
+               dbuf (volatile! [])
+               inserted (fn [db rows] (vswap! ibuf into rows) db)
+               inserted1 (fn [db row] (vswap! ibuf conj row) db)
+               deleted (fn [db rows] (vswap! dbuf into rows) db)
+               deleted1 (fn [db row] (vswap! dbuf conj row) db)
+               db (delete db rows inserted inserted1 deleted deleted1)]
+           (-> [db @ibuf @dbuf]
+               deleted-no-flow
+               inserted-no-flow)))
+       delete1
+       (fn [db rows]
+         (let [ibuf (volatile! [])
+               dbuf (volatile! [])
+               inserted (fn [db rows] (vswap! ibuf into rows) db)
+               inserted1 (fn [db row] (vswap! ibuf conj row) db)
+               deleted (fn [db rows] (vswap! dbuf into rows) db)
+               deleted1 (fn [db row] (vswap! dbuf conj row) db)
+               db (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) db rows)]
+           (-> [db @ibuf @dbuf]
+               deleted-no-flow
+               inserted-no-flow)))
+       :else (fn [db rows] [db]))}))
 
 (def ^:private ^:dynamic *added* nil)
 (def ^:private ^:dynamic *deleted* nil)
@@ -679,19 +775,52 @@
                      flow-inserters-n (mapv :insert flow-mat-fns)
                      flow-deleters-n (mapv :delete flow-mat-fns)
 
+                     flow-inserters-await (mapv :insert-await flow-mat-fns)
+                     flow-forward-inserts (mapv :inserted flow-mat-fns)
+                     flow-deleters-await (mapv :delete-await flow-mat-fns)
+                     flow-forward-deletes (mapv :deleted flow-mat-fns)
+
                      flow-inserts-n
                      (case (count flow-inserters-n)
                        0 (fn [db rows] db)
                        1 (first flow-inserters-n)
                        (fn [db rows]
-                         (reduce (fn [db f] (f db rows)) db flow-inserters-n)))
+                         (if (seq rows)
+                           (let [[db flow] (reduce (fn [[db acc] f]
+                                                     (let [[db insert delete] (f db rows)]
+                                                       [db (conj acc [insert delete])]))
+                                                   [db []] flow-inserters-await)]
+                             (loop [db db
+                                    i 0]
+                               (if (= i (count flow))
+                                 db
+                                 (recur
+                                   (let [[inserts deletes] (nth flow i)]
+                                     (-> ((flow-forward-deletes i) db deletes)
+                                         ((flow-forward-inserts i) inserts)))
+                                   (inc i)))))
+                           db)))
 
                      flow-deletes-n
                      (case (count flow-deleters-n)
                        0 (fn [db _] db)
                        1 (first flow-deleters-n)
                        (fn [db rows]
-                         (reduce (fn [db f] (f db rows)) db flow-deleters-n)))
+                         (if (seq rows)
+                           (let [[db flow] (reduce (fn [[db acc] f]
+                                                     (let [[db insert delete] (f db rows)]
+                                                       [db (conj acc [insert delete])]))
+                                                   [db []] flow-deleters-await)]
+                             (loop [db db
+                                    i 0]
+                               (if (= i (count flow))
+                                 db
+                                 (recur
+                                   (let [[inserts deletes] (nth flow i)]
+                                     (-> ((flow-forward-deletes i) db deletes)
+                                         ((flow-forward-inserts i) inserts)))
+                                   (inc i)))))
+                           db)))
 
                      flow-inserters-1 (mapv :insert1 flow-mat-fns)
 
@@ -699,8 +828,7 @@
                      (case (count flow-inserters-1)
                        0 (fn [db _] db)
                        1 (first flow-inserters-1)
-                       (fn [db row]
-                         (reduce (fn [db f] (f db row)) db flow-inserters-1)))
+                       (fn [db row] (flow-inserts-n db [row])))
 
                      flow-deleters-1 (mapv :delete1 flow-mat-fns)
 
@@ -708,8 +836,7 @@
                      (case (count flow-deleters-1)
                        0 (fn [db _] db)
                        1 (first flow-deleters-1)
-                       (fn [db row]
-                         (reduce (fn [db f] (f db row)) db flow-deleters-1)))
+                       (fn [db row] (flow-deletes-n db [row])))
 
                      flow
                      {:flow-inserts-n (with-added-hook relvar flow-inserts-n)
@@ -801,19 +928,27 @@
               (contains? m relvar) m
               provide (assoc m relvar (provide m))
               :else m)
-          rows (delay (row-seqable (m relvar empty-set-index)))]
-      (reduce (fn [m dependent]
-                (let [{:keys [mat-fns, mat, provide]} (g dependent)
-                      {:keys [insert]} (mat-fns relvar)
-                      init-key [::init dependent relvar mat]
-                      f (if provide #(insert % (provide %)) #(insert % @rows))]
-                  (cond
-                    (not mat) (f m)
-                    (contains? m init-key) m
-                    :else
-                    (-> m
-                        (assoc init-key true)
-                        (f))))) m dependents))))
+          rows (delay (row-seqable (m relvar empty-set-index)))
+          [db acc]
+          (reduce (fn [[db acc] dependent]
+                    (let [{:keys [mat-fns, mat, provide]} (g dependent)
+                          {:keys [insert-await inserted deleted]} (mat-fns relvar)
+                          init-key [::init dependent relvar mat]
+                          f (if provide
+                              #(insert-await % (provide %))
+                              #(insert-await % @rows))]
+                      (cond
+                        #_#_(not mat) (let [[db i d] (f db)] [db (conj acc [i d inserted deleted])])
+                        (contains? m init-key) [db acc]
+                        :else
+                        (let [[db i d]
+                              (-> db
+                                  (assoc init-key true)
+                                  (f))]
+                          [db (conj acc [i d inserted deleted])]))))
+                  [m []] dependents)
+          db (reduce (fn [db [i d inserted deleted]] (-> db (deleted d) (inserted i))) db acc)]
+      db)))
 
 (declare transact)
 
@@ -831,15 +966,21 @@
 
 (defn- dematerialize* [db opts relvars]
   (let [m (meta db)
-        g (::graph m {})
-        g (if (:ephemeral opts) g (update g ::materialized (fnil set/difference #{}) (set relvars)))
+        og (::graph m {})
+        g (if (:ephemeral opts) og (update og ::materialized (fnil set/difference #{}) (set relvars)))
         g (reduce delete-from-graph g relvars)
         g (add-mat-fns g (::materialized g))
         transactor (dataflow-transactor g)
         m (assoc m ::transactor transactor, ::graph g)
-        m (reduce (fn [m relvar]
-                    (if (and (contains? m relvar) (not (contains? g relvar)))
-                      (dissoc m relvar)
+        m (reduce (fn ! [m relvar]
+                    (if (not (contains? g relvar))
+                      (let [{:keys [deps extras]} (og relvar)]
+                        (-> (apply dissoc m relvar (concat (for [dep (cons nil deps)
+                                                                 init-key [[::init relvar dep nil]
+                                                                           [::init relvar dep true]]]
+                                                             init-key)
+                                                           extras))
+                            (as-> m (reduce ! m deps))))
                       m)) m relvars)
         db (with-meta db m)]
     db))
@@ -957,11 +1098,11 @@
          sort-exprs (if (keyword? sort*) [sort*] sort*)
          [relvar sort-fns drop-env] (if sort* (add-implicit-expr-joins relvar sort-exprs) [relvar])
          rs (some-> (index db relvar) row-seqable)
-         sort-fn (when sort-fns (apply juxt2 sort-fns))
+         sort-fn (when sort-fns (if (= 1 (count sort-fns)) (first sort-fns) (apply juxt2 sort-fns)))
 
          rs (cond
               sort (sort-by sort-fn rs)
-              rsort (sort-by sort-fn > rs)
+              rsort (sort-by sort-fn (fn [a b] (compare b a)) rs)
               :else rs)
 
          xf (if drop-env
@@ -969,9 +1110,9 @@
               xf)
 
          rs (cond
-             into-coll (if xf (into into-coll xf rs) (into into-coll rs))
-             xf (sequence xf rs)
-             :else rs)]
+              into-coll (if xf (into into-coll xf rs) (into into-coll rs))
+              xf (sequence xf rs)
+              :else rs)]
      rs)))
 
 (defn what-if [db relvar & tx]
@@ -1285,14 +1426,14 @@
                [[::index-lookup left index-pred]]
                left)]
     {:deps [left]
-     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
+     :insert {left (fn where-insert [db rows inserted inserted1 deleted deleted1]
                      (inserted db (filterv pred-fn rows)))}
-     :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
+     :insert1 {left (fn where-insert1 [db row inserted inserted1 deleted deleted1]
                       (if (pred-fn row)
                         (inserted1 db row)
                         db))}
-     :delete {left (fn [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
-     :delete1 {left (fn [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}}))
+     :delete {left (fn where-delete [db rows inserted inserted1 deleted deleted1] (deleted db (filterv pred-fn rows)))}
+     :delete1 {left (fn where-delete1 [db row inserted inserted1 deleted deleted1] (if (pred-fn row) (deleted1 db row) db))}}))
 
 (defmethod columns* :where
   [left _]
@@ -1528,28 +1669,31 @@
         right-exprs (map clause left-exprs)
         right (conj right (into [:hash] right-exprs))
         left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
-        join-matches (fn [m rows] (assoc m k (set rows)))
-        mem-key [[::join-as-coll-memory left right clause k]]]
-    {:deps [left right]
-     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
+        join-matches (fn join-matches [m rows] (assoc m k (set rows)))
+        mem-key [[::join-as-coll-memory left right clause k]]
+        find-left-rows (fn find-left-rows [mem right-rows]
+                         (let [sets (into [] (comp (map left-path-fn) (distinct) (keep mem)) right-rows)]
+                           (case (count sets)
+                             0 nil
+                             1 (first sets)
+                             (apply set/union sets))))]
+    {:deps [right left]
+     :extras [mem-key]
+     :insert {left (fn join-as-coll-left-insert [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db right)
                            mem (db mem-key {})
-                           old-rows (into #{} (comp (map right-path-fn) (mapcat mem)) rows)
-                           deletes old-rows
-                           matches (for [row rows
-                                         :let [path (right-path-fn row)
-                                               matches (seek-n idx path)]]
-                                     (join-matches row matches))
-                           mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem old-rows)
-                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem2 matches)]
+                           matches (vec (for [row rows
+                                              :let [path (right-path-fn row)
+                                                    matches (seek-n idx path)]]
+                                          (join-matches row matches)))
+                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem matches)]
                        (-> db
                            (assoc mem-key mem2)
-                           (deleted deletes)
                            (inserted matches))))
-              right (fn [db rows inserted inserted1 deleted deleted1]
+              right (fn join-as-coll-right-insert [db rows inserted inserted1 deleted deleted1]
                       (let [right-idx (db right)
                             mem (db mem-key {})
-                            old-rows (into #{} (comp (map left-path-fn) (mapcat mem)) rows)
+                            old-rows (find-left-rows mem rows)
                             deletes old-rows
                             inserts (vec (for [row old-rows
                                                :let [path (right-path-fn row)
@@ -1561,25 +1705,21 @@
                             (assoc mem-key mem2)
                             (deleted deletes)
                             (inserted inserts))))}
-     :delete {left (fn [db rows inserted inserted1 deleted deleted1]
+     :delete {left (fn join-as-coll-left-delete [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db right)
                            mem (db mem-key {})
-                           old-rows (into #{} (comp (map right-path-fn) (mapcat mem)) rows)
-                           deletes old-rows
-                           matches (for [row rows
-                                         :let [path (right-path-fn row)
-                                               matches (seek-n idx path)]]
-                                     (join-matches row matches))
-                           mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem old-rows)
-                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem2 matches)]
+                           matches (vec (for [row rows
+                                              :let [path (right-path-fn row)
+                                                    matches (seek-n idx path)]]
+                                          (join-matches row matches)))
+                           mem2 (reduce (fn [mem row] (update mem (right-path-fn row) set-conj row)) mem matches)]
                        (-> db
                            (assoc mem-key mem2)
-                           (deleted deletes)
                            (deleted matches))))
-              right (fn [db rows inserted inserted1 deleted deleted1]
+              right (fn join-as-coll-right-delete [db rows inserted inserted1 deleted deleted1]
                       (let [right-idx (db right)
                             mem (db mem-key {})
-                            old-rows (into #{} (comp (map left-path-fn) (mapcat mem)) rows)
+                            old-rows (find-left-rows mem rows)
                             deletes old-rows
                             inserts (vec (for [row old-rows
                                                :let [path (right-path-fn row)
@@ -1606,10 +1746,10 @@
                     (rf acc row)
                     (reduce (fn [acc rrow] (rf acc (join-row row rrow))) acc rrows))))))]
     {:deps [join-as-coll]
-     :insert {join-as-coll (fn [db rows inserted inserted1 deleted deleted1]
+     :insert {join-as-coll (fn left-join-insert [db rows inserted inserted1 deleted deleted1]
                              (->> (into [] xf rows)
                                   (inserted db)))}
-     :delete {join-as-coll (fn [db rows inserted inserted1 deleted deleted1]
+     :delete {join-as-coll (fn left-join-delete [db rows inserted inserted1 deleted deleted1]
                              (->> (into [] xf rows)
                                   (deleted db)))}}))
 
@@ -1629,7 +1769,8 @@
         key-fn #(select-keys % cols)
         idx-key (conj left (into [::row-count-index cols]))]
     {:deps [left]
-     :insert {left (fn [db rows inserted inserted1 deleted deleted1]
+     :extras [idx-key]
+     :insert {left (fn row-count-insert [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db idx-key {})
                            ks (vec (set (map key-fn rows)))
                            old-counts (mapv (comp count idx) ks)
@@ -1663,7 +1804,7 @@
                        (-> db
                            (deleted del-rows)
                            (inserted add-rows))))}
-     :insert1 {left (fn [db row inserted inserted1 deleted deleted1]
+     :insert1 {left (fn row-count-insert1 [db row inserted inserted1 deleted deleted1]
                       (let [idx (db idx-key {})
                             k (key-fn row)
                             s (idx k #{})
@@ -1676,7 +1817,7 @@
                               (assoc idx-key (assoc idx k ns))
                               (cond-> (not= 0 oc) (deleted1 (assoc k binding oc)))
                               (inserted1 (assoc k binding nc))))))}
-     :delete {left (fn [db rows inserted inserted1 deleted deleted1]
+     :delete {left (fn row-count-delete [db rows inserted inserted1 deleted deleted1]
                      (let [idx (db idx-key {})
                            ks (vec (set (map key-fn rows)))
                            old-counts (mapv (comp count idx) ks)
@@ -1710,7 +1851,7 @@
                        (-> db
                            (deleted del-rows)
                            (inserted add-rows))))}
-     :delete1 {left (fn [db row inserted inserted1 deleted deleted1]
+     :delete1 {left (fn row-count-delete1 [db row inserted inserted1 deleted deleted1]
                       (let [idx (db idx-key {})
                             k (key-fn row)
                             s (idx k #{})
@@ -1736,17 +1877,17 @@
 (defn greatest-by [expr]
   (let [f (expr-row-fn expr)
         rf (fn
-            ([] nil)
-            ([a] a)
-            ([a b]
-             (cond
-               (nil? a) b
-               (nil? b) a
-               :else
-               (let [n (compare (f a) (f b))]
-                 (if (< n 0)
-                   b
-                   a)))))]
+             ([] nil)
+             ([a] a)
+             ([a b]
+              (cond
+                (nil? a) b
+                (nil? b) a
+                :else
+                (let [n (compare (f a) (f b))]
+                  (if (< n 0)
+                    b
+                    a)))))]
     {:combiner rf
      :reducer (fn [rows] (reduce rf rows))}))
 
@@ -1816,6 +1957,34 @@
      :combiner #(and %1 %2)
      :complete boolean}))
 
+(defn top-by [n expr]
+  (assert (nat-int? n) "top requires a 0 or positive integer arg first")
+  (let [f (expr-row-fn expr)]
+    {:reducer #(reduce (fn [sm row] (update sm (f row) set-conj row)) (sorted-map) %)
+     :combiner #(merge-with (fnil set/union #{}) %1 %2)
+     :complete #(into [] (comp (mapcat val) (take n)) (rseq %))}))
+
+(defn bottom-by [n expr]
+  (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
+  (let [f (expr-row-fn expr)]
+    {:reducer #(reduce (fn [sm row] (update sm (f row) set-conj row)) (sorted-map) %)
+     :combiner #(merge-with (fnil set/union #{}) %1 %2)
+     :complete #(into [] (comp cat (take n)) (vals %))}))
+
+(defn top [n expr]
+  (assert (nat-int? n) "top requires a 0 or positive integer arg first")
+  (let [f (expr-row-fn expr)]
+    {:reducer #(into (sorted-set) (map f) %)
+     :combiner #(reduce conj %1 %2)
+     :complete #(into [] (take n) (rseq %))}))
+
+(defn bottom [n expr]
+  (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
+  (let [f (expr-row-fn expr)]
+    {:reducer #(into (sorted-set) (map f) %)
+     :combiner #(reduce conj %1 %2)
+     :complete #(into [] (take n) (seq %))}))
+
 (defn- agg-expr-agg [expr]
   (cond
     (map? expr) expr
@@ -1874,6 +2043,7 @@
           empty-idx (agg-index key-fn reducer combiner complete merge-fn 32)
           idx-key [::agg-index left cols aggs]]
       {:deps [left]
+       :extras [idx-key]
        :insert {left (fn [db rows insert insert1 delete delete1]
                        (let [idx (db idx-key empty-idx)
                              ks (set (map key-fn rows))

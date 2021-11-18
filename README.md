@@ -104,7 +104,9 @@ If you read the tarpit paper, you might find this [real estate example](https://
 
 ## Relvar reference
 
-Relvars are always vectors, a each element being some kind of relational statement. 
+Relvars are always vectors, they are your relational expressions.
+
+The are vectors of the form `[& statement]` where each statement is itself a vector representing `[operator & args]`.
 
 e.g 
 
@@ -115,37 +117,43 @@ e.g
  [:join Order {:customer-id :customer-id}]]
 ```
 
-As they are just data, you can def them, just type them as literals or construct/manipulate them programmatically. Each statement depends on the above statements, this forms a dataflow graph. 
-Unlike SQL, order matters e.g you cannot use a column that has not been defined in some preceding statement.
-### Naming your state `[[:table ?name]]` 
+Each statement depends on the above statements, this forms a dataflow graph. Unlike SQL, order matters e.g you cannot use a column that has not been defined in some preceding statement.
 
-Your tables contain the input to relic, normally data from the outside world or that is inputted by the user. You update/insert/delete against tables.
 
-The idea is you only need tables for _essential_ state, you derive information by joining/slicing/dicing your state tables via relational operators.
+### Name your state relations with `:table`
 
-### Nesting `[[:from ?relvar]]`
+```clojure 
+[[:table :Customer]]
+```
 
-Provides some convenience for deriving relvars without conj, e.g `[[:from A] [:where [= :foo 42]]]` instead of `(conj A [:where [= :foo 42]])`  
+Tables are your primary variable, their data is provided to relic rather than derived. 
 
-### Filtering `[... [:where & ?exprs]]` 
+Unlike in SQL tables are sets of rows, not bags / multi-sets.
 
-Restricts results to those matching some set of expressions, expressions are vectors where keywords are templated in as cols
+### Filtering with `:where`
+
+```clojure 
+[[:table :Customer]
+ [:where [= :age 42]]]
+```
+
+Restricts a relation to those rows matching some set of expressions, expressions are vectors where keywords are templated in as cols
 e.g `[= :age 42]` the first value needs to be a function, rows will be tested using a form like `(= (:age row) 42)`
+ 
+relic expressions are as powerful as function expressions, see [here](#expression-reference) 
+ 
+spec: `[:where & expr]`
 
-#### Using indexes
+### Adding new columns with `:extend`
 
-expressions can be maps, rows are matched by testing `[= k v]`. `v` must be a constant value. if the first expression is a map then an index will be consulted.
-e.g `[:where {:a 42, :b 42} ...]` will consult an index to discover rows where :a is 42 and :b is 42.
+```clojure 
+[[:table :Customer]
+ [:extend [:fullname [str :firstname :lastname]]]]
+```
 
-This is mostly useful in updates/deletes and ad-hoc queries as joins always use indexes.
-  
-### Adding new keys `[... [:extend & ?extensions]]`
+Adds columns by computing [expressions](#expression-reference)
 
-Extension adds new values to rows, an extension looks like this: 
-
-`[:foo [str :a :b]]`
-
-In this case it says provide the column `:foo` by concating `:a` and `:b` with `str`. 
+spec: `[:extend & extensions]`
 
 #### Extension forms:
 
@@ -176,48 +184,155 @@ e.g
 #{{:customer-id 42,
    :total 340.0M
    :items #{{:product-id 43, :quantity 1} ...}}
-
 ```
 
+### Embed a relvar as a statement with `:from` 
 
-### Keeping a subset of columns `[... [:project & cols]]`
+```clojure 
+(def Customer [[:table :Customer]])
 
-Like `select-keys` or `set/project` the resulting relation will contain only the projected keys.
+[[:from Customer]
+[:where [= :age 42]]
+```
+
+Allows you to splice relvars in to the leading statement position. Allows relvar re-use in literals without conj.
+
+spec: `[:from relvar]`
+
+### SQL style join with `:join`
+
+```clojure 
+(def Customer [[:table :Customer]])
+(def Order [[:table :Order]])
+
+[[:from Customer]
+ [:join Order {:id :customer-id}]]
+```
+
+Joins two relations together, returning the product of matching rows. The columns in the relation on the right will be preferred in a conflict.
+
+Like `set/join`, clause is a map of expressions on the left to expressions on the right.
+
+spec: `[:join ?relvar ?clause]`
+
+### SQL style `:left-join`
+
+```clojure 
+(def Customer [[:table :Customer]])
+(def Order [[:table :Order]])
+
+[[:from Order]
+ [:left-join Customer {:customer-id :id}]]
+```
+
+spec: `[:left-join ?relvar ?clause]`
+
+### Selecting columns with `:project`
+
+```clojure 
+[[:table :Customer]
+ [:project :firstname :lastname]]
+```
+
+Like `select-keys` or `set/project` the resulting relation will contain only the projected keys. See also [`:select`](#sql-style-select)
+
+As `relic` is set based, `:project` results will always be deduplicated when queried.
+
+spec: `[:project & col]`
   
-### Removing columns `[... [:project-away & cols]]`  
+### Removing columns `:project-away` 
+
+```clojure 
+[[:table :Customer]
+ [:project-away :age :firstname :lastname]]
+```
 
 Inverse of `:project` will instead omit the keys in `cols` from the resulting relation.
 
-### SQL style select `[... [:select & ?binding|col]]`
+spec: `[:project-away & col]`
+
+### SQL style `:select`
+
+```clojure 
+[[:table :Customer]
+ [:select :firstnam, :lastname [:fullname [str :firstname :lastname]]]]
+```
 
 A mix and match expressions suitable for `:project` and `:extend` resulting in a SQL-style `:select`.
-  
-### SQL style join `[... [:join ?relvar ?clause]]` 
 
-Like `set/join`, clause is a map of expressions on the left to expressions on the right.
+spec: `[:select & binding|col]`
   
-### SQL style left join `[... [:left-join ?relvar ?clause]]`
+### Aggregation & grouping with `:agg`
 
-?clause is a map of {left-expr, right-expr}, e.g` [[:from Customer] [:join Order {:customer-id :customer-id}]]`
-  
-### Aggregation & grouping `[... [:agg [& ?keys] & aggregations]]`
+```clojure 
+[[:table :Customer]
+ [:agg [:age] [:count count]]]
+```
 
-Groups rows under the keys and performs aggregation on them to
-construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
+Groups rows under the keys and performs aggregate expressions on them.
 
-### Flattening trees `[... [:expand & ?expansion]]`
-  
-### Set union `[... [:union ?relvar]]`
-  
-### Set difference `[... [:difference ?relvar]]`
-  
-### Set intersection `[... [:intersection ?relvar]]`
-  
-### Rename columns `[... [:rename ?renames]]`
-  
-### Qualify columns `[... [:qualify ?namespace]]`
+See [aggregate expressions](#aggregate-reference).
 
-### Constant relations `[[:const ?coll]]`
+spec: `[:agg [& col] & agg-extension]`
+
+### Flatten trees with `:expand` 
+
+Lets you deal with nested data and flatten it into a form better suited to relational programming.
+
+```clojure 
+(rel/q db Order)
+;; =>
+#{{:customer-id 42, 
+  :items [{:product 1, :quantity 2}, {:product 2, :quantity 1}]}}
+
+;; =>
+(def OrderItem
+  [[:table :Order]
+   [:expand [[:product :quantity] :items]])
+   
+(rel/q db OrderItem)
+;; =>
+#{{:customer-id 42, :product 1, :quantity 2}, {:customer-id 42, :product 2, :quantity 1}}
+```
+
+spec: `[:expand & expansion]`
+  
+### Set `:union`
+
+spec: `[:union relvar]`
+  
+### Set `:difference `
+
+spec: `[:difference ?relvar]`
+  
+### Set `:intersection`
+
+spec: `[:intersection relvar]`
+  
+### Rename columns with `:rename`
+
+spec: ` [:rename {col new-col, ...}]`
+  
+### Qualify columns with `:qualify``
+
+spec: `[:qualify namespace]`
+
+### Constant relations with `:const`
+
+spec: `[:const coll]`
+
+### Using indexes
+
+#### `:where`
+
+expressions can be maps, rows are matched by testing `[= k v]`. `v` must be a constant value. if the first expression is a map then an index will be consulted.
+e.g `[:where {:a 42, :b 42} ...]` will consult an index to discover rows where :a is 42 and :b is 42.
+
+This is mostly useful in updates/deletes and ad-hoc queries as joins always use indexes.
+
+## Expression reference
+
+## Aggregate reference
 
 ## Query reference 
 
@@ -233,9 +348,6 @@ construct new values. e.g `[:agg [:a] [:summed-b [rel/sum :b]]]` WIP.
 ### Update rows `[:update ?relvar ?f-or-set-map & where-expr]`
 ### Delete rows by where filter `[:delete ?relvar & where-expr]`
 ### Delete rows`[:delete-exact ?relvar & ?row]`
-
-
-### `TODO upsert`
 
 ## Materialization reference 
 

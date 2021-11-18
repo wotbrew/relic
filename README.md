@@ -24,12 +24,12 @@ Did you try [meander](https://github.com/noprompt/meander), [core.logic](https:/
 
 `relic` might help, but its not a medical professional. Its a functional relational programming library.
 
-- seperates essential (minimal state, relationship expression) from incidental (accidental data, mechanisms, and ad-hoc structure)
+- seperates essential (minimal state, relationship expression) from incidental (accidental data, mechanisms, and ad-hoc structure).
 - like SQL for clojure data. _but awesome_.
-- munge with joy via the glorious relational open access information model, great for sloppy domains with lots of change.
-- laugh at cache invalidation problems with __incremental materialized views__ via relics dataflow black magic
-- relational expressions as __data__, and open to introspection and analysis. Gives static tools a fighting chance.
-- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like each 'order can have at most 10 items if its associated customer is called bob' via a constraint across a join.
+- munge with joy via the glorious relational open access information model.
+- laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
+- relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance..
+- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say `order can have at most 10 items if its associated customer is called bob and its tuesday` via a constraint across a join.
 
 Definitely not at all like the other graph databases in clojure. this time its different, really.
 

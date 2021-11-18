@@ -102,7 +102,7 @@ You can materialize any relvar such that it will be maintained for you as you mo
 
 relic attempts to deliver on the promise of seperating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
 
-If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/masterel/dev/examples/real_estate.clj) informative.
+If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
 
 ## Relvar reference
 

@@ -11,7 +11,7 @@
     (are [x ret]
 
       (and (= ret (rel/q db x))
-           (= ret (get (meta (rel/materialize db x)) x)))
+           (= ret (get (::rel/state (meta (rel/materialize db x))) x)))
 
       a
       ;; =>
@@ -312,6 +312,7 @@
     (is (= #{{:a 43}} (-> (rel/materialize db [[:from A] [:where {:a 43}]])
                           (rel/transact {A [{:a 42}, {:a 43}]})
                           meta
+                          ::rel/state
                           (get [[:from A] [:where {:a 43}]]))))
 
     (is (= #{{:a 42}} (rel/what-if db [[:from A] [:where {:a 42} {[:b ::rel/% [::rel/esc ::missing]] ::missing}]] {A [{:a 42}, {:a 43}]})))
@@ -323,9 +324,9 @@
         A1 [[:table :A] [:where [= :a 42]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A1)]
-    (is (= #{{:a 42}} (-> db meta (get A1))))
-    (is (not (contains? (-> db (rel/dematerialize A1) meta) A1)))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta (get A))))))
+    (is (= #{{:a 42}} (-> db meta ::rel/state (get A1))))
+    (is (not (contains? (-> db (rel/dematerialize A1) meta ::rel/state) A1)))
+    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta ::rel/state (get A))))))
 
 (deftest dematerialize-deletes-orphaned-transitives-test
   (let [A [[:table :A]]
@@ -333,9 +334,9 @@
         A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2)]
-    (is (= #{{:a 43}} (-> db meta (get A2))))
-    (is (not (contains? (-> db (rel/dematerialize A2) meta) A1)))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A2) meta (get A))))))
+    (is (= #{{:a 43}} (-> db meta ::rel/state (get A2))))
+    (is (not (contains? (-> db (rel/dematerialize A2) meta ::rel/state) A1)))
+    (is (= #{{:a 42}} (-> db (rel/dematerialize A2) meta ::rel/state (get A))))))
 
 (deftest dematerialize-keeps-materialized-transitives-test
   (let [A [[:table :A]]
@@ -343,11 +344,11 @@
         A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2 A1)]
-    (is (= #{{:a 42}} (-> db meta (get A1))))
-    (is (= #{{:a 43}} (-> db meta (get A2))))
-    (is (contains? (-> db (rel/dematerialize A2) meta) A1))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta (get A1))))
-    (is (not (contains? (-> db (rel/dematerialize A2 A1) meta) A1)))))
+    (is (= #{{:a 42}} (-> db meta ::rel/state (get A1))))
+    (is (= #{{:a 43}} (-> db meta ::rel/state (get A2))))
+    (is (contains? (-> db (rel/dematerialize A2) meta ::rel/state) A1))
+    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta ::rel/state (get A1))))
+    (is (not (contains? (-> db (rel/dematerialize A2 A1) meta ::rel/state) A1)))))
 
 (deftest watch-table-test
   (let [A [[:table :A]]
@@ -376,7 +377,7 @@
         db (rel/transact {} {A [{:a 42}]})
         db (rel/watch db A1)
         db (rel/unwatch db A1)]
-    (is (not (contains? (-> db meta) A1)))))
+    (is (not (contains? (-> db meta ::rel/state) A1)))))
 
 (deftest unwatch-keeps-explicitly-mat-test
   (let [A [[:table :A]]
@@ -388,7 +389,7 @@
         db (rel/unwatch db A2)]
 
     (is (some? (-> db meta ::rel/graph (get A1))))
-    (is (= #{{:a 43}} (-> db meta (get A2))))))
+    (is (= #{{:a 43}} (-> db meta ::rel/state (get A2))))))
 
 (deftest update-test
   (let [A [[:table :A]]
@@ -508,3 +509,12 @@
     (is (= #{{:top (vec (take 5 (range 48)))}} (rel/what-if {} A2 {A (rows 48)})))
     (is (= #{{:top (vec (take 5 (range 72)))}} (rel/what-if {} A2 {A (rows 72)})))
     (is (= #{{:top (vec (take 5 (range 100)))}} (rel/what-if {} A2 {A (rows 100)})))))
+
+(deftest strip-meta-test
+  (let [A [[:table :A]]
+        A1 [[:table :A] [:where [= :a 42]]]
+        db (r/transact (r/materialize {} A1) {A [{:a 42}, {:a 43}]})
+        db (r/watch db A1)]
+    (is (= {:A #{{:a 42}, {:a 43}}} (rel/strip-meta db)))
+    (is (nil? (meta (rel/strip-meta db))))
+    (is (= {:foo 42} (meta (rel/strip-meta (vary-meta db assoc :foo 42)))))))

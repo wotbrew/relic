@@ -570,6 +570,13 @@
 (defn- with-deleted-hook1 [relvar f]
   (fn [db row] (record-deleted1 relvar row) (f db row)))
 
+
+;; --
+;; state will be stored under the ::state key
+;; this keeps it all in one predictable place so we can remove it later.
+
+(defn- vary-state [db f & args] (apply vary-meta db update ::state f args))
+
 ;; --
 ;; materialized function dynamic composition
 ;; constructs function chains that realise dataflow graphs
@@ -590,8 +597,8 @@
          (if (seq new-rows)
            (let [nidx (reduce index-row oidx new-rows)
                  db (assoc db table-key nidx)
-                 db (vary-meta db assoc relvar nidx)
-                 db (vary-meta db flow-inserts-n new-rows)]
+                 db (vary-state db assoc relvar nidx)
+                 db (vary-state db flow-inserts-n new-rows)]
              db)
            db)))
      :insert1
@@ -601,8 +608,8 @@
            db
            (let [nidx (index-row oidx row)
                  db (assoc db table-key nidx)
-                 db (vary-meta db assoc relvar nidx)
-                 db (vary-meta db flow-insert1 row)]
+                 db (vary-state db assoc relvar nidx)
+                 db (vary-state db flow-insert1 row)]
              db))))
      :delete
      (fn base-delete [db rows]
@@ -611,8 +618,8 @@
          (if (seq deleted-rows)
            (let [nidx (reduce unindex-row oidx deleted-rows)
                  db (assoc db table-key nidx)
-                 db (vary-meta db assoc relvar nidx)
-                 db (vary-meta db flow-deletes-n deleted-rows)]
+                 db (vary-state db assoc relvar nidx)
+                 db (vary-state db flow-deletes-n deleted-rows)]
              db)
            db)))
      :delete1
@@ -622,8 +629,8 @@
            db
            (let [nidx (unindex-row oidx row)
                  db (assoc db table-key nidx)
-                 db (vary-meta db assoc relvar nidx)
-                 db (vary-meta db flow-delete1 row)]
+                 db (vary-state db assoc relvar nidx)
+                 db (vary-state db flow-delete1 row)]
              db))))}))
 
 (defn- derived-mat-fns [node edge flow]
@@ -644,7 +651,6 @@
         delete1 (get delete1 edge)
 
         empty-index (or empty-index (when (:mat (meta (head-stmt relvar))) empty-set-index))
-
 
         inserted1
         (if empty-index
@@ -997,33 +1003,34 @@
   (let [g (::graph m {})
         {:keys [deps
                 dependents
-                provide]} (g relvar)]
-    (let [m (reduce init m deps)
-          m (cond
-              (seq deps) m
-              (contains? m relvar) m
-              provide (assoc m relvar (provide m))
-              :else m)
-          rows (delay (row-seqable (m relvar empty-set-index)))
-          [db acc]
-          (reduce (fn [[db acc] dependent]
-                    (let [{:keys [mat-fns, provide]} (g dependent)
-                          {:keys [insert-await inserted deleted]} (mat-fns relvar)
-                          init-key [::init dependent relvar]
-                          f (if provide
-                              #(insert-await % (provide %))
-                              #(insert-await % @rows))]
-                      (cond
-                        (contains? m init-key) [db acc]
-                        :else
-                        (let [[db i d]
-                              (-> db
-                                  (assoc init-key true)
-                                  (f))]
-                          [db (conj acc [i d inserted deleted])]))))
-                  [m []] dependents)
-          db (reduce (fn [db [i d inserted deleted]] (-> db (deleted d) (inserted i))) db acc)]
-      db)))
+                provide]} (g relvar)
+        m (reduce init m deps)
+        db (::state m {})
+        db (cond
+            (seq deps) db
+            (contains? db relvar) db
+            provide (assoc db relvar (provide db))
+            :else db)
+        rows (delay (row-seqable (db relvar empty-set-index)))
+        [db acc]
+        (reduce (fn [[db acc] dependent]
+                  (let [{:keys [mat-fns, provide]} (g dependent)
+                        {:keys [insert-await inserted deleted]} (mat-fns relvar)
+                        init-key [::init dependent relvar]
+                        f (if provide
+                            #(insert-await % (provide %))
+                            #(insert-await % @rows))]
+                    (cond
+                      (contains? db init-key) [db acc]
+                      :else
+                      (let [[db i d]
+                            (-> db
+                                (assoc init-key true)
+                                (f))]
+                        [db (conj acc [i d inserted deleted])]))))
+                [db []] dependents)
+        db (reduce (fn [db [i d inserted deleted]] (-> db (deleted d) (inserted i))) db acc)]
+    (assoc m ::state db)))
 
 (declare transact)
 
@@ -1050,16 +1057,18 @@
         g (add-mat-fns g (::materialized g))
         transactor (dataflow-transactor g)
         m (assoc m ::transactor transactor, ::graph g)
-        m (reduce (fn ! [m relvar]
+        st (::state m {})
+        st (reduce (fn ! [st relvar]
                     (if (not (contains? g relvar))
                       (let [{:keys [deps extras]} (og relvar)]
-                        (-> (apply dissoc m relvar (concat (for [dep (cons nil deps)
+                        (-> (apply dissoc st relvar (concat (for [dep (cons nil deps)
                                                                  init-key [[::init relvar dep]
                                                                            [::init relvar dep]]]
                                                              init-key)
                                                            extras))
-                            (as-> m (reduce ! m deps))))
-                      m)) m relvars)
+                            (as-> st (reduce ! st deps))))
+                      st)) st relvars)
+        m (assoc m ::state st)
         db (with-meta db m)]
     db))
 
@@ -1075,8 +1084,8 @@
     (apply transact (vary-meta db assoc ::transactor (dataflow-transactor {})) tx)))
 
 (defn- materialized-relation [db relvar]
-  (or (get db relvar)
-      (get (meta db) relvar)))
+  (or (db relvar)
+      ((::state (meta db) {}) relvar)))
 
 ;; --
 ;; query is based of index lookup
@@ -1101,7 +1110,7 @@
   [db relvar]
   (or (materialized-relation db relvar)
       (let [db (materialize db relvar)]
-        (get (meta db) relvar))))
+        ((::state (meta db) {}) relvar))))
 
 ;; --
 ;; relic expr to function
@@ -2523,3 +2532,16 @@
 (defn get-env [db] (first (q db Env)))
 (defn with-env [db env] (transact db [:delete Env] [:insert Env {::env env}]))
 (defn update-env [db f & args] (with-env db (apply f (get-env db) args)))
+
+;; --
+;; strip meta, if you want to remove relic metadata from your map
+
+(defn strip-meta
+  "Given a relic database map, removes any relic meta data."
+  [db]
+  (vary-meta db (comp not-empty dissoc)
+             ::state
+             ::graph
+             ::transactor
+             ::materialized
+             ::watched))

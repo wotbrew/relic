@@ -115,7 +115,7 @@ e.g
 ```clojure 
 [[:from Customer]
  [:where [= :firstname "fred"]]
- [:extend [:fullname [str :firstname :lastname]]
+ [:extend [:fullname [str :firstname " " :lastname]]
  [:join Order {:customer-id :customer-id}]]
 ```
 
@@ -150,7 +150,7 @@ spec: `[:where & expr]`
 
 ```clojure 
 [[:table :Customer]
- [:extend [:fullname [str :firstname :lastname]]]]
+ [:extend [:fullname [str :firstname " " :lastname]]]]
 ```
 
 Adds columns by computing [expressions](#expression-reference)
@@ -257,7 +257,7 @@ spec: `[:project-away & col]`
 
 ```clojure 
 [[:table :Customer]
- [:select :firstnam, :lastname [:fullname [str :firstname :lastname]]]]
+ [:select :firstnam, :lastname [:fullname [str :firstname " " :lastname]]]]
 ```
 
 A mix and match expressions suitable for `:project` and `:extend` resulting in a SQL-style `:select`.

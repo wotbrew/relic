@@ -50,7 +50,7 @@ This is a _relvar_, Think SQL view/tables/queries all as one idea, a relational 
   [:where [= :id 42]]]
  ```
 
-All `relic` systems that are worth anything will need at least one`:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
+All `relic` systems that are worth anything will need at least one `:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
 
 
 ``` clojure

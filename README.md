@@ -229,18 +229,18 @@ spec: `[:join ?relvar ?clause]`
 
 spec: `[:left-join ?relvar ?clause]`
 
-### Selecting columns with `:project`
+### Selecting new columns with `:select`
 
 ```clojure 
 [[:table :Customer]
- [:project :firstname :lastname]]
+ [:select :firstname :lastname [:fullname [str :firstname " " :lastname]]]
 ```
 
-Like `select-keys` or `set/project` the resulting relation will contain only the projected keys. See also [`:select`](#sql-style-select)
+Like `select-keys` or `set/project` the resulting relation will contain only the projected & computed keys.
 
-As `relic` is set based, `:project` results will always be deduplicated when queried.
+As `relic` is set based, `:select` results will always be deduplicated when queried.
 
-spec: `[:project & col]`
+spec: `[:select & col|binding]`
   
 ### Removing columns `:without` 
 
@@ -249,21 +249,10 @@ spec: `[:project & col]`
  [:without :age :firstname :lastname]]
 ```
 
-Inverse of `:project` will instead omit the keys in `cols` from the resulting relation.
+Inverse of `:select` will instead omit the keys in `cols` from the resulting relation.
 
 spec: `[:without & col]`
 
-### SQL style `:select`
-
-```clojure 
-[[:table :Customer]
- [:select :firstname, :lastname [:fullname [str :firstname " " :lastname]]]]
-```
-
-A mix and match expressions suitable for `:project` and `:extend` resulting in a SQL-style `:select`.
-
-spec: `[:select & binding|col]`
-  
 ### Aggregation & grouping with `:agg`
 
 ```clojure 

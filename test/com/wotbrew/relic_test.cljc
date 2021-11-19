@@ -45,7 +45,7 @@
 
       [[:from a]
        [:extend [:b [inc :a]]]
-       [:project :b]]
+       [:select :b]]
       ;; =>
       #{{:b 43} {:b 44}, {:b 46}}
 
@@ -291,8 +291,8 @@
   #_ (let [db {}
            A [[:table :A {:req [:a]}]]
            A2 [[:table :A {:req [:a, :b]}]]
-           B [[:table :A {:req [:a]}] [:project :b]]
-           B2 [[:table :A {:req [:a :b]}] [:project :b]]
+           B [[:table :A {:req [:a]}] [:select :b]]
+           B2 [[:table :A {:req [:a :b]}] [:select :b]]
            db (rel/transact db {A [{:a 1}]})
            db (rel/transact db {A2 [{:a 2, :b 2}]})]
 

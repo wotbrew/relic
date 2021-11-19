@@ -1243,7 +1243,6 @@
   [:join relvar {left-col right-col, ...}]
   [:left-join relvar {left-col right-col, ...}]
   [:from relvar]
-  [:project & col]
   [:without & col]
   [:select & col|[col|[& col] expr]]
   [:difference relvar]
@@ -1512,7 +1511,7 @@
 ;; --
 ;; :project
 
-(defmethod dataflow-node :project
+(defmethod dataflow-node ::project
   [left [_ & cols]]
   (let [cols (vec (set cols))
         f (fn [row] (select-keys row cols))]
@@ -1522,7 +1521,7 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod columns* :project
+(defmethod columns* ::project
   [left [_ & cols]]
   (filter (comp (set cols) :k) (columns left)))
 

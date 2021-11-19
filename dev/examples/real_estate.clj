@@ -120,11 +120,11 @@
 
 (def SoldProperty
   [[:from RawSales]
-   [:project :address]])
+   [:select :address]])
 
 (def UnsoldProperty
   [[:from Property]
-   [:project :address]
+   [:select :address]
    [:difference SoldProperty]])
 
 (def SalesInfo
@@ -141,7 +141,7 @@
    [:join Commission {:agent :agent
                       :sale-speed :sale-speed
                       :price-band :price-band}]
-   [:project :address :agent :commission]])
+   [:select :address :agent :commission]])
 
 ;; external
 
@@ -158,13 +158,13 @@
 (def PropertyForWebsite
   [[:from UnsoldProperty]
    [:join PropertyInfo {:address :address}]
-   [:project :address :price :photo :number-of-rooms :square-feet]])
+   [:select :address :price :photo :number-of-rooms :square-feet]])
 
 (def CommissionDue
   [[:from SalesCommissions]
    [:agg [:agent]
     [:total-commission [r/sum :commission]]]
-   [:project :agent :total-commission]])
+   [:select :agent :total-commission]])
 
 (def data
   (let [address1 "abc def 55"

@@ -242,16 +242,16 @@ As `relic` is set based, `:project` results will always be deduplicated when que
 
 spec: `[:project & col]`
   
-### Removing columns `:project-away` 
+### Removing columns `:without` 
 
 ```clojure 
 [[:table :Customer]
- [:project-away :age :firstname :lastname]]
+ [:without :age :firstname :lastname]]
 ```
 
 Inverse of `:project` will instead omit the keys in `cols` from the resulting relation.
 
-spec: `[:project-away & col]`
+spec: `[:without & col]`
 
 ### SQL style `:select`
 
@@ -315,7 +315,7 @@ spec: `[:intersection relvar]`
 
 spec: ` [:rename {col new-col, ...}]`
   
-### Qualify columns with `:qualify``
+### Qualify columns with `:qualify`
 
 spec: `[:qualify namespace]`
 

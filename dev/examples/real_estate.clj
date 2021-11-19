@@ -76,12 +76,12 @@
 (def Acceptance
   [[:from Decision]
    [:where :accepted]
-   [:project-away :accepted]])
+   [:without :accepted]])
 
 (def Rejection
   [[:from Decision]
    [:where [not :accepted]]
-   [:project-away :accepted]])
+   [:without :accepted]])
 
 (def PropertyInfo
   [[:from Property]
@@ -116,7 +116,7 @@
                         :bidder-name :bidder-name
                         :bidder-address :bidder-address}]
    [:join Property {:address :address}]
-   [:project-away :offer-date :bidder-name :bidder-address]])
+   [:without :offer-date :bidder-name :bidder-address]])
 
 (def SoldProperty
   [[:from RawSales]
@@ -148,9 +148,9 @@
 (def OpenOffers
   [[:from CurrentOffer]
    [:join [[:from CurrentOffer]
-           [:project-away :offer-price :latest-date]
+           [:without :offer-price :latest-date]
            [:difference [[:from Decision]
-                         [:project-away :accepted :decision-date]]]]
+                         [:without :accepted :decision-date]]]]
     {:bidder-name :bidder-name
      :bidder-address :bidder-address
      :address :address}]])

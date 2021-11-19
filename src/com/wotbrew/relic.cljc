@@ -522,7 +522,7 @@
                 (dataflow-node (conj (or left [])
                                      [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
                                      (vary-meta stmt assoc ::env-satisfied true))
-                               [:project-away ::env])
+                               [:without ::env])
                 node)))
 
           (add [g relvar]
@@ -1244,7 +1244,7 @@
   [:left-join relvar {left-col right-col, ...}]
   [:from relvar]
   [:project & col]
-  [:project-away & col]
+  [:without & col]
   [:select & col|[col|[& col] expr]]
   [:difference relvar]
   [:union relvar]
@@ -1527,9 +1527,9 @@
   (filter (comp (set cols) :k) (columns left)))
 
 ;; --
-;; :project-away
+;; :without
 
-(defmethod dataflow-node :project-away
+(defmethod dataflow-node :without
   [left [_ & cols]]
   (let [cols (vec (set cols))
         f (fn [row] (apply dissoc row cols))]
@@ -1539,7 +1539,7 @@
      :delete {left (transform-delete f)}
      :delete1 {left (transform-delete1 f)}}))
 
-(defmethod columns* :project-away
+(defmethod columns* :without
   [left [_ & cols]]
   (remove (comp (set cols) :k) (columns left)))
 
@@ -1805,7 +1805,7 @@
   [left [_ renames]]
   (let [extensions (for [[from to] renames] [to from])
         away (keys renames)
-        dep (conj left (into [:extend] extensions) (into [:project-away] away))]
+        dep (conj left (into [:extend] extensions) (into [:without] away))]
     {:deps [dep]
      :insert {dep pass-through-insert}
      :insert1 {dep pass-through-insert1}

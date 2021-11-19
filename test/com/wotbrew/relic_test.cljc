@@ -51,7 +51,7 @@
 
       [[:from a]
        [:extend [:b [inc :a]]]
-       [:project-away :a]]
+       [:without :a]]
       ;; =>
       #{{:b 43} {:b 44}, {:b 46}}
 

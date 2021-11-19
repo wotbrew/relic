@@ -257,7 +257,7 @@ spec: `[:project-away & col]`
 
 ```clojure 
 [[:table :Customer]
- [:select :firstnam, :lastname [:fullname [str :firstname " " :lastname]]]]
+ [:select :firstname, :lastname [:fullname [str :firstname " " :lastname]]]]
 ```
 
 A mix and match expressions suitable for `:project` and `:extend` resulting in a SQL-style `:select`.

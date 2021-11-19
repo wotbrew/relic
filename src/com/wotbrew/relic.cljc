@@ -2,7 +2,6 @@
   com.wotbrew.relic
   "Functional relational programming for clojure.
 
-
   Quick hints:
 
   a relic database is a map.
@@ -1078,7 +1077,37 @@
 ;; --
 ;; transact api
 
-(defn transact [db & tx]
+(defn transact
+  "Return a new relic database, with the transaction applied.
+
+  Accepts transactional commands as args (tx)
+
+  Commands:
+
+  Insert with :insert vectors
+  [:insert table row1, row2 ..]
+
+  Delete by predicates with :delete vectors
+  [:delete table expr1 expr2 ..]
+  e.g [:delete Customer [< :age 42]]
+
+  Update rows with :update vectors.
+  [:update table fn-or-map expr1 expr2 .. ]
+  e.g [:update Customer {:age inc} [< :age 42]]
+
+  You can use a map as terser multi table insert form:
+  {table [row1, row2 ...], ...}
+
+  ---
+
+  Note:
+  As relic stores its state and dataflow graph in metadata, all modifications to the database must be made using
+  relic transact/tracked-transact - all bets are off otherwise.
+
+  --
+
+  See also tracked-transact, what-if."
+  [db & tx]
   (if-some [transactor (::transactor (meta db))]
     (reduce transactor db tx)
     (apply transact (vary-meta db assoc ::transactor (dataflow-transactor {})) tx)))
@@ -2534,7 +2563,7 @@
 (defn update-env [db f & args] (with-env db (apply f (get-env db) args)))
 
 ;; --
-;; strip meta, if you want to remove relic metadata from your map
+;; functions for going back and forth between 'normal maps' and relic
 
 (defn strip-meta
   "Given a relic database map, removes any relic meta data."

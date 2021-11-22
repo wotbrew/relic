@@ -423,21 +423,21 @@ e.g `[:agg [] [:a-set [rel/set-concat :a]]]` would bind the count of all distinc
 
 ### Test if any row meets some predicate (or not) with `any` / `not-any`
 
-These are your analogs for `some` and `not-any?` in clojure.
+These are your like for `some` and `not-any?` in clojure.
 
 e.g `[:agg [] [rel/any :b]]` would bind true if any `:b` is true
 
 spec: `[any/not-any expr]`
 
-### Find the 'n' lowest/greatest rows by some expression with `top-by` / `bottom-by`
+### Find lowest/greatest rows by some expression with `top-by` / `bottom-by`
 
-e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of 5 rows with the highest values for :a
+e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of 5 rows with the highest values for `:a`
 
 spec: `[top-by/bottom-by n expr]`
 
-### Find the 'n' lowest/greatest values of some expression with `top` / `bottom`
+### Find lowest/greatest values of some expression with `top` / `bottom`
 
-e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of the 5 highest values of :a
+e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of the 5 highest values of` :a`
 
 spec: `[top/bottom n expr]`
 
@@ -463,10 +463,52 @@ spec: `[top/bottom n expr]`
 
 ## Constraint reference 
 
-### Apply constraints with `constrain`
-### Ensure only one row exists for a set of columns `:unique` 
+Constraints are just relvars ending in one of the constraint statements [`:unique`](#ensure-only-one-row-exists-for-a-set-of-columns-unique),
+[`:fk`](#ensure-a-referenced-row-exists-fk) and [`:check`](#check-columns-or-rows-always-meet-some-predicate-check). 
+
+To constrain a database, you `materialize` constraint relvars (and they can be removed with `dematerialize`. 
+
+As it is convenient to specify multiple constraints on a relvar in one form, a special
+`:constrain` statement is provided.
+
+e.g 
+
+```clojure 
+[[:from Customer]
+ [:constrain
+   [:check [string? :firstname] [string? :lastname] [nat-int? :age]]
+   [:unique :customer-id]
+   [:fk Address {:address-id :address-id}]]]
+```
+
+Constraints can apply to _any_ relvar, so you can apply constraints to derived relvars and joins, here
+is the `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint I mentioned earlier:
+
+```clojure 
+[[:from Order] 
+ [:join Customer {:customer-id :customer-id}]
+ [:where [= "bob" :firstname] [= "tuesday" [uk-day-of-week [::rel/env :now]]]]
+ [:check {:pred [<= [count :items] 10], :error "order can have at most 10 items if its associated customer is called bob and its tuesday"}]]
+```
+
+### Ensure only one row exists for a set of columns `:unique`
+
+spec: `[:unique & expr]`
+
 ### Ensure a referenced row exists `:fk`
+
+spec: `[:fk relvar clause]`
+
 ### Check columns or rows always meet some predicate `:check`
+
+Tests predicate expressions against rows and ensures they all return true. A map can be provided
+to specialise error messages, e.g `[string? :firstname]` and `{:pred [string? :firstname], :error "firstname must be a string"}` are acceptable.
+
+`:error` is also a relic expression that returns a string... `:error [str "firstname must be a string, found: " :firstname]` would also be acceptable.
+
+spec: `[:check & pred-expr|pred-map]`
+
+Yes, relic will integrate with spec1/2 & malli. Give me time.
 
 ## Tracking changes
 

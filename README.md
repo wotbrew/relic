@@ -1,6 +1,6 @@
 # relic
 
-`STATUS: PRIMORDIAL TAR, not ready quite yet...`
+`STATUS: PRIMORDIAL TAR, this readme, and library are still a work in progress..`
 
 A Clojure(Script) functional __relational__ programming library. 
 

@@ -59,7 +59,13 @@ All `relic` systems that are worth anything will need at least one `:table`. You
 
 You can see the relvar itself doesn't contain the rows. A relvar is a description of data, not the data itself - _good design is just breaking things apart_.
 
-You can derive relvars from relvars. All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
+You can derive relvars from relvars by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
+
+```clojure 
+[[:table :Customer]
+ [:where [= :id 42]]
+ [:extend [:fullname [str :firstname " " :lastname]]]
+```
 
 Because relvars are just vectors, they just sort of lounge around being values. To put them to work to get a _relation_ we have to feed some data into our tables.
 

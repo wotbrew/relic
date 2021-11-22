@@ -285,7 +285,8 @@ Lets you deal with nested data and flatten it into a form better suited to relat
 ;; =>
 (def OrderItem
   [[:table :Order]
-   [:expand [[:product :quantity] :items]])
+   [:expand [[:product :quantity] :items]]
+   [:without :items]])
    
 (rel/q db OrderItem)
 ;; =>

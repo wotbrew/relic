@@ -2501,6 +2501,13 @@
      :delete1 {left (transform-delete1 f)}}))
 
 ;; --
+;; :constrain
+
+(defmethod dataflow-node :constrain
+  [left [_ & constraints]]
+  {:deps (mapv #(conj left %) constraints)})
+
+;; --
 ;; :const
 
 (defmethod dataflow-node :const

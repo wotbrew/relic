@@ -221,7 +221,7 @@ Joins two relations together, returning the product of matching rows. The column
 
 Like `set/join`, clause is a map of expressions on the left to expressions on the right.
 
-spec: `[:join ?relvar ?clause]`
+spec: `[:join relvar clause]`
 
 ### SQL style `:left-join`
 
@@ -233,7 +233,7 @@ spec: `[:join ?relvar ?clause]`
  [:left-join Customer {:customer-id :id}]]
 ```
 
-spec: `[:left-join ?relvar ?clause]`
+spec: `[:left-join relvar clause]`
 
 ### Selecting new columns with `:select`
 
@@ -301,7 +301,7 @@ spec: `[:union relvar]`
   
 ### Set `:difference `
 
-spec: `[:difference ?relvar]`
+spec: `[:difference relvar]`
   
 ### Set `:intersection`
 
@@ -450,11 +450,11 @@ spec: `[top/bottom n expr]`
 ## Transact reference 
 
 ### Modify state with `transact`
-### Insert one or more rows `[:insert ?relvar & ?row]`
-### Terse insert `{?relvar1 ?rows, relvar2 ?rows}`
-### Update rows `[:update ?relvar ?f-or-set-map & where-expr]`
-### Delete rows by where filter `[:delete ?relvar & where-expr]`
-### Delete rows`[:delete-exact ?relvar & ?row]`
+### Insert one or more rows `[:insert relvar & row]`
+### Terse insert `{relvar1 rows, relvar2 rows}`
+### Update rows `[:update relvar f-or-set-map & where-expr]`
+### Delete rows by where filter `[:delete relvar & where-expr]`
+### Delete rows`[:delete-exact relvar & row]`
 
 ## Materialization reference 
 

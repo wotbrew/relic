@@ -330,9 +330,60 @@ This is mostly useful in updates/deletes and ad-hoc queries as joins always use 
 
 ## Expression reference
 
+Relic expressions are the means by which computation on columns is performed. They ultimately compile to functions of rows, and in fact a function is a valid
+relic expression.
+
+They are kind of like clojure s-expressions, but have some implicit evaluation rules that makes programming relic more ergonomic in the common case.
+
+For example, consider the relic expression
+
+`[+ :a 42]`
+
+If you squint a bit you can see the same as a clojure call:
+
+`(+ (:a row) 42)`
+
+Differences from clojure s-expressions
+
+- vectors are instead of lists to delay evaluation, without needing quote/unquote.
+- keywords are substituted with a lookup against the row, e.g `:a` become `(:a row)`.
+- ultimately all relic expressions are tested against a row, but they can contain constants, and constant expressions that 
+  do not depend on the row, such `[+ 1 2]`.
+  
+Conditional special forms are available due to inability to use clojure macros in the call position.
+
+ - `[:and & expr]`
+ - `[:or & expr]`
+ - `[:if then else]`
+
+### Escaping keywords `::rel/esc`
+
+Because normally keywords are substituted with a lookup, an expression like `[= :a :b]` will be evaluated as `(= (:a row) (:b row))`
+
+If you do not want this behaviour you can escape with the `::rel/esc` special form. e.g `[= :a [::rel/esc :b]]` would result in `(= (:a row) :b)`
+
+### Using non-keyword keys with `::rel/get`
+
+Ergonomic relic programming kind of wants your keys to be keywords but if you want to start with say, json with string keys. You can do so.
+
+Use `::rel/get` as a shorthand for a `get` call. e.g `[::rel/get "firstname"]` would result in `(get row "firstname")`
+
+### Getting a reference to the row with `::rel/%`
+
+If you want the whole map you can reference it with `::rel/%` so you could for example call `[pos? [count ::rel/%]]` would be a valid relic expression.
+
+### Sampling the environment with `::rel/env`
+
+A special form `::rel/env` is provided for referencing the 'environment', the 'environment' is a relvar with special support in relic, its a good place to deal
+with things like time, parameters, and configuration for your relic database.
+
+See [env](#use-the-environment-in-relvars-with-relenv)
+
 ## Aggregate reference
 
-## Query reference 
+TODO
+
+## Query reference
 
 ### Get rows with `q`
 ### Apply a sort with `:sort` and `:rsort` 

@@ -364,7 +364,7 @@ If you do not want this behaviour you can escape with the `::rel/esc` special fo
 
 ### Using non-keyword keys with `::rel/get`
 
-Ergonomic relic programming kind of wants your keys to be keywords but if you want to start with say, json with string keys. You can do so.
+Ergonomic relic programming kind of wants your keys to be keywords but if you want to start with say, json with string keys - You can do so.
 
 Use `::rel/get` as a shorthand for a `get` call. e.g `[::rel/get "firstname"]` would result in `(get row "firstname")`
 
@@ -376,6 +376,8 @@ If you want the whole map you can reference it with `::rel/%` so you could for e
 
 A special form `::rel/env` is provided for referencing the 'environment', the 'environment' is a relvar with special support in relic, its a good place to deal
 with things like time, parameters, and configuration for your relic database.
+
+e.g `[::rel/env :now-utc]`
 
 See [env](#use-the-environment-in-relvars-with-relenv)
 

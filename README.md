@@ -383,7 +383,63 @@ See [env](#use-the-environment-in-relvars-with-relenv)
 
 ## Aggregate reference
 
-TODO
+The [`:agg`](#aggregation--grouping-with-agg) relational operator takes [extension](#adding-new-columns-with-extend) like bindings to compute aggregate expressions over grouped rows.
+
+They look like relic [expressions](#expression-reference) but do in fact follow different rules. 
+
+The simplest thing to do is to use the built-in aggregations in relic.
+
+### Count grouped rows with `clojure.core/count`
+
+Count is easy, just use normal `count`! The library function from clojure itself is a valid aggregate.
+
+e.g `[:agg [] [:n count]]` 
+
+### Find rows with the smallest/highest of something with `greatest-by` / `least-by` 
+
+e.g `[:agg [] [:min-row-by-a [rel/least-by :a]]]` would bind the row with the lowest :a.
+
+Good for find-first, find-last type use cases where you want to preserve the row.
+
+spec: `[greatest-by|least-by expr]`
+
+### Find the smallest or highest result of an expression with `greatest` / `least` 
+
+e.g `[:agg [] [:min-a [rel/least :a]]]` would bind the lowest `:a`.
+
+### Sum numbers with `sum`
+
+e.g `[:agg [] [:n [rel/sum :a]` would bind the sum of all `:a` over the grouped rows.
+
+spec: `[sum expr]`
+
+### Get the set of all values for an expression with `set-concat`
+
+e.g `[:agg [] [:a-set [rel/set-concat :a]]]` would bind the set of all distinct values of `:a`
+
+### Count the number of distinct values for an expression with `count-distinct`
+
+e.g `[:agg [] [:a-set [rel/set-concat :a]]]` would bind the count of all distinct values of `:a`
+
+### Test if any row meets some predicate (or not) with `any` / `not-any`
+
+These are your analogs for `some` and `not-any?` in clojure.
+
+e.g `[:agg [] [rel/any :b]]` would bind true if any `:b` is true
+
+spec: `[any/not-any expr]`
+
+### Find the 'n' lowest/greatest rows by some expression with `top-by` / `bottom-by`
+
+e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of 5 rows with the highest values for :a
+
+spec: `[top-by/bottom-by n expr]`
+
+### Find the 'n' lowest/greatest values of some expression with `top` / `bottom`
+
+e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of the 5 highest values of :a
+
+spec: `[top/bottom n expr]`
 
 ## Query reference
 

@@ -194,7 +194,7 @@ e.g
 (def Customer [[:table :Customer]])
 
 [[:from Customer]
-[:where [= :age 42]]
+ [:where [= :age 42]]]
 ```
 
 Allows you to splice relvars in to the leading statement position. Allows relvar re-use in literals without conj.

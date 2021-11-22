@@ -2460,7 +2460,7 @@
 
 (defn- good-fk [left relvar clause row])
 
-(defmethod dataflow-node ::fk
+(defmethod dataflow-node :fk
   [left [_ relvar clause]]
   (let [dep (conj left [::join-as-coll relvar clause ::fk])
         check-fk (fn [{::keys [fk] :as row}]
@@ -2493,58 +2493,12 @@
           m
           (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar}))))))
 
-(defmethod dataflow-node ::check
+(defmethod dataflow-node :check
   [left [_ & checks]]
   (let [f (apply comp (map (partial check->pred left) checks))]
     {:deps [left]
      :insert1 {left (transform-insert1 f)}
      :delete1 {left (transform-delete1 f)}}))
-
-;; spec / malli checks can require extension of this multi
-(defmulti constraint->relvars (fn [k constraint] k))
-
-(defmethod constraint->relvars :default [_ _] nil)
-
-(defmethod constraint->relvars :unique [_ {:keys [relvar unique]}]
-  (for [k unique]
-    (if (keyword? k)
-      (conj relvar [:unique k])
-      (conj relvar (into [:unique] k)))))
-
-(defmethod constraint->relvars :fk [_ {:keys [relvar fk]}]
-  (for [[right clause] fk]
-    (conj relvar [::fk right clause])))
-
-(defmethod constraint->relvars :check [_ {:keys [relvar check]}]
-  [(conj relvar (into [::check] check))])
-
-(defn constrain
-  "Applies constraints to the state.
-
-  constraints are maps (or collections of maps) with the following keys:
-
-  :relvar The relvar that constraints apply to, any kind of relvar is acceptable.
-
-  :unique a vector of unique expressions / sets of expressions, e.g :unique [[:a :b]] would create a composite unique key across :a :b.
-
-  :fk a map of {relvar join-clause} to establish relationships to other relvars, e.g it holds that a :join is always possible across the fk
-
-  :check
-  A vector of checks, each check is a relic expr, or a map of
-
-    :pred (relic expr) e.g [< 0 :age 130]
-    :error (relic expr returning a string message) e.g [str \"not a valid age: \" :age] and \"not a valid age\" would be acceptable."
-  [db & constraints]
-  (let [get-relvars
-        (fn cr [constraint]
-          (if-not (map? constraint)
-            (mapcat cr constraint)
-            (concat
-              (for [k (keys constraint)
-                    relvar (constraint->relvars k constraint)]
-                relvar))))]
-    (->> (get-relvars constraints)
-         (apply materialize db))))
 
 ;; --
 ;; :const

@@ -482,24 +482,25 @@ e.g
 ```
 
 Constraints can apply to _any_ relvar, so you can apply constraints to derived relvars and joins, here
-is the `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint I mentioned earlier:
+is the `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint we talked about before:
 
 ```clojure 
 [[:from Order] 
  [:join Customer {:customer-id :customer-id}]
  [:where [= "bob" :firstname] [= "tuesday" [uk-day-of-week [::rel/env :now]]]]
- [:check {:pred [<= [count :items] 10], :error "order can have at most 10 items if its associated customer is called bob and its tuesday"}]]
+ [:check {:pred [<= [count :items] 10],
+          :error [str "order can have at most 10 items if its associated customer is called bob and its tuesday, found: " [count :items]]}]]
 ```
 
-### Ensure only one row exists for a set of columns `:unique`
+### Ensure only one row exists for a combination of columns `:unique`
 
 spec: `[:unique & expr]`
 
-### Ensure a referenced row exists `:fk`
+### Ensure a referenced row exists with `:fk`
 
 spec: `[:fk relvar clause]`
 
-### Check columns or rows always meet some predicate `:check`
+### Test predicates against columns and rows using `:check`
 
 Tests predicate expressions against rows and ensures they all return true. A map can be provided
 to specialise error messages, e.g `[string? :firstname]` and `{:pred [string? :firstname], :error "firstname must be a string"}` are acceptable.

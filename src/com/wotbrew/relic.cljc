@@ -1166,7 +1166,7 @@
                                (t row)
                                (e row)))
                            (fn [row]
-                             (if (c row)
+                             (when (c row)
                                (t row))))])
             (= f ::env)
             (let [[k not-found] args]
@@ -1409,9 +1409,6 @@
   (if (nil? v)
     m
     (assoc m k v)))
-
-(defn- select-keys-if-not-nil [m keyseq]
-  (reduce #(assoc-if-not-nil %1 %2 (%2 m)) {} keyseq))
 
 (defn- extend-form-fn [form]
   (cond
@@ -2252,7 +2249,6 @@
 
 (def ^:private sum-add-fn #?(:clj +' :cljs +))
 
-
 (defn sum
   "A relic agg function that returns the sum of the expressions across each row.
 
@@ -2483,13 +2479,13 @@
         (let [r (pred-fn m)]
           (if r
             m
-            (raise (error-fn m) {:expr pred, :check check, :row m, :relvar relvar}))))))
-  (let [f2 (expr-row-fn check)]
-    (fn [m]
-      (let [r (f2 m)]
-        (if r
-          m
-          (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar}))))))
+            (raise (error-fn m) {:expr pred, :check check, :row m, :relvar relvar})))))
+    (let [f2 (expr-row-fn check)]
+      (fn [m]
+        (let [r (f2 m)]
+          (if r
+            m
+            (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar})))))))
 
 (defmethod dataflow-node :check
   [left [_ & checks]]

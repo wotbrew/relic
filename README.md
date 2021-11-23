@@ -125,7 +125,7 @@ e.g
  [:join Order {:customer-id :customer-id}]]
 ```
 
-Each statement depends on the above statements, this forms a dataflow graph. Unlike SQL, order matters e.g you cannot use a column that has not been defined in some preceding statement.
+Each statement depends on the above statements, this forms a dataflow graph. Order matters e.g you cannot use a column that has not been defined in some preceding statement.
 
 
 ### Name your state relations with `:table`

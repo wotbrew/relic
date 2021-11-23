@@ -531,8 +531,9 @@
     (is (= #{{:a 42}} (rel/what-if db :A [:insert :A {:a 42}])))))
 
 (deftest upsert-test
-  (let [db (rel/transact {} {:A [{:a 42}]})
+  (let [db (rel/transact {} [:upsert :A {:a 42}])
         db (rel/materialize db [[:table :A] [:unique :a]])
-        db (rel/transact db [:upsert :A {:a 42, :b 43}])]
+        db (rel/transact db [:upsert :A {:a 42, :b 42} {:a 42, :b 43}])]
     (is (= #{{:a 42, :b 43}} (rel/q db :A)))
+    (is (= #{{:a 42}, {:a 43}} (rel/what-if db :A [:upsert :A {:a 42}] [:upsert :A {:a 43}] [:upsert :A {:a 42}])))
     (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (rel/what-if db :A [:upsert :A {:a 43, :b 43}])))))

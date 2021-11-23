@@ -996,9 +996,11 @@
         upsert
         (fn [relvar db rows]
           (binding [*upsert-collisions* {}]
-            (let [db (insert-n relvar db rows false)
-                  db (reduce-kv (fn [db table-key rows] (delete-n table-key db rows false)) db *upsert-collisions*)]
-              db)))]
+            (let [db2 (insert-n relvar db rows false)
+                  db-new (reduce-kv (fn [db table-key rows] (delete-n table-key db rows false)) db *upsert-collisions*)]
+              (if (identical? db-new db)
+                db2
+                (insert-n relvar db-new (remove (get *upsert-collisions* (as-table-key relvar) #{}) rows) false)))))]
     (fn transact
       [db tx]
       (cond
@@ -1935,7 +1937,8 @@
         upsert-collision
         (if-some [[_ table-key] (some-> (unwrap-table left) head-stmt)]
           (fn [old-row new-row]
-            (set! *upsert-collisions* (update *upsert-collisions* table-key (fn [s] (-> s (set-conj old-row) (disj new-row))))))
+            (set! *upsert-collisions* (update *upsert-collisions* table-key set-conj old-row))
+            new-row)
           raise-violation)
         on-collision (fn on-collision [old-row new-row]
                        (if *upsert-collisions*

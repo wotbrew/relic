@@ -523,3 +523,16 @@
     (is (= {:A #{{:a 42}, {:a 43}}} (rel/strip-meta db)))
     (is (nil? (meta (rel/strip-meta db))))
     (is (= {:foo 42} (meta (rel/strip-meta (vary-meta db assoc :foo 42)))))))
+
+(deftest unique-violation-test
+  (let [db (rel/transact {} {:A [{:a 42}]})
+        db (rel/materialize db [[:table :A] [:unique :a]])]
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A [:insert :A {:a 42, :b 1}])))
+    (is (= #{{:a 42}} (rel/what-if db :A [:insert :A {:a 42}])))))
+
+(deftest upsert-test
+  (let [db (rel/transact {} {:A [{:a 42}]})
+        db (rel/materialize db [[:table :A] [:unique :a]])
+        db (rel/transact db [:upsert :A {:a 42, :b 43}])]
+    (is (= #{{:a 42, :b 43}} (rel/q db :A)))
+    (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (rel/what-if db :A [:upsert :A {:a 43, :b 43}])))))

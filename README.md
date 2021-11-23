@@ -453,11 +453,45 @@ spec: `[top/bottom n expr]`
 ## Transact reference 
 
 ### Modify state with `transact`
-### Insert one or more rows `[:insert relvar & row]`
-### Terse insert `{relvar1 rows, relvar2 rows}`
-### Update rows `[:update relvar f-or-set-map & where-expr]`
-### Delete rows by where filter `[:delete relvar & where-expr]`
-### Delete rows`[:delete-exact relvar & row]`
+
+You modify relic databases with transact, in relic we try to only modify the essential state of the program, so you 
+can only modify tables.
+
+The function `transact` takes various instructions for tables to change as args.
+
+```clojure 
+(rel/transact db 
+  [:insert :Customer {:firstname "Fred", ...}, {:firstname "Alice", ...}]
+  [:delete Order [not :shipping]])
+```
+
+See below for what you can do.
+
+### Insert one or more rows `:insert`
+
+To add rows use `:insert`. Duplicate rows are just discarded.
+
+spec: `[:insert table & row]`
+
+### Terse insert `{table1 rows, table2 rows}`
+
+If you want to add to multiple tables with little ceremony, you can use a map of table to coll of rows instead.
+
+### Update rows with `:update`
+
+spec: `[:update table set-map-or-f & where-expr]`
+
+### Delete rows by filter with `:delete`
+
+spec: `[:delete table & where-expr]`
+
+### Delete rows with `:delete-exact`
+
+spec: `[:delete-exact table & row]`
+
+### Insert-or-update with `:upsert`
+
+spec: `[:upsert table & row]`
 
 ## Materialization reference 
 

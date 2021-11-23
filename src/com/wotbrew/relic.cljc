@@ -954,6 +954,8 @@
 ;; right now doesn't use the graph, and references mat function changes on demand
 ;; but knowing the graph might be useful to optimise the transactor in the future
 
+(def ^:dynamic *upsert-collisions* nil)
+
 (defn- dataflow-transactor [_g]
   (let [as-table-key (fn [relvar] (if (keyword? relvar) relvar (let [[_ table-key] (head-stmt relvar)] table-key)))
         as-relvar (fn [relvar] (if (keyword? relvar) [[:table relvar]] relvar))
@@ -990,7 +992,13 @@
         (fn delete-where
           [relvar db exprs]
           (let [rows (q db (conj relvar (into [:where] exprs)))]
-            (delete-n relvar db rows false)))]
+            (delete-n relvar db rows false)))
+        upsert
+        (fn [relvar db rows]
+          (binding [*upsert-collisions* {}]
+            (let [db (insert-n relvar db rows false)
+                  db (reduce-kv (fn [db table-key rows] (delete-n table-key db rows false)) db *upsert-collisions*)]
+              db)))]
     (fn transact
       [db tx]
       (cond
@@ -1003,7 +1011,8 @@
             :insert (insert-n relvar db args false)
             :delete-exact (delete-n relvar db args false)
             :delete (delete-where relvar db args)
-            :update (let [[f-or-set-map & exprs] args] (update-where relvar db f-or-set-map exprs))))))))
+            :update (let [[f-or-set-map & exprs] args] (update-where relvar db f-or-set-map exprs))
+            :upsert (upsert relvar db args)))))))
 
 (defn- mat-head [relvar]
   (case (count relvar)
@@ -1919,9 +1928,20 @@
 ;; :unique (index)
 
 (defmethod dataflow-node :unique
-  [left [_ & exprs]]
-  (let [expr-fns (mapv expr-row-fn exprs)]
-    {:empty-index (map-unique-index {} expr-fns)
+  [left [_ & exprs :as stmt]]
+  (let [expr-fns (mapv expr-row-fn exprs)
+        relvar (conj left stmt)
+        raise-violation (fn [old-row new-row] (raise "Unique constraint violation" {:relvar relvar, :old-row old-row, :new-row new-row}))
+        upsert-collision
+        (if-some [[_ table-key] (some-> (unwrap-table left) head-stmt)]
+          (fn [old-row new-row]
+            (set! *upsert-collisions* (update *upsert-collisions* table-key (fn [s] (-> s (set-conj old-row) (disj new-row))))))
+          raise-violation)
+        on-collision (fn on-collision [old-row new-row]
+                       (if *upsert-collisions*
+                         (upsert-collision old-row new-row)
+                         (raise-violation old-row new-row)))]
+    {:empty-index (map-unique-index {} expr-fns on-collision)
      :deps [left]
      :insert {left pass-through-insert}
      :insert1 {left pass-through-insert1}

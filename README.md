@@ -31,7 +31,7 @@ Did you try [meander](https://github.com/noprompt/meander), [core.logic](https:/
 - munge with joy via the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance..
-- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like `order can have at most 10 items if its associated customer is called bob and its tuesday`.
+- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](#constraint-reference).
 
 Definitely not at all like the other graph databases in clojure. this time its different, really.
 
@@ -106,7 +106,7 @@ You can materialize any relvar such that it will be maintained for you as you mo
 
 `materialize` will return a new _database_ that looks and smells the same, but queries against materialized relvars will be instant, and as you change data in tables, those changes will flow to materialized relvars automatically.
 
-relic attempts to deliver on the promise of seperating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
+relic attempts to deliver on the promise of separating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
 
 If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
 
@@ -468,19 +468,6 @@ Constraints are just relvars ending in one of the constraint statements [`:uniqu
 
 To constrain a database, you `materialize` constraint relvars (and they can be removed with `dematerialize`. 
 
-As it is convenient to specify multiple constraints on a relvar in one form, a special
-`:constrain` statement is provided.
-
-e.g 
-
-```clojure 
-[[:from Customer]
- [:constrain
-   [:check [string? :firstname] [string? :lastname] [nat-int? :age]]
-   [:unique :customer-id]
-   [:fk Address {:address-id :address-id}]]]
-```
-
 Constraints can apply to _any_ relvar, so you can apply constraints to derived relvars and joins, here
 is the `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint we talked about before:
 
@@ -490,6 +477,19 @@ is the `order can have at most 10 items if its associated customer is called bob
  [:where [= "bob" :firstname] [= "tuesday" [uk-day-of-week [::rel/env :now]]]]
  [:check {:pred [<= [count :items] 10],
           :error [str "order can have at most 10 items if its associated customer is called bob and its tuesday, found: " [count :items]]}]]
+```
+
+As it is convenient to specify multiple constraints on a relvar in one form, a special
+`:constrain` statement is provided.
+
+e.g
+
+```clojure 
+[[:from Customer]
+ [:constrain
+   [:check [string? :firstname] [string? :lastname] [nat-int? :age]]
+   [:unique :customer-id]
+   [:fk Address {:address-id :address-id}]]]
 ```
 
 ### Ensure only one row exists for a combination of columns `:unique`

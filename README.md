@@ -466,7 +466,7 @@ spec: `[top/bottom n expr]`
 Constraints are just relvars ending in one of the constraint statements [`:unique`](#ensure-only-one-row-exists-for-a-set-of-columns-unique),
 [`:fk`](#ensure-a-referenced-row-exists-fk) and [`:check`](#check-columns-or-rows-always-meet-some-predicate-check). 
 
-To constrain a database, you `materialize` constraint relvars (and they can be removed with `dematerialize`. 
+To constrain a database, you `materialize` constraint relvars (and they can be removed with `dematerialize`). 
 
 Constraints can apply to _any_ relvar, so you can apply constraints to derived relvars and joins, here
 is the `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint we talked about before:

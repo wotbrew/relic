@@ -482,11 +482,18 @@
               (not (orphan? g relvar)) g
               (watched? g relvar) g
               (materialized? g relvar) g
-              (table-relvar? relvar) g
               :else
               (let [{:keys [deps]} (g relvar)
                     g (dissoc g relvar)
-                    g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)]
+                    g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)
+                    g (if (table-relvar? relvar)
+                        (let [[_ table-key] (head-stmt relvar)
+                              copies (:copies (g table-key))
+                              copies (disj copies relvar)]
+                          (if (empty? copies)
+                            (dissoc g table-key)
+                            (assoc-in g [table-key :copies] copies)))
+                        g)]
                 (reduce delete-if-safe g deps))))]
     (delete-if-safe g relvar)))
 
@@ -498,12 +505,14 @@
                 node
                 (-> node
                     (assoc :dependents new-dependents)))))
+
           (depend [g dependent dependency]
             (let [g (add g dependency)]
               (update g dependency edit-flow dependent)))
+
           (merge-node [a b relvar]
             (cond
-              (nil? a) (assoc b :relvar relvar)
+              (nil? a) (assoc b :relvar relvar, :mat (:mat (meta (head-stmt relvar)) false))
               (:mat (meta (head-stmt relvar))) (assoc b :relvar relvar
                                                         :mat true
                                                         :dependents (:dependents a #{}))
@@ -533,7 +542,11 @@
               (if contains
                 g
                 (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
-                      g (reduce add g implicit)]
+                      g (reduce add g implicit)
+                      g (if (table-relvar? relvar)
+                          (let [[_ table-key] (head-stmt relvar)]
+                            (update-in g [table-key :copies] set-conj relvar))
+                          g)]
                   g))))]
     (add g relvar)))
 
@@ -569,68 +582,10 @@
 (defn- with-deleted-hook1 [relvar f]
   (fn [db row] (record-deleted1 relvar row) (f db row)))
 
-
-;; --
-;; state will be stored under the ::state key
-;; this keeps it all in one predictable place so we can remove it later.
-
-(defn- vary-state [db f & args] (apply vary-meta db update ::state f args))
-
 ;; --
 ;; materialized function dynamic composition
 ;; constructs function chains that realise dataflow graphs
 ;; function changes are stored against graph nodes
-
-(defn- base-mat-fns
-  [g relvar flow]
-  (let [[_ table-key :as stmt] (head-stmt relvar)
-        {:keys [empty-index]} (if g (g relvar) (dataflow-node [] stmt))
-        {:keys [flow-inserts-n
-                flow-insert1
-                flow-deletes-n
-                flow-delete1]} flow]
-    {:insert
-     (fn base-insert [db rows]
-       (let [oidx (db table-key empty-index)
-             new-rows (filterv #(not (contains-row? oidx %)) rows)]
-         (if (seq new-rows)
-           (let [nidx (reduce index-row oidx new-rows)
-                 db (assoc db table-key nidx)
-                 db (vary-state db assoc relvar nidx)
-                 db (vary-state db flow-inserts-n new-rows)]
-             db)
-           db)))
-     :insert1
-     (fn base-insert1 [db row]
-       (let [oidx (db table-key empty-index)]
-         (if (contains-row? oidx row)
-           db
-           (let [nidx (index-row oidx row)
-                 db (assoc db table-key nidx)
-                 db (vary-state db assoc relvar nidx)
-                 db (vary-state db flow-insert1 row)]
-             db))))
-     :delete
-     (fn base-delete [db rows]
-       (let [oidx (db table-key empty-index)
-             deleted-rows (filterv #(contains-row? oidx %) rows)]
-         (if (seq deleted-rows)
-           (let [nidx (reduce unindex-row oidx deleted-rows)
-                 db (assoc db table-key nidx)
-                 db (vary-state db assoc relvar nidx)
-                 db (vary-state db flow-deletes-n deleted-rows)]
-             db)
-           db)))
-     :delete1
-     (fn base-delete1 [db row]
-       (let [oidx (db table-key empty-index)]
-         (if-not (contains-row? oidx row)
-           db
-           (let [nidx (unindex-row oidx row)
-                 db (assoc db table-key nidx)
-                 db (vary-state db assoc relvar nidx)
-                 db (vary-state db flow-delete1 row)]
-             db))))}))
 
 (defn- derived-mat-fns [node edge flow]
   (let [{:keys [flow-inserts-n
@@ -810,6 +765,137 @@
                inserted-no-flow)))
        :else (fn [db _] [db]))}))
 
+(defn- get-flow [g relvar dependents]
+  (let [flow-mat-fns (mapv #((:mat-fns (g %)) relvar) dependents)
+
+        flow-inserters-n (mapv :insert flow-mat-fns)
+        flow-deleters-n (mapv :delete flow-mat-fns)
+
+        flow-inserters-await (mapv :insert-await flow-mat-fns)
+        flow-forward-inserts (mapv :inserted flow-mat-fns)
+        flow-deleters-await (mapv :delete-await flow-mat-fns)
+        flow-forward-deletes (mapv :deleted flow-mat-fns)
+
+        flow-inserts-n
+        (case (count flow-inserters-n)
+          0 (fn [db _] db)
+          1 (first flow-inserters-n)
+          (fn [db rows]
+            (if (seq rows)
+              (let [[db flow] (reduce (fn [[db acc] f]
+                                        (let [[db insert delete] (f db rows)]
+                                          [db (conj acc [insert delete])]))
+                                      [db []] flow-inserters-await)]
+                (loop [db db
+                       i 0]
+                  (if (= i (count flow))
+                    db
+                    (recur
+                      (let [[inserts deletes] (nth flow i)]
+                        (-> ((flow-forward-deletes i) db deletes)
+                            ((flow-forward-inserts i) inserts)))
+                      (inc i)))))
+              db)))
+
+        flow-deletes-n
+        (case (count flow-deleters-n)
+          0 (fn [db _] db)
+          1 (first flow-deleters-n)
+          (fn [db rows]
+            (if (seq rows)
+              (let [[db flow] (reduce (fn [[db acc] f]
+                                        (let [[db insert delete] (f db rows)]
+                                          [db (conj acc [insert delete])]))
+                                      [db []] flow-deleters-await)]
+                (loop [db db
+                       i 0]
+                  (if (= i (count flow))
+                    db
+                    (recur
+                      (let [[inserts deletes] (nth flow i)]
+                        (-> ((flow-forward-deletes i) db deletes)
+                            ((flow-forward-inserts i) inserts)))
+                      (inc i)))))
+              db)))
+
+        flow-inserters-1 (mapv :insert1 flow-mat-fns)
+
+        flow-insert1
+        (case (count flow-inserters-1)
+          0 (fn [db _] db)
+          1 (first flow-inserters-1)
+          (fn [db row] (flow-inserts-n db [row])))
+
+        flow-deleters-1 (mapv :delete1 flow-mat-fns)
+
+        flow-delete1
+        (case (count flow-deleters-1)
+          0 (fn [db _] db)
+          1 (first flow-deleters-1)
+          (fn [db row] (flow-deletes-n db [row])))]
+    {:flow-inserts-n (with-added-hook relvar flow-inserts-n)
+     :flow-insert1 (with-added-hook1 relvar flow-insert1)
+     :flow-deletes-n (with-deleted-hook relvar flow-deletes-n)
+     :flow-delete1 (with-deleted-hook1 relvar flow-delete1)}))
+
+(defn- table-mat-fns
+  [g table-key copies]
+  (let [{:keys [flow-inserts-n
+                flow-insert1
+                flow-deletes-n
+                flow-delete1]} (get-flow g nil copies)
+        empty-idx empty-set-index]
+    {:insert
+     (fn base-insert [db rows]
+       (let [idx (db table-key empty-idx)
+             added-rows (into [] (remove idx) rows)]
+         (if (seq added-rows)
+           (let [db* (::state (meta db) {})
+                 nidx (into idx rows)
+                 db (assoc db table-key nidx)
+                 db* (assoc db* table-key nidx)
+                 db* (flow-inserts-n db* added-rows)
+                 db (vary-meta db assoc ::state db*)]
+             db)
+           db)))
+     :insert1
+     (fn base-insert1 [db row]
+       (let [idx (db table-key empty-idx)]
+         (if-not (contains? idx row)
+           (let [db* (::state (meta db) {})
+                 nidx (conj idx row)
+                 db (assoc db table-key nidx)
+                 db* (assoc db* table-key nidx)
+                 db* (flow-insert1 db* row)
+                 db (vary-meta db assoc ::state db*)]
+             db)
+           db)))
+     :delete
+     (fn base-delete [db rows]
+       (let [idx (db table-key empty-idx)
+             deleted-rows (filterv idx rows)]
+         (if (seq deleted-rows)
+           (let [db* (::state (meta db) {})
+                 nidx (reduce disj idx rows)
+                 db (assoc db table-key nidx)
+                 db* (assoc db* table-key nidx)
+                 db* (flow-deletes-n db* deleted-rows)
+                 db (vary-meta db assoc ::state db*)]
+             db)
+           db)))
+     :delete1
+     (fn base-delete1 [db row]
+       (let [idx (db table-key empty-idx)]
+         (if (contains? idx row)
+           (let [db* (::state (meta db) {})
+                 nidx (disj idx row)
+                 db (assoc db table-key nidx)
+                 db* (assoc db* table-key nidx)
+                 db* (flow-delete1 db* row)
+                 db (vary-meta db assoc ::state db*)]
+             db)
+           db)))}))
+
 (defn add-mat-fns [g relvars]
   (let [og g
         g (reduce add-to-graph og relvars)
@@ -840,87 +926,16 @@
                g
                (let [{:keys [dependents] :as node} (g relvar)
                      g (reduce #(rf %1 %2 relvar) g dependents)
-                     flow-mat-fns (mapv #((:mat-fns (g %)) relvar) dependents)
-
-                     flow-inserters-n (mapv :insert flow-mat-fns)
-                     flow-deleters-n (mapv :delete flow-mat-fns)
-
-                     flow-inserters-await (mapv :insert-await flow-mat-fns)
-                     flow-forward-inserts (mapv :inserted flow-mat-fns)
-                     flow-deleters-await (mapv :delete-await flow-mat-fns)
-                     flow-forward-deletes (mapv :deleted flow-mat-fns)
-
-                     flow-inserts-n
-                     (case (count flow-inserters-n)
-                       0 (fn [db _] db)
-                       1 (first flow-inserters-n)
-                       (fn [db rows]
-                         (if (seq rows)
-                           (let [[db flow] (reduce (fn [[db acc] f]
-                                                     (let [[db insert delete] (f db rows)]
-                                                       [db (conj acc [insert delete])]))
-                                                   [db []] flow-inserters-await)]
-                             (loop [db db
-                                    i 0]
-                               (if (= i (count flow))
-                                 db
-                                 (recur
-                                   (let [[inserts deletes] (nth flow i)]
-                                     (-> ((flow-forward-deletes i) db deletes)
-                                         ((flow-forward-inserts i) inserts)))
-                                   (inc i)))))
-                           db)))
-
-                     flow-deletes-n
-                     (case (count flow-deleters-n)
-                       0 (fn [db _] db)
-                       1 (first flow-deleters-n)
-                       (fn [db rows]
-                         (if (seq rows)
-                           (let [[db flow] (reduce (fn [[db acc] f]
-                                                     (let [[db insert delete] (f db rows)]
-                                                       [db (conj acc [insert delete])]))
-                                                   [db []] flow-deleters-await)]
-                             (loop [db db
-                                    i 0]
-                               (if (= i (count flow))
-                                 db
-                                 (recur
-                                   (let [[inserts deletes] (nth flow i)]
-                                     (-> ((flow-forward-deletes i) db deletes)
-                                         ((flow-forward-inserts i) inserts)))
-                                   (inc i)))))
-                           db)))
-
-                     flow-inserters-1 (mapv :insert1 flow-mat-fns)
-
-                     flow-insert1
-                     (case (count flow-inserters-1)
-                       0 (fn [db _] db)
-                       1 (first flow-inserters-1)
-                       (fn [db row] (flow-inserts-n db [row])))
-
-                     flow-deleters-1 (mapv :delete1 flow-mat-fns)
-
-                     flow-delete1
-                     (case (count flow-deleters-1)
-                       0 (fn [db _] db)
-                       1 (first flow-deleters-1)
-                       (fn [db row] (flow-deletes-n db [row])))
-
-                     flow
-                     {:flow-inserts-n (with-added-hook relvar flow-inserts-n)
-                      :flow-insert1 (with-added-hook1 relvar flow-insert1)
-                      :flow-deletes-n (with-deleted-hook relvar flow-deletes-n)
-                      :flow-delete1 (with-deleted-hook1 relvar flow-delete1)}
-
-                     mat-fns (if (nil? edge)
-                               (if (table-relvar? relvar)
-                                 (base-mat-fns g relvar flow)
-                                 (derived-mat-fns node edge flow))
-                               (derived-mat-fns node edge flow))
-                     mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))]
-                 (assoc-in g [relvar :mat-fns edge] mat-fns))))
+                     flow (get-flow g relvar dependents)
+                     mat-fns (derived-mat-fns node edge flow)
+                     mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))
+                     g (assoc-in g [relvar :mat-fns edge] mat-fns)
+                     g (if (table-relvar? relvar)
+                         (let [[_ table-key] (head-stmt relvar)
+                               copies (:copies (g table-key))]
+                           (assoc-in g [table-key :mat-fns] (table-mat-fns g table-key copies)))
+                         g)]
+                 g)))
 
         bases
         (reduce (fn ! [acc relvar]
@@ -940,24 +955,26 @@
 ;; but knowing the graph might be useful to optimise the transactor in the future
 
 (defn- dataflow-transactor [_g]
-  (let [insert-n
+  (let [as-table-key (fn [relvar] (if (keyword? relvar) relvar (let [[_ table-key] (head-stmt relvar)] table-key)))
+        as-relvar (fn [relvar] (if (keyword? relvar) [[:table relvar]] relvar))
+        insert-n
         (fn insert-n
           [relvar db rows retry]
-          (let [{:keys [insert]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+          (let [{:keys [insert]} (-> db meta ::graph (get (as-table-key relvar)) :mat-fns)]
             (if insert
               (insert db rows)
               (if retry
-                (raise "Could not create mat-fns for table" {:relvar relvar})
-                (insert-n relvar (materialize db relvar) rows true)))))
+                (raise "Could not create mat-fns for table" {:relvar (as-relvar relvar)})
+                (insert-n relvar (materialize db (as-relvar relvar)) rows true)))))
         delete-n
         (fn delete-n
           [relvar db rows retry]
-          (let [{:keys [delete]} (-> db meta ::graph (get relvar) :mat-fns (get nil))]
+          (let [{:keys [delete]} (-> db meta ::graph (get (as-table-key relvar)) :mat-fns)]
             (if delete
               (delete db rows)
               (if retry
-                (raise "Could not create mat-fns for table" {:relvar relvar})
-                (delete-n relvar (materialize db relvar) rows true)))))
+                (raise "Could not create mat-fns for table" {:relvar (as-relvar relvar)})
+                (delete-n relvar (materialize db (as-relvar relvar)) rows true)))))
         update-where
         (fn update-where
           [relvar db f-or-set-map exprs]
@@ -1002,15 +1019,16 @@
   (let [g (::graph m {})
         {:keys [deps
                 dependents
-                provide]} (g relvar)
+                provide
+                mat]} (g relvar)
         m (reduce init m deps)
         db (::state m {})
         db (cond
             (seq deps) db
             (contains? db relvar) db
-            provide (assoc db relvar (provide db))
+            (and provide mat) (assoc db relvar (provide db))
             :else db)
-        rows (delay (row-seqable (db relvar empty-set-index)))
+        rows (delay (or (some-> (db relvar) row-seqable) (when provide (provide db)) empty-set-index))
         [db acc]
         (reduce (fn [[db acc] dependent]
                   (let [{:keys [mat-fns, provide]} (g dependent)
@@ -1036,9 +1054,14 @@
 ;; --
 ;; materialize/dematerialize api
 
+(defn- mat-head-if-not-table [relvar]
+  (if (table-relvar? relvar)
+    relvar
+    (mat-head relvar)))
+
 (defn- materialize* [db opts relvars]
   (let [m (meta db)
-        relvars (map mat-head relvars)
+        relvars (map mat-head-if-not-table relvars)
         g (::graph m {})
         g (add-mat-fns g relvars)
         g (if (:ephemeral opts) g (update g ::materialized (fnil into #{}) relvars))
@@ -1082,6 +1105,8 @@
 
   Accepts transactional commands as args (tx)
 
+  You modify relic databases by submitting commands to tables, a table can be referenced by name, or by table relvar.
+
   Commands:
 
   Insert with :insert vectors
@@ -1113,7 +1138,11 @@
     (apply transact (vary-meta db assoc ::transactor (dataflow-transactor {})) tx)))
 
 (defn- materialized-relation [db relvar]
-  (or (db relvar)
+  (or (cond
+        (keyword? relvar) (db relvar)
+        (table-relvar? relvar)
+        (let [[_ table-key] (head-stmt relvar)]
+          (db table-key)))
       ((::state (meta db) {}) relvar)))
 
 ;; --
@@ -1138,8 +1167,9 @@
   will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
   [db relvar]
   (or (materialized-relation db relvar)
-      (let [db (materialize db relvar)]
-        ((::state (meta db) {}) relvar))))
+      (when-not (keyword? relvar)
+        (let [db (materialize db relvar)]
+          ((::state (meta db) {}) relvar)))))
 
 ;; --
 ;; relic expr to function
@@ -1481,10 +1511,14 @@
 ;; :table
 
 (defmethod dataflow-node :table
-  [left [_ _ {:keys [pk]} :as stmt]]
+  [left [_ table-key :as stmt]]
   (if (seq left)
     (dataflow-node left [:from [stmt]])
-    {:empty-index (if pk (map-unique-index {} (mapv expr-row-fn pk)) empty-set-index)}))
+    {:insert {nil pass-through-insert}
+     :insert1 {nil pass-through-insert1}
+     :delete {nil pass-through-delete}
+     :delete1 {nil pass-through-delete1}
+     :provide (fn [db] (db table-key empty-set-index))}))
 
 (defmethod columns* :table
   [_ [_ _ {:keys [req]} :as _stmt]]
@@ -1687,9 +1721,11 @@
                            (let [rows (filter #(= path (path-fn %)) rows)]
                              (deleted db rows)))}
      :provide (fn [db]
-                (let [idx (db hash-index)]
-                  (when idx
-                    (seek-n idx path))))}))
+                (or
+                  (let [idx (db hash-index)]
+                    (when idx
+                      (seek-n idx path)))
+                  empty-set-index))}))
 
 ;; --
 ;; :where
@@ -2507,7 +2543,7 @@
 (defmethod dataflow-node :const
   [_left [_ relation]]
   (let [relation (into empty-set-index relation)]
-    {:provide (fn [_db] relation)}))
+    {:provide (constantly relation)}))
 
 ;; --
 ;; env api

@@ -10,7 +10,9 @@
     (are [x ret]
 
       (and (= ret (rel/q db x))
-           (= ret (get (::rel/state (meta (rel/materialize db x))) x)))
+           (if (#'rel/table-relvar? x)
+             true
+             (= ret (get (::rel/state (meta (rel/materialize db x))) x))))
 
       a
       ;; =>
@@ -93,6 +95,10 @@
       [[:const [{:a 42}, {:b 43}]]]
       ;;=>
       #{{:a 42} {:b 43}})))
+
+(deftest const-test
+  (is (= #{{:a 42}} (rel/q {} [[:const #{{:a 42}}]])))
+  (is (= #{{:a 42}} (rel/q {} [[:const [{:a 42}]]]))))
 
 (deftest base-relvar-test
   (let [A [[:table :A]]]
@@ -287,22 +293,22 @@
     (is (= #{nil1 nil2} (rel/seek-n i2 [nil])))))
 
 (deftest migrate-table-state-test
-  #_ (let [db {}
-           A [[:table :A {:req [:a]}]]
-           A2 [[:table :A {:req [:a, :b]}]]
-           B [[:table :A {:req [:a]}] [:select :b]]
-           B2 [[:table :A {:req [:a :b]}] [:select :b]]
-           db (rel/transact db {A [{:a 1}]})
-           db (rel/transact db {A2 [{:a 2, :b 2}]})]
+  (let [db {}
+        A [[:table :A {:req [:a]}]]
+        A2 [[:table :A {:req [:a, :b]}]]
+        B [[:table :A {:req [:a]}] [:select :b]]
+        B2 [[:table :A {:req [:a :b]}] [:select :b]]
+        db (rel/transact db {A [{:a 1}]})
+        db (rel/transact db {A2 [{:a 2, :b 2}]})]
 
-       ;; what should happen too old table references
-       (is (= nil (rel/q db A)))
-       (is (= nil (rel/q db B)))
+    ;; what should happen too old table references
+    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db A)))
+    (is (= #{{} {:b 2}} (rel/q db B)))
 
-       (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db A2)))
-       (is (= #{{:a 1}, {:a 2, :b 2}} ((meta db) A2)))
-       (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db :A)))
-       (is (= #{{} {:b 2}} (rel/q db B2)))))
+    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db A2)))
+    (is (= nil ((::state (meta db) {}) A2)))
+    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db :A)))
+    (is (= #{{} {:b 2}} (rel/q db B2)))))
 
 (deftest where-lookup-test
   (let [A [[:table :A]]
@@ -325,7 +331,7 @@
         db (rel/materialize db A1)]
     (is (= #{{:a 42}} (-> db meta ::rel/state (get A1))))
     (is (not (contains? (-> db (rel/dematerialize A1) meta ::rel/state) A1)))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta ::rel/state (get A))))))
+    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) meta ::rel/state :A)))))
 
 (deftest dematerialize-deletes-orphaned-transitives-test
   (let [A [[:table :A]]
@@ -335,7 +341,7 @@
         db (rel/materialize db A2)]
     (is (= #{{:a 43}} (-> db meta ::rel/state (get A2))))
     (is (not (contains? (-> db (rel/dematerialize A2) meta ::rel/state) A1)))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A2) meta ::rel/state (get A))))))
+    (is (= #{{:a 42}} (-> db (rel/dematerialize A2) meta ::rel/state :A)))))
 
 (deftest dematerialize-keeps-materialized-transitives-test
   (let [A [[:table :A]]
@@ -413,10 +419,10 @@
             [:where [any? [::rel/env :b]]]]]
 
     (is (= #{{:a 1, :b ""}}
-          (-> {}
-              (rel/with-env {})
-              (rel/transact {A [{:a 1}]})
-              (rel/q A2))))
+           (-> {}
+               (rel/with-env {})
+               (rel/transact {A [{:a 1}]})
+               (rel/q A2))))
 
     (is (= #{{:a 1, :b "1"}}
            (-> {}

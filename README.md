@@ -72,7 +72,7 @@ Because relvars are just vectors, they just sort of lounge around being values. 
 `relic` databases are boring clojure maps, you manipulate data in tables with the `transact` function. These databases are immutable, they are literally just maps. We are still programming in clojure after all, no nasty surprises.
 
 ```clojure 
-(def db (rel/transact {} [:insert [[:table :Customer]] {:id 42, :name "bob"} {:id 43, :name "alice"}])
+(def db (rel/transact {} [:insert :Customer {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
 db 
 ;; =>
@@ -134,9 +134,12 @@ Each statement depends on the above statements, this forms a dataflow graph. Ord
 [[:table :Customer]]
 ```
 
-Tables are your primary variable, their data is provided to relic rather than derived. 
+Tables are your primary variable, their data is provided to relic rather than derived. The name provided to the table
+is used to determine where data will be stored in the database map, e.g for `[[:table :Customer]]` the data will be stored under `:Customer`.
 
-Unlike in SQL tables are sets of rows, not bags / multi-sets.
+note: Unlike in SQL tables are sets of rows, not bags / multi-sets.
+
+spec: `[:table table-name]`
 
 ### Filtering with `:where`
 

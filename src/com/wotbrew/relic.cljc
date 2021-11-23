@@ -1212,7 +1212,7 @@
   (binding [*env-deps* #{}]
     (let [expr-fns (mapv expr-row-fn exprs)]
       (if (seq *env-deps*)
-        [(conj relvar [:left-join (conj Env [:extend [:env [select-keys :env *env-deps*]]])]) expr-fns true]
+        [(conj relvar [:left-join (conj Env [:extend [::env [select-keys ::env *env-deps*]]])]) expr-fns true]
         [relvar expr-fns]))))
 
 (defn q
@@ -1581,7 +1581,6 @@
       (for [[k col] left-idx]
         (if (right-idx k)
           (if (= col (right-idx k))
-            ;; todo looser check than = ?
             col
             {:k k})
           col))
@@ -1724,16 +1723,12 @@
 ;; --
 ;; :extend
 
-;; todo reformulate in terms of implicit-joins
-(defrecord JoinColl [relvar clause])
-(defn join-coll [relvar clause] (->JoinColl relvar clause))
-(defn- join-expr? [expr] (instance? JoinColl expr))
+;; todo reformulate in terms of implicit-joins / unify with env mechanism
+(defn- join-expr? [expr] (and (vector? expr) (= ::join-coll (nth expr 0 nil))))
 (defn- extend-expr [[_ expr]] expr)
 (defn- join-ext? [extension] (join-expr? (extend-expr extension)))
 
-(defrecord JoinFirst [relvar clause])
-(defn join-first [relvar clause] (->JoinFirst relvar clause))
-(defn- join-first-expr? [expr] (instance? JoinFirst expr))
+(defn- join-first-expr? [expr] (and (vector? expr) (= ::join-first (nth expr 0 nil))))
 (defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
 
 (defmethod dataflow-node ::extend*
@@ -1754,14 +1749,16 @@
                                                   :else :std)) extensions)]
          (cond
            (join-ext? (first extensions))
-           (for [[binding {:keys [relvar clause]}] extensions
+           (for [[binding [_ relvar clause]] extensions
                   :let [_ (assert (keyword? binding) "only keyword bindings allowed for join-coll expressions")]]
              [::join-as-coll relvar clause binding])
 
            (join-first-ext? (first extensions))
-           (for [[binding {:keys [relvar clause]}] extensions
-                 stmt [[::join-as-coll relvar clause binding]
-                       (into [::extend*] (for [[binding] extensions] [binding [first [::get binding]]]))]]
+           (for [[binding [_ relvar clause]] extensions
+                 stmt
+                 [[::join-as-coll relvar clause ::join-expr]
+                  [::extend* [binding [first ::join-expr]]]
+                  [:without ::join-expr]]]
              stmt)
 
            :else [(into [::extend*] extensions)]))
@@ -1965,7 +1962,6 @@
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
-      ;; todo switch :opt if could-be-right
       right-cols)))
 
 ;; --
@@ -2074,7 +2070,6 @@
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
-      ;; todo flag optionality
       right-cols)))
 
 ;; --

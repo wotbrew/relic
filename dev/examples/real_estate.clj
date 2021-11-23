@@ -90,16 +90,16 @@
     [:area-code [area-code :address]]
 
     [[:number-of-rooms]
-     (r/join-first
-       [[:from RoomInfo]
-        [:agg [:address] [:number-of-rooms count]]]
-       {:address :address})]
+     [::r/join-first
+      [[:from RoomInfo]
+       [:agg [:address] [:number-of-rooms count]]]
+      {:address :address}]]
 
     [[:square-feet]
-     (r/join-first
-       [[:from RoomInfo]
-        [:agg [:address] [:room-size [r/sum :room-size]]]]
-       {:address :address})]]])
+     [::r/join-first
+      [[:from RoomInfo]
+       [:agg [:address] [:square-feet [r/sum :room-size]]]]
+      {:address :address}]]]])
 
 (def CurrentOffer
   [[:from Offer]

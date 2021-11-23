@@ -168,7 +168,7 @@ spec: `[:extend & extensions]`
 - `[k expr]` bind result of expr to k
 - `[[& k] expr]` merge keys from the result of expr
 
-You can use the functions `rel/join-first` and `rel/join-coll` in expression position for sub-selects.
+You can use the special expressions `::rel/join-first` and `::rel/join-coll` in expression position for sub-selects.
 
 e.g 
 
@@ -180,14 +180,14 @@ e.g
 ;; join-first to splice columns from another row, i.e an implicit left-join.
 (def CustomerStats 
   [[:from Customer] 
-   [:extend [[:total-spend] (rel/join-first TotalSpend {:customer-id :customer-id})]]])
+   [:extend [[:total-spend] [::rel/join-first TotalSpend {:customer-id :customer-id}]]]])
 ;; would result in a relation something like:
 #{{:customer 42, :total-spend 340.0M}}
 
 ;; join coll to get a set of rows as a column
 (def Order 
   [[:from Order]
-   [:extend [:items (rel/join-coll OrderItem {:order-id :order-id})]]])
+   [:extend [:items [::rel/join-coll OrderItem {:order-id :order-id}]]]])
 ;; would result in a relation something like:
 #{{:customer-id 42,
    :total 340.0M

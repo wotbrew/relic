@@ -1,0 +1,5 @@
+{:lein true
+ :builds {:browser {:target :browser
+                    :output-dir "target/js"
+                    :asset-path "/target/js"
+                    :modules {:main {:entries [com.wotbrew.relic]}}}}}

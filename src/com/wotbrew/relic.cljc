@@ -1154,8 +1154,8 @@
     (let [[f & args] expr
           [f args]
           (cond
-            (qualified-symbol? f) [@(requiring-resolve f) args]
-            (symbol? f) [@(resolve f) args]
+            #?@(:clj [(qualified-symbol? f) [@(requiring-resolve f) args]])
+            #?@(:clj [(symbol? f) [@(resolve f) args]])
             (= f :and) [(apply every-pred (map expr-row-fn args))]
             (= f :or) [(apply some-fn (map expr-row-fn args))]
             (= f :not) [not args]
@@ -1190,9 +1190,9 @@
 
     (keyword? expr) expr
 
-    (qualified-symbol? expr) @(requiring-resolve expr)
+    #?@(:clj [(qualified-symbol? expr) @(requiring-resolve expr)])
 
-    (symbol? expr) @(resolve expr)
+    #?@(:clj [(symbol? expr) @(resolve expr)])
 
     (fn? expr) expr
 
@@ -2260,19 +2260,20 @@
 
   e.g [rel/sum :a] will return the sum of (:a row) applied to each row in the aggregation."
   [& exprs]
-  (case (count exprs)
-    0 {:combiner (constantly 0) :reducer (constantly 0)}
-    1
-    (let [expr (first exprs)
-          f (expr-row-fn expr)
-          xf (keep f)]
-      {:combiner +'
-       :reducer #(transduce xf +' %)})
-    (let [fns (map expr-row-fn exprs)
-          nums (apply juxt fns)
-          xf (comp (mapcat nums) (remove nil?))]
-      {:combiner +'
-       :reducer #(transduce xf +' %)})))
+  (let [addf #?(:clj +' :cljs +)]
+    (case (count exprs)
+      0 {:combiner (constantly 0) :reducer (constantly 0)}
+      1
+      (let [expr (first exprs)
+            f (expr-row-fn expr)
+            xf (keep f)]
+        {:combiner addf
+         :reducer #(transduce xf addf %)})
+      (let [fns (map expr-row-fn exprs)
+            nums (apply juxt fns)
+            xf (comp (mapcat nums) (remove nil?))]
+        {:combiner addf
+         :reducer #(transduce xf addf %)}))))
 
 ;; --
 ;; set-concat

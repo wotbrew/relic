@@ -1,7 +1,6 @@
 (ns com.wotbrew.relic-test
-  (:require [clojure.test :refer :all])
-  (:require [com.wotbrew.relic :as rel]
-            [com.wotbrew.relic :as r]))
+  (:require [clojure.test :refer [deftest is are]]
+            [com.wotbrew.relic :as rel]))
 
 (deftest basics-test
   (let [a [[:table :A]]
@@ -448,7 +447,7 @@
 (deftest top-by-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/top-by 5 :a]]]]
+            [:agg [] [:top [rel/top-by 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
 
     (is (= #{{:top (vec (take 5 (reverse (rows 16))))}} (rel/what-if {} A2 {A (rows 16)})))
@@ -459,7 +458,7 @@
 (deftest bottom-by-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/bottom-by 5 :a]]]]
+            [:agg [] [:top [rel/bottom-by 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
 
     (is (= #{{:top (vec (take 5 (rows 16)))}} (rel/what-if {} A2 {A (rows 16)})))
@@ -470,7 +469,7 @@
 (deftest top-by-collision-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/top-by 10 :a]]]
+            [:agg [] [:top [rel/top-by 10 :a]]]
             [:extend [:top [set :top]]]]
         rows (fn [n] (vec (for [i (range n) row [{:a i} {:a i, :b 42}]] row)))]
     (is (= #{{:top (set (take 10 (reverse (rows 16))))}} (rel/what-if {} A2 {A (rows 16)})))
@@ -481,7 +480,7 @@
 (deftest bottom-by-collision-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/bottom-by 10 :a]]]
+            [:agg [] [:top [rel/bottom-by 10 :a]]]
             [:extend [:top [set :top]]]]
         rows (fn [n] (vec (for [i (range n) row [{:a i} {:a i, :b 42}]] row)))]
     (is (= #{{:top (set (take 10 (rows 16)))}} (rel/what-if {} A2 {A (rows 16)})))
@@ -492,7 +491,7 @@
 (deftest top-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/top 5 :a]]]]
+            [:agg [] [:top [rel/top 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
 
     (is (= #{{:top (vec (take 5 (reverse (range 16))))}} (rel/what-if {} A2 {A (rows 16)})))
@@ -503,7 +502,7 @@
 (deftest bottom-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:agg [] [:top [r/bottom 5 :a]]]]
+            [:agg [] [:top [rel/bottom 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
     (is (= #{{:top (vec (take 5 (range 16)))}} (rel/what-if {} A2 {A (rows 16)})))
     (is (= #{{:top (vec (take 5 (range 48)))}} (rel/what-if {} A2 {A (rows 48)})))
@@ -513,8 +512,8 @@
 (deftest strip-meta-test
   (let [A [[:table :A]]
         A1 [[:table :A] [:where [= :a 42]]]
-        db (r/transact (r/materialize {} A1) {A [{:a 42}, {:a 43}]})
-        db (r/watch db A1)]
+        db (rel/transact (rel/materialize {} A1) {A [{:a 42}, {:a 43}]})
+        db (rel/watch db A1)]
     (is (= {:A #{{:a 42}, {:a 43}}} (rel/strip-meta db)))
     (is (nil? (meta (rel/strip-meta db))))
     (is (= {:foo 42} (meta (rel/strip-meta (vary-meta db assoc :foo 42)))))))

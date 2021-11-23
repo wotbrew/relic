@@ -1,5 +1,7 @@
 (ns dev
-  (:require [clj-async-profiler.core :as clj-async-profiler]))
+  (:require [clj-async-profiler.core :as clj-async-profiler]
+            [shadow.cljs.devtools.api :as s.api]
+            [shadow.cljs.devtools.server :as s.server]))
 
 (def profiler-port 5001)
 
@@ -38,3 +40,8 @@
   []
   @profiler-server
   (clojure.java.browse/browse-url (str "http://localhost:" profiler-port)))
+
+(defn cljs-repl []
+  (s.server/start!)
+  (s.api/watch :browser)
+  (s.api/repl :browser))

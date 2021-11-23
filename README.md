@@ -187,7 +187,7 @@ e.g
 ;; join coll to get a set of rows as a column
 (def Order 
   [[:from Order]
-   [:extend [:item (rel/join-coll OrderItem {:order-id :order-id})]]])
+   [:extend [:items (rel/join-coll OrderItem {:order-id :order-id})]]])
 ;; would result in a relation something like:
 #{{:customer-id 42,
    :total 340.0M

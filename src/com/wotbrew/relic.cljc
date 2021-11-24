@@ -1416,8 +1416,8 @@
                       :let [idx (index db relvar)]]
                   [relvar {:added (filterv #(contains-row? idx %) added)}])
           deleted (for [[relvar deleted] *deleted*
-                        :let [oidx (index ost relvar)
-                              idx (index db relvar)]]
+                        :let [oidx (or (index ost relvar) empty-set-index)
+                              idx (or (index db relvar) empty-set-index)]]
                     [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %))
                                                            #(contains-row? oidx %)) deleted)}])]
       {:result db

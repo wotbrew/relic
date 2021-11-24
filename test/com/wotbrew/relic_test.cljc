@@ -401,6 +401,11 @@
     (is (some? (-> db meta ::rel/graph (get A1))))
     (is (= #{{:a 43}} (-> db meta ::rel/state (get A2))))))
 
+(deftest track-transients-are-removed-test
+  (is (= {:result {:A #{}}
+          :changes {[[:table :A]] {:added [], :deleted []}}}
+         (rel/track-transact (rel/watch {} [[:table :A]]) {:A [{:a 1}]} [:delete :A]))))
+
 (deftest update-test
   (let [A [[:table :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]

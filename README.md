@@ -571,8 +571,40 @@ Yes, relic will integrate with spec1/2 & malli. Give me time.
 
 ## Tracking changes
 
+Relic allows you to hook in to other reactive systems by watching relvars for changes.
+
 ### Tag relvars you want to track with `watch`
-### Transact with change tracking `tracked-transact`
+
+Using the `watch` function will materialize relvars and cause [`track-transact`](#transact-with-change-tracking-track-transact) to return changes to those relvars.
+
+e.g
+
+```clojure 
+(rel/watch db [[:from Customer] [:join Order {:customer-id :customer-id}]])
+```
+
+### Transact with change tracking `track-transact`
+
+`track-transact` is like transact, but rather than returning the database, returns a map of:
+
+- `:result` the new database value
+- `:changes` a map of `{watched-revlar {:added [row1, row2 ...], :deleted [row1, row2]}, ..}`
+
+e.g
+
+```clojure 
+(def TestRelvar
+ [[:table :A]
+  ;; will quote = here to make relvar print prettier, its not necessary for this to work 
+  [:where ['= :a 42]]])
+  
+(def db (watch {} TestRelvar))
+  
+(track-transact db {:A [{:a 1} {:a 42}]})
+;; =>
+{:result {:A #{{:a 1} {:a 42}}}, 
+ :changes {[[:table :A] [:where [= :a 42]]] {:added [{:a 42}], :deleted []}}}
+```
 
 ## Environment (e.g for `$now`)
 

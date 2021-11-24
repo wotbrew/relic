@@ -542,3 +542,10 @@
     (is (= #{{:a 42, :b 43}} (rel/q db :A)))
     (is (= #{{:a 42}, {:a 43}} (rel/what-if db :A [:upsert :A {:a 42}] [:upsert :A {:a 43}] [:upsert :A {:a 42}])))
     (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (rel/what-if db :A [:upsert :A {:a 43, :b 43}])))))
+
+(deftest delayed-fk-check-test
+  (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a}]])]
+    (is (= #{{:a 1}} (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]})))
+    (is (= #{{:a 1}} (rel/what-if db :A {:B [{:a 1}]} {:A [{:a 1}]})))
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]})))
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))

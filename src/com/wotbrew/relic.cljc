@@ -954,7 +954,8 @@
 ;; right now doesn't use the graph, and references mat function changes on demand
 ;; but knowing the graph might be useful to optimise the transactor in the future
 
-(def ^:dynamic *upsert-collisions* nil)
+(def ^:private ^:dynamic *upsert-collisions* nil)
+(def ^:private ^:dynamic *foreign-key-violations* nil)
 
 (defn- dataflow-transactor [_g]
   (let [as-table-key (fn [relvar] (if (keyword? relvar) relvar (let [[_ table-key] (head-stmt relvar)] table-key)))
@@ -1145,7 +1146,11 @@
   See also tracked-transact, what-if."
   [db & tx]
   (if-some [transactor (::transactor (meta db))]
-    (reduce transactor db tx)
+    (let [[db2 fk-violations] (binding [*foreign-key-violations* {}] [(reduce transactor db tx) *foreign-key-violations*])]
+      (doseq [[[relvar references clause] rows] fk-violations]
+        (when (seq rows)
+          (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+      db2)
     (apply transact (vary-meta db assoc ::transactor (dataflow-transactor {})) tx)))
 
 (defn- materialized-relation [db relvar]
@@ -2515,12 +2520,16 @@
 ;; foreign keys
 
 (defn- bad-fk [left relvar clause row]
-  (raise "Foreign key violation" {:relvar left
-                                  :references relvar
-                                  :clause clause
-                                  :row (dissoc row ::fk)}))
+  (if *foreign-key-violations*
+    (set! *foreign-key-violations* (update *foreign-key-violations* [left relvar clause] set-conj (dissoc row ::fk)))
+    (raise "Foreign key violation" {:relvar left
+                                    :references relvar
+                                    :clause clause
+                                    :row (dissoc row ::fk)})))
 
-(defn- good-fk [_left _relvar _clause _row])
+(defn- good-fk [left relvar clause row]
+  (when *foreign-key-violations*
+    (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left relvar clause] (dissoc row ::fk)))))
 
 (defmethod dataflow-node :fk
   [left [_ relvar clause]]

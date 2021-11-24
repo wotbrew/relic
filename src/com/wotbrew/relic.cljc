@@ -1439,6 +1439,20 @@
   (map :k (columns relvar)))
 
 ;; -
+
+(defn- assoc-if-not-nil [m k v]
+  (if (nil? v)
+    m
+    (assoc m k v)))
+
+(defn- bind-fn [binding]
+  (if (keyword? binding)
+    (if (= ::* binding)
+      #(merge % %2)
+      #(assoc-if-not-nil % binding %2))
+    #(merge % (select-keys %2 binding))))
+
+;; -
 ;; going to be starting specific statement implementation about now...
 
 ;; -
@@ -1446,19 +1460,13 @@
 ;; used by :extend and :select
 ;; for arbitrary relic expressions, allows computing new columns
 
-(defn- assoc-if-not-nil [m k v]
-  (if (nil? v)
-    m
-    (assoc m k v)))
-
 (defn- extend-form-fn [form]
   (cond
     (vector? form)
     (let [[binding expr] form
-          expr-fn (expr-row-fn expr)]
-      (if (keyword? binding)
-        #(assoc % binding (expr-fn %))
-        #(merge % (select-keys (expr-fn %) binding))))
+          expr-fn (expr-row-fn expr)
+          bind (bind-fn binding)]
+      (fn bind-extend [row] (bind row (expr-fn row))))
 
     :else (throw (ex-info "Not a valid binding form, expected a vector [binding expr]" {}))))
 
@@ -1475,16 +1483,12 @@
 
 (defn- expand-form-xf [form]
   (let [[binding expr] form
-        expr-fn (expr-row-fn expr)]
-    (if (keyword? binding)
-      (mapcat
-        (fn [row]
-          (for [v (expr-fn row)]
-            (assoc row binding v))))
-      (mapcat
-        (fn [row]
-          (for [v (expr-fn row)]
-            (merge row (select-keys v binding))))))))
+        expr-fn (expr-row-fn expr)
+        bind-fn (bind-fn binding)]
+    (mapcat
+      (fn [row]
+        (for [v (expr-fn row)]
+          (bind-fn row v))))))
 
 ;; --
 ;; helpers for common dataflow patterns
@@ -1888,10 +1892,14 @@
 
 (defmethod dataflow-node :select
   [left [_ & selections]]
-  (let [[cols exts] ((juxt filter remove) keyword? selections)
-        cols (set (concat cols (mapcat extend-form-cols exts)))
-        ext-fns (mapv extend-form-fn exts)
-        select-fn (apply comp #(select-keys % cols) (rseq ext-fns))]
+  (let [expr-fns (mapv (fn [binding-or-col]
+                         (if (vector? binding-or-col)
+                           (let [[binding expr] binding-or-col
+                                 expr-fn (expr-row-fn expr)
+                                 bind-fn (bind-fn binding)]
+                             #(bind-fn %1 (expr-fn %2)))
+                           #(assoc-if-not-nil %1 binding-or-col (%2 binding-or-col)))) selections)
+        select-fn (fn [row] (reduce (fn [r f] (f r row)) {} expr-fns))]
     {:deps [left]
      :insert {left (transform-insert select-fn)}
      :insert1 {left (transform-insert1 select-fn)}
@@ -2414,7 +2422,8 @@
 (defn- agg-form-fn [form]
   (let [[binding expr] form
         {:keys [combiner reducer complete]} (agg-expr-agg expr)]
-    (assert (keyword? binding) "Only keyword bindings allowed for agg forms")
+    (assert (keyword? binding) "Only keyword bindings are not permitted for agg forms")
+    (assert (keyword? binding) "* bindings are not permitted for agg forms")
     {:complete (if complete (fn [m] (update m binding complete)) identity)
      :combiner
      (fn [m a b] (assoc m binding (combiner (binding a) (binding b))))

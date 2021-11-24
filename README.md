@@ -170,6 +170,7 @@ spec: `[:extend & extensions]`
 
 - `[k expr]` bind result of expr to k
 - `[[& k] expr]` merge keys from the result of expr
+- `[::rel/* expr]` merge _all_ keys from the result of expr
 
 You can use the special expressions `::rel/join-first` and `::rel/join-coll` in expression position for sub-selects.
 

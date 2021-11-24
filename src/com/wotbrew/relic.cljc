@@ -955,7 +955,6 @@
 ;; but knowing the graph might be useful to optimise the transactor in the future
 
 (def ^:private ^:dynamic *upsert-collisions* nil)
-(def ^:private ^:dynamic *foreign-key-violations* nil)
 
 (defn- dataflow-transactor [_g]
   (let [as-table-key (fn [relvar] (if (keyword? relvar) relvar (let [[_ table-key] (head-stmt relvar)] table-key)))
@@ -984,7 +983,7 @@
           (let [f (if (map? f-or-set-map)
                     (reduce-kv (fn [f k e] (comp f (let [f2 (expr-row-fn e)] #(assoc % k (f2 %))))) identity f-or-set-map)
                     f-or-set-map)
-                matched-rows (q db (conj relvar (into [:where] exprs)))
+                matched-rows (q db (conj (as-relvar relvar) (into [:where] exprs)))
                 new-rows (mapv f matched-rows)
                 db (delete-n relvar db matched-rows false)
                 db (insert-n relvar db new-rows false)]
@@ -992,7 +991,7 @@
         delete-where
         (fn delete-where
           [relvar db exprs]
-          (let [rows (q db (conj relvar (into [:where] exprs)))]
+          (let [rows (q db (conj (as-relvar relvar) (into [:where] exprs)))]
             (delete-n relvar db rows false)))
         upsert
         (fn [relvar db rows]
@@ -1112,6 +1111,9 @@
 ;; --
 ;; transact api
 
+(def ^:private ^:dynamic *foreign-key-violations* nil)
+(def ^:private ^:dynamic *foreign-key-cascades* nil)
+
 (defn transact
   "Return a new relic database, with the transaction applied.
 
@@ -1146,11 +1148,15 @@
   See also tracked-transact, what-if."
   [db & tx]
   (if-some [transactor (::transactor (meta db))]
-    (let [[db2 fk-violations] (binding [*foreign-key-violations* {}] [(reduce transactor db tx) *foreign-key-violations*])]
-      (doseq [[[relvar references clause] rows] fk-violations]
-        (when (seq rows)
-          (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
-      db2)
+    (binding [*foreign-key-violations* {}
+              *foreign-key-cascades* {}]
+      (let [db (reduce transactor db tx)
+            cascade-tx (reduce-kv (fn [acc [relvar _references _clause] rows] (conj acc (into [:delete-exact (unwrap-table relvar)] rows))) [] *foreign-key-cascades*)
+            db (reduce transactor db cascade-tx)]
+        (doseq [[[relvar references clause] rows] *foreign-key-violations*]
+          (when (seq rows)
+            (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+        db))
     (apply transact (vary-meta db assoc ::transactor (dataflow-transactor {})) tx)))
 
 (defn- materialized-relation [db relvar]
@@ -2519,7 +2525,9 @@
 ;; --
 ;; foreign keys
 
-(defn- bad-fk [left relvar clause row]
+(defn- bad-fk [left relvar clause row cascade]
+  (when (and cascade *foreign-key-cascades*)
+    (set! *foreign-key-cascades* (update *foreign-key-cascades* [left relvar clause] set-conj (dissoc row ::fk))))
   (if *foreign-key-violations*
     (set! *foreign-key-violations* (update *foreign-key-violations* [left relvar clause] set-conj (dissoc row ::fk)))
     (raise "Foreign key violation" {:relvar left
@@ -2527,22 +2535,26 @@
                                     :clause clause
                                     :row (dissoc row ::fk)})))
 
-(defn- good-fk [left relvar clause row]
+(defn- good-fk [left relvar clause row cascade]
+  (when (and cascade *foreign-key-cascades*)
+    (set! *foreign-key-cascades* (disjoc *foreign-key-cascades* [left relvar clause] (dissoc row ::fk))))
   (when *foreign-key-violations*
     (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left relvar clause] (dissoc row ::fk)))))
 
 (defmethod dataflow-node :fk
-  [left [_ relvar clause]]
-  (let [dep (conj left [::join-as-coll relvar clause ::fk])
+  [left [_ relvar clause {:keys [cascade]}]]
+  (let [_ (when (and cascade (not (unwrap-table left)))
+            (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar left, :references relvar, :clause clause}))
+        dep (conj left [::join-as-coll relvar clause ::fk])
         check-fk (fn [{::keys [fk] :as row}]
                    (if (empty? fk)
-                     (bad-fk left relvar clause row)
-                     (good-fk left relvar clause row)))]
+                     (bad-fk left relvar clause row cascade)
+                     (good-fk left relvar clause row cascade)))]
     {:deps [dep]
      :insert1 {dep (fn [db row _insert _insert1 _delete _delete1]
                      (check-fk row)
                      db)}
-     :delete1 {dep mat-noop}}))
+     :delete1 {dep (fn [db row _insert _insert1 _delete _delete1] (good-fk left relvar clause row cascade) db)}}))
 
 ;; --
 ;; constraint helpers

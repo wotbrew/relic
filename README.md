@@ -536,7 +536,11 @@ spec: `[:unique & expr]`
 
 ### Ensure a referenced row exists with `:fk`
 
-spec: `[:fk relvar clause]`
+spec: `[:fk relvar clause opts]`
+
+Options:
+
+- `:cascade` if true will cause rows referencing deleted/modified rows such as the constraint is violated to themselves be deleted.
 
 ### Test predicates against columns and rows using `:check`
 

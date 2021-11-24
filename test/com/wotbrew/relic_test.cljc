@@ -549,3 +549,7 @@
     (is (= #{{:a 1}} (rel/what-if db :A {:B [{:a 1}]} {:A [{:a 1}]})))
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]})))
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))
+
+(deftest cascading-delete-test
+  (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a} {:cascade true}]])]
+    (is (= #{} (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))

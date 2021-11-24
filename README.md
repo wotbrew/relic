@@ -547,9 +547,23 @@ Options:
 ### Test predicates against columns and rows using `:check`
 
 Tests predicate expressions against rows and ensures they all return true. A map can be provided
-to specialise error messages, e.g `[string? :firstname]` and `{:pred [string? :firstname], :error "firstname must be a string"}` are acceptable.
+to specialise error messages. e.g
 
-`:error` is also a relic expression that returns a string... `:error [str "firstname must be a string, found: " :firstname]` would also be acceptable.
+```clojure
+[string? :firstname]
+```
+
+or
+
+```clojure 
+{:pred [string? :firstname], :error "firstname must be a string"}
+```
+
+`:error` is also a relic expression that returns a string e.g
+
+```clojure 
+{:pred [string? :firstname], :error [str "firstname must be a string, found: " :firstname]}
+``` 
 
 spec: `[:check & pred-expr|pred-map]`
 

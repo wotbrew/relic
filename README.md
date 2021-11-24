@@ -604,6 +604,10 @@ e.g
 ;; =>
 {:result {:A #{{:a 1} {:a 42}}}, 
  :changes {[[:table :A] [:where [= :a 42]]] {:added [{:a 42}], :deleted []}}}
+ 
+(get (:changes *1) TestRelvar)
+;; =>
+{:added [{:a 42}], :deleted []}
 ```
 
 ## Environment (e.g for `$now`)

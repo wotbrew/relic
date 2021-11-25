@@ -148,7 +148,7 @@ spec: `[:table table-name opts]`
 
 Options:
 
-It can be convenient to express certain constraints on directly on the table, though it is not necessary to do this  - constraints can be applied to [any relvar](#constraint-reference.)
+It can be convenient to express certain constraints on directly on the table, though it is not necessary to do this  - constraints can be applied to [any relvar](#constraint-reference).
 
  - `:check` Used to apply inline check constraints, see [check constrants](#test-predicates-against-columns-and-rows-using-check)
  - `:req` Used to apply inline required key check constraints.

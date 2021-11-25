@@ -12,3 +12,4 @@ pom.xml.asc
 .hg/
 *.iml
 hs_err*
+.shadow-cljs

@@ -303,17 +303,17 @@
         A2 [[:table :A {:req [:a, :b]}]]
         B [[:table :A {:req [:a]}] [:select :b]]
         B2 [[:table :A {:req [:a :b]}] [:select :b]]
-        db (rel/transact db {A [{:a 1}]})
+        db (rel/transact db {A [{:a 1, :b 1}]})
         db (rel/transact db {A2 [{:a 2, :b 2}]})]
 
     ;; what should happen too old table references
-    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db A)))
-    (is (= #{{} {:b 2}} (rel/q db B)))
+    (is (= #{{:a 1, :b 1}, {:a 2, :b 2}} (rel/q db A)))
+    (is (= #{{:b 1} {:b 2}} (rel/q db B)))
 
-    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db A2)))
+    (is (= #{{:a 1, :b 1}, {:a 2, :b 2}} (rel/q db A2)))
     (is (= nil ((::state (meta db) {}) A2)))
-    (is (= #{{:a 1}, {:a 2, :b 2}} (rel/q db :A)))
-    (is (= #{{} {:b 2}} (rel/q db B2)))))
+    (is (= #{{:a 1, :b 1}, {:a 2, :b 2}} (rel/q db :A)))
+    (is (= #{{:b 1} {:b 2}} (rel/q db B2)))))
 
 (deftest where-lookup-test
   (let [A [[:table :A]]
@@ -558,3 +558,14 @@
 (deftest cascading-delete-test
   (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a} {:cascade true}]])]
     (is (= #{} (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))
+
+(deftest inline-constraint-test
+  (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact {} {[[:table :A {:req [:a]}]] [{}]})))
+  (is (= {:A #{{:a 42}}} (rel/transact {} {[[:table :A {:req [:a]}]] [{:a 42}]})))
+  (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact {} {[[:table :A {:req [:a], :check [[string? :b]]}]] [{:a 42, :b 'not-a-string}]})))
+  (is (= {:A #{{:a 42, :b "hello"}}} (rel/transact {} {[[:table :A {:req [:a], :check [[string? :b]]}]] [{:a 42, :b "hello"}]})))
+  (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact {} {[[:table :A {:unique [[:a]]}]] [{:a 42} {:a 42, :b 1}]})))
+  (is (= {:A #{{:a 42}, {:a 43, :b 1}}} (rel/transact {} {[[:table :A {:unique [[:a]]}]] [{:a 42} {:a 43, :b 1}]})))
+  (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact {} {[[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] [{:a 1}]})))
+  (is (= {:A #{{:a 1}}
+          :B #{{:a 1}}} (rel/transact {} {[[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] [{:a 1}], :B [{:a 1}]}))))

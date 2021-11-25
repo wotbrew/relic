@@ -132,16 +132,42 @@ Each statement depends on the above statements, this forms a dataflow graph. Ord
 
 ### Name your state relations with `:table`
 
+Tables are your primary variable, their data is provided to relic rather than derived. The name provided to the table
+is used to determine where data will be stored in the database map, 
+
+e.g for the below the data will be stored under `:Customer`.
+
 ```clojure 
 [[:table :Customer]]
 ```
 
-Tables are your primary variable, their data is provided to relic rather than derived. The name provided to the table
-is used to determine where data will be stored in the database map, e.g for `[[:table :Customer]]` the data will be stored under `:Customer`.
 
 note: Unlike in SQL tables are sets of rows, not bags / multi-sets.
 
-spec: `[:table table-name]`
+spec: `[:table table-name opts]`
+
+Options:
+
+It can be convenient to express certain constraints on directly on the table, though it is not necessary to do this  - constraints can be applied to [any relvar](#constraint-reference.)
+
+ - `:check` Used to apply inline check constraints, see [check constrants](#test-predicates-against-columns-and-rows-using-check)
+ - `:req` Used to apply inline required key check constraints.
+ - `:fk` Use to apply inline [foreign key](#ensure-a-referenced-row-exists-with-fk) constraints.
+ - `:unique` Use to apply inline [unique](#ensure-only-one-row-exists-for-a-combination-of-columns-unique) key constraints.
+
+```clojure 
+(def Customer
+ [[:table :Customer 
+   {:req [:firstname, :lastname],
+    :check [[string? :firstname]],
+    :unique [[:customer-id]]}])
+
+(def Order 
+ [[:table :Order 
+   {:req [:customer-id], 
+    :fk [[Order {:customer-id :customer-id} {:cascade true}]
+``` 
+
 
 ### Filtering with `:where`
 
@@ -627,10 +653,11 @@ e.g
 - Recursive (fixed point?) relvars to enable logic type queries
 - Tests
 - Docs  
-- Update / Upsert
-- Compile time relvars, the great unboxing, custom record types
-- Better docs 
-- Tooling, spec  
+- Go faster
+- compiler, the great unboxing, custom record types
+- datalog compiler
+- columnar support
+- Better docs   
 - *gulp*... Bigger datasets than memory
 
 ## Related work

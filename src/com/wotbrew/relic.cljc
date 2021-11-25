@@ -415,6 +415,12 @@
     1 (= :table (operator (head-stmt relvar)))
     false))
 
+(defn- table*-relvar?
+  [relvar]
+  (case (count relvar)
+    1 (= ::table* (operator (head-stmt relvar)))
+    false))
+
 (defn unwrap-table
   "If the relvar is a table (or :from chain containing a table) then unwrap the underlying table relvar and return it."
   [relvar]
@@ -486,13 +492,9 @@
               (let [{:keys [deps]} (g relvar)
                     g (dissoc g relvar)
                     g (reduce (fn [g dep] (update-in g [dep :dependents] disj relvar)) g deps)
-                    g (if (table-relvar? relvar)
-                        (let [[_ table-key] (head-stmt relvar)
-                              copies (:copies (g table-key))
-                              copies (disj copies relvar)]
-                          (if (empty? copies)
-                            (dissoc g table-key)
-                            (assoc-in g [table-key :copies] copies)))
+                    g (if (table*-relvar? relvar)
+                        (let [[_ table-key] (head-stmt relvar)]
+                          (dissoc g table-key))
                         g)]
                 (reduce delete-if-safe g deps))))]
     (delete-if-safe g relvar)))
@@ -543,9 +545,9 @@
                 g
                 (let [g (reduce (fn [g dep] (depend g relvar dep)) g deps)
                       g (reduce add g implicit)
-                      g (if (table-relvar? relvar)
+                      g (if (table*-relvar? relvar)
                           (let [[_ table-key] (head-stmt relvar)]
-                            (update-in g [table-key :copies] set-conj relvar))
+                            (assoc g table-key {}))
                           g)]
                   g))))]
     (add g relvar)))
@@ -839,11 +841,11 @@
      :flow-delete1 (with-deleted-hook1 relvar flow-delete1)}))
 
 (defn- table-mat-fns
-  [g table-key copies]
+  [g table-key flow]
   (let [{:keys [flow-inserts-n
                 flow-insert1
                 flow-deletes-n
-                flow-delete1]} (get-flow g nil copies)
+                flow-delete1]} flow
         empty-idx empty-set-index]
     {:insert
      (fn base-insert [db rows]
@@ -921,7 +923,6 @@
         visited (volatile! #{})
 
         rf (fn rf [g relvar edge]
-             (assert (g relvar) "Should only request inserter for relvars in dataflow graph")
              (if (contains? @visited relvar)
                g
                (let [{:keys [dependents] :as node} (g relvar)
@@ -930,10 +931,9 @@
                      mat-fns (derived-mat-fns node edge flow)
                      mat-fns (assoc mat-fns :insert (wrap-insertn mat-fns) :delete (wrap-deleten mat-fns))
                      g (assoc-in g [relvar :mat-fns edge] mat-fns)
-                     g (if (table-relvar? relvar)
-                         (let [[_ table-key] (head-stmt relvar)
-                               copies (:copies (g table-key))]
-                           (assoc-in g [table-key :mat-fns] (table-mat-fns g table-key copies)))
+                     g (if (table*-relvar? relvar)
+                         (let [[_ table-key] (head-stmt relvar)]
+                           (assoc-in g [table-key :mat-fns] (table-mat-fns g table-key (get-flow g nil [relvar]))))
                          g)]
                  g)))
 
@@ -1043,7 +1043,7 @@
         [db acc]
         (reduce (fn [[db acc] dependent]
                   (let [{:keys [mat-fns, provide]} (g dependent)
-                        {:keys [insert-await inserted deleted]} (mat-fns relvar)
+                        {:keys [mat insert-await inserted deleted]} (mat-fns relvar)
                         init-key [::init dependent relvar]
                         f (if provide
                             #(insert-await % (provide %))
@@ -1053,7 +1053,7 @@
                       :else
                       (let [[db i d]
                             (-> db
-                                (assoc init-key true)
+                                (cond-> mat (assoc init-key true))
                                 (f))]
                         [db (conj acc [i d inserted deleted])]))))
                 [db []] dependents)
@@ -1065,8 +1065,15 @@
 ;; --
 ;; materialize/dematerialize api
 
+(defn- simple-table-relvar? [relvar]
+  (or (table*-relvar? relvar)
+      (case (count relvar)
+        1 (let [stmt (head-stmt relvar)]
+            (and (= 2 (count stmt)) (= :table (operator stmt))))
+        false)))
+
 (defn- mat-head-if-not-table [relvar]
-  (if (table-relvar? relvar)
+  (if (simple-table-relvar? relvar)
     relvar
     (mat-head relvar)))
 
@@ -1536,15 +1543,46 @@
 ;; --
 ;; :table
 
+(defmethod dataflow-node ::table*
+  [_ [_ table-key]]
+  {:insert {nil pass-through-insert}
+   :insert1 {nil pass-through-insert1}
+   :delete {nil pass-through-delete}
+   :delete1 {nil pass-through-delete1}
+   :provide (fn [db] (db table-key empty-set-index))})
+
+(defn- req-col-check [table-key col]
+  {:pred col,
+   :error [str [::esc col] " required by " [::esc table-key] ", but not found."]})
+
 (defmethod dataflow-node :table
-  [left [_ table-key :as stmt]]
+  [left [_ table-key {:keys [req check fk unique]} :as stmt]]
   (if (seq left)
     (dataflow-node left [:from [stmt]])
-    {:insert {nil pass-through-insert}
-     :insert1 {nil pass-through-insert1}
-     :delete {nil pass-through-delete}
-     :delete1 {nil pass-through-delete1}
-     :provide (fn [db] (db table-key empty-set-index))}))
+    (let [req-checks (map (partial req-col-check table-key) req)
+          check-stmt (into [:check] req-checks)
+          check-stmt (into check-stmt check)
+          check-stmt (when-not (= 1 (count check-stmt)) check-stmt)
+          fk-stmts (map (fn [[relvar clause opts]] [:fk relvar clause opts]) fk)
+          unique-stmts (map (fn [cols] (into [:unique] cols)) unique)
+          table* [[::table* table-key]]
+          constrain (when (or check-stmt (seq fk-stmts) (seq unique-stmts))
+                      (conj table* (cond-> [:constrain]
+                                           check-stmt (conj check-stmt)
+                                           (seq fk-stmts) (into fk-stmts)
+                                           (seq unique-stmts) (into unique-stmts))))]
+      (if constrain
+        {:empty-index empty-set-index
+         :deps [constrain table*]
+         :insert {table* pass-through-insert}
+         :insert1 {table* pass-through-insert1}
+         :delete {table* pass-through-delete}
+         :delete1 {table* pass-through-delete1}}
+        {:deps [table*]
+         :insert {table* pass-through-insert}
+         :insert1 {table* pass-through-insert1}
+         :delete {table* pass-through-delete}
+         :delete1 {table* pass-through-delete1}}))))
 
 (defmethod columns* :table
   [_ [_ _ {:keys [req]} :as _stmt]]
@@ -2578,7 +2616,7 @@
 
 (defmethod dataflow-node :check
   [left [_ & checks]]
-  (let [f (apply comp (map (partial check->pred left) checks))]
+  (let [f (apply comp (map (partial check->pred left) (reverse checks)))]
     {:deps [left]
      :insert1 {left (transform-insert1 f)}
      :delete1 {left (transform-delete1 f)}}))

@@ -1833,17 +1833,17 @@
 (defmethod dataflow-node :lookup
   [_ [_ index & path]]
   (let [path (vec path)
-        exprs (vec (take (count path) (rest index)))
+        exprs (vec (take (count path) (rest (head-stmt index))))
         path-fn (apply juxt2 (map expr-row-fn exprs))]
-    {#_#_ :deps [index]
-     #_#_ :insert1 {index (fn [db row _inserted inserted1 _deleted _deleted1]
-                            (if (= (path-fn row) path)
-                              (inserted1 db row)
-                              db))}
-     #_#_ :delete1 {index (fn [db row _inserted _inserted1 _deleted deleted1]
-                            (if (= (path-fn row) path)
-                              (deleted1 db row)
-                              db))}
+    {:deps [index]
+     :insert1 {index (fn [db row _inserted inserted1 _deleted _deleted1]
+                       (if (= (path-fn row) path)
+                         (inserted1 db row)
+                         db))}
+     :delete1 {index (fn [db row _inserted _inserted1 _deleted deleted1]
+                       (if (= (path-fn row) path)
+                         (deleted1 db row)
+                         db))}
      :provide (fn [db]
                 (let [idx (db index)]
                   (when idx

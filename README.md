@@ -1,8 +1,8 @@
 # relic
 
-`STATUS: PRIMORDIAL TAR, this readme, and library are still a work in progress..`
+`STATUS: PRIMORDIAL TAR, this readme, and library are still a work in progress`
 
-A Clojure(Script) functional __relational__ programming library. 
+A Clojure(Script) functional __relational__ programming library.
 
 ``` 
 "Show me your flowchart and conceal your tables, and I shall continue to be mystified.
@@ -14,26 +14,26 @@ A Clojure(Script) functional __relational__ programming library.
 
 ## Pitch 
 
-Do you ever feel _map fatigue_ programming with business data with all its silly associations and rules and dependencies?
+Do you suffer from _map fatigue_? [[1]](http://timothypratley.blogspot.com/2019/01/meander-answer-to-map-fatigue.html)
 
 ![despair](doc/tar2.png)
 
-Are you spending too much time writing mechanical wiring and glue that is not directly expressing the actual business logic?
+Did you try [meander](https://github.com/noprompt/meander), [core.logic](https://github.com/clojure/core.logic), [datascript](https://github.com/tonsky/datascript) and every graph-map-database under the sun but still do not feel [out of the tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf)?
 
 ![in the tar pit](doc/tar.jpeg)
 
-Did you try [meander](https://github.com/noprompt/meander), [core.logic](https://github.com/clojure/core.logic), [datascript](https://github.com/tonsky/datascript) and every graph-map-database under the sun but still do not feel [out of the tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf)?
+Are you spending too much time writing mechanical wiring and glue? That has *nothing* to do with your actual business logic?
 
-`relic` might help, but its not a medical professional. Its a functional relational programming library.
+`relic` might help, but it's not a medical professional. It's a functional relational programming library.
 
-- seperates essential (minimal state, relationship expression) from incidental (accidental data, mechanisms, and ad-hoc structure).
-- like SQL for clojure data. _but awesome_.
+- allows you to focus on the essential (minimal state, relationship expression) rather than incidental (accidental data, mechanisms, and ad-hoc structure).
+- like SQL for clojure data, but _actually composes_.
 - munge with joy via the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance..
-- __constraints__ a-la-carte, gain confidence. I'm not talking just shape data, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](#constraint-reference).
+- __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](#constraint-reference).
 
-Definitely not at all like the other graph databases in clojure. this time its different, really.
+Definitely not at all like the other in-memory databases in clojure. this time its different, really.
 
 ## Brief tour
 
@@ -69,8 +69,15 @@ You can derive relvars from relvars by just adding elements to the vector.  All 
 
 Because relvars are just vectors, they just sort of lounge around being values. To put them to work to get a _relation_ we have to feed some data into our tables.
 
-`relic` databases are boring clojure maps, you manipulate data in tables with the `transact` function. These databases are immutable, they are literally just maps. We are still programming in clojure after all, no nasty surprises.
+`relic` databases are boring clojure maps. Prepare yourself:
 
+```clojure 
+(def db {})
+```
+
+See, boring.
+
+You manipulate data in tables with the [`transact`](#transact-reference) function. This just returns a new database. Plain old functional programming, no surprises.
 ```clojure 
 (def db (rel/transact {} [:insert :Customer {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
@@ -94,7 +101,7 @@ Now we have our state, we can ask questions of relic to find _relations_, as you
 
 Ok ok, neat but not _cool_.
 
-Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like cave man technology - it is powered by a data flow graph.
+Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like some kind of cave man technology - it is powered by a __data flow graph__.
 `relic` knows when your data changes, and it knows how to modify dependent relations in a smart way.
 
 ```clojure 
@@ -516,6 +523,7 @@ spec: `[:upsert table & row]`
 ## Materialization reference 
 
 ### materialize relations with `materialize`
+
 ### save memory with `dematerialize`
 
 ## Constraint reference 
@@ -638,8 +646,10 @@ e.g
 ## Other cool stuff
 
 ### Speculate with `what-if`
-### Explore your data `ed`
+### Explore and play with your data `ed`
 ### Get raw indexes with `index`
+### Find tables that could affect a relation with `dependencies`
+### Ask what keys a row might have with `columns`
 
 ## TODO 
 

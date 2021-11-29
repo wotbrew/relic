@@ -1,108 +1,165 @@
 (ns com.wotbrew.relic.ed
-  (:require [com.wotbrew.relic :as r]
+  (:require [com.wotbrew.relic :as rel]
             [clojure.edn :as edn])
   (:import (javax.swing JTable JFrame JScrollPane SwingUtilities)
            (java.awt BorderLayout)
-           (javax.swing.table AbstractTableModel)))
+           (javax.swing.table AbstractTableModel)
+           (java.awt.event WindowAdapter)))
 
-(def db
-  (ref {}))
+(defn- get-state [ui-state relvar]
+  (get @ui-state relvar))
 
-(def models
-  (ref {}))
+(defn- transact! [ui-state & tx]
+  (let [runnables (volatile! [])]
+    (swap!
+      ui-state
+      (fn [{:keys [db] :as st}]
+        (vreset! runnables [])
+        (let [{:keys [result, changes]} (apply rel/track-transact db tx)
+              st (assoc st :db result)
+              st (reduce-kv (fn [st relvar {:keys [added, deleted]}]
+                              (if (and (empty? added) (empty? deleted))
+                                st
+                                (let [aliases (get-in st [:aliases relvar])]
+                                  (reduce
+                                    (fn [st a]
+                                      (let [{:keys [model, col-vec]} (st a)
+                                            now-editable (some? (rel/unwrap-table relvar))
+                                            row-vec (vec (rel/q result relvar))
+                                            col-seq (rel/col-keys relvar)
+                                            real-cols (into #{} (mapcat keys) row-vec)
+                                            old-col-vec col-vec
+                                            col-vec (->> (concat col-seq real-cols) (distinct) vec)]
+                                        (vswap! runnables conj
+                                                (if (not= old-col-vec col-vec)
+                                                  #(do (.fireTableStructureChanged @model)
+                                                       (.fireTableDataChanged @model))
+                                                  #(.fireTableDataChanged @model)))
+                                        (assoc st a {:model model
+                                                     :editable now-editable
+                                                     :col-vec col-vec
+                                                     :row-vec row-vec
+                                                     :relvar-value relvar})))
+                                    st
+                                    aliases))))
+                            st
+                            changes)]
+          st)))
+    (doseq [r @runnables]
+      (SwingUtilities/invokeLater r)))
+  nil)
 
-(def ui-agent
-  (agent nil))
+(defn- create-model [ui-state relvar]
+  (proxy [AbstractTableModel] []
+    (getColumnCount []
+      (let [{:keys [col-vec]} (get-state ui-state relvar)]
+        (count col-vec)))
 
-(defn- redraw [result changes]
-  (doseq [[relvar {:keys [added deleted]}] changes
-          :let [{:keys [state ^AbstractTableModel table]} (get @models relvar)]]
-    (when (and table (or (seq added) (seq deleted)))
-      (ref-set state (vec (r/q result relvar)))
-      (send ui-agent (fn [_]
-                       (SwingUtilities/invokeLater
-                         (fn []
-                           (.fireTableDataChanged table))))))))
+    (getRowCount []
+      (let [{:keys [row-vec]} (get-state ui-state relvar)]
+        (count row-vec)))
 
-(defn transact [& tx]
-  (dosync
-    (let [st (ensure db)
-          {:keys [result changes]} (apply r/track-transact st tx)]
-      (redraw result changes)
-      (ref-set db result))))
+    (getColumnName [col]
+      (let [{:keys [col-vec]} (get-state ui-state relvar)]
+        (str (nth col-vec col))))
 
-(defn- init [relvar]
-  (dosync
-    (or (:table (get (ensure models) relvar))
-      (let [st (ensure db)
-            st (r/materialize st relvar)
-            st (r/watch st relvar)
-            rows (r/q st relvar)
-            _ (ref-set db st)
+    (getColumnClass [col] String)
 
-            cols (r/columns relvar)
-            col-keys (mapv :k cols)
+    (isCellEditable [row col]
+      (let [{:keys [editable]} (get-state ui-state relvar)]
+        (boolean editable)))
 
-            mdl-state
-            (ref (vec rows))
+    (setValueAt [val row col]
+      (let [{:keys [relvar-value, col-vec, row-vec]} (get-state ui-state relvar)
+            k (nth col-vec col)
+            r (nth row-vec row)
+            parsed-v (try (edn/read-string val) (catch Throwable e ::parse-error))
+            table (rel/unwrap-table relvar-value)]
+        (when (and r (not= ::parse-error parsed-v))
+          (let [nr (assoc r k parsed-v)]
+            (transact! ui-state [:delete-exact table r] [:insert table nr])))))
 
-            mdl
-            (if-some [base (r/unwrap-table relvar)]
-              (proxy [AbstractTableModel] []
-                (getColumnCount [] (count cols))
-                (getRowCount [] (count @mdl-state))
-                (getColumnName [col] (str (nth col-keys col)))
-                (getValueAt [row col]
-                  (let [k (nth col-keys col)
-                        r (nth @mdl-state row nil)]
-                    (when r
-                      (binding [*print-length* 100] (pr-str (get r k))))))
-                (getColumnClass [col] String)
-                (isCellEditable [row col] true)
-                (setValueAt [val row col]
-                  (let [k (nth col-keys col)
-                        r (nth @mdl-state row nil)
-                        parsed-v (try (edn/read-string val) (catch Throwable e ::parse-error))]
-                    (when (and r (not= ::parse-error parsed-v))
-                      (let [nr (assoc r k parsed-v)]
-                        (dosync
-                          (alter mdl-state assoc row nr)
-                          (let [st (ensure db)
-                                {:keys [result changes]} (r/track-transact st [:delete base r] [:insert base nr])]
-                            (redraw result (dissoc changes base relvar))
-                            (ref-set db result))))))))
-              (proxy [AbstractTableModel] []
-                (getColumnCount [] (count cols))
-                (getRowCount [] (count @mdl-state))
-                (getColumnName [col] (str (nth col-keys col)))
-                (getValueAt [row col]
-                  (let [k (nth col-keys col)
-                        r (nth @mdl-state row nil)]
-                    (when r
-                      (binding [*print-length* 100] (pr-str (get r k))))))
-                (getColumnClass [col] String)
-                (isCellEditable [row col] false)
-                (setValueAt [val row col] nil)))
+    (getValueAt [row col]
+      (let [{:keys [col-vec, row-vec]} (get-state ui-state relvar)
+            k (nth col-vec col)
+            r (nth row-vec row)]
+        (when r
+          (binding [*print-length* 100] (pr-str (get r k))))))))
 
-            _ (alter models assoc relvar {:table mdl :state mdl-state})]
-        mdl))))
+(defn- clear-old [st relvar ev]
+  (let [db (:db st {})
+        ev-old-aliases (get (:aliases st) ev #{})
+        ev-new-aliases (disj ev-old-aliases relvar)
+        can-remove (and ev (empty? ev-new-aliases))
+        db (if can-remove (rel/unwatch db ev) db)
+        st (if can-remove (update st :aliases dissoc ev) (assoc-in st [:aliases ev] ev-new-aliases))]
+    (assoc st :db db)))
 
-(defn set-state [st]
-  (dosync
-    (ref-set db st)
-    (doseq [[relvar {:keys [^AbstractTableModel table state]}] @models]
-      (ref-set state (vec (r/q st relvar)))
-      (send ui-agent (fn [_]
-                       (SwingUtilities/invokeLater
-                         (fn []
-                           (.fireTableDataChanged table))))))))
+(defn ed* [ui-state relvar]
+  (let [runnables (ThreadLocal.)]
+    (letfn [(setup-relvar! [relvar relvar-value]
+              (swap! ui-state setup-relvar relvar relvar-value)
+              (doseq [r (.get runnables)]
+                (SwingUtilities/invokeLater r))
+              (.set runnables nil)
+              nil)
+            (setup-relvar [st relvar relvar-value]
+              (.set runnables [])
+              (let [{ev :relvar-value, :keys [col-vec, model]} (st relvar)]
+                (if (= ev relvar-value)
+                  st
+                  (let [st (if ev (clear-old st relvar ev) st)
+                        db (:db st {})
+                        st (update-in st [:aliases relvar-value] (fnil conj #{}) relvar)
+                        db (rel/watch db relvar-value)
+                        st (assoc st :db db)
+                        row-vec (vec (rel/q db relvar-value))
+                        col-seq (rel/col-keys relvar-value)
+                        real-cols (into #{} (mapcat keys) row-vec)
+                        old-col-vec col-vec
+                        col-vec (->> (concat col-seq real-cols) (distinct) vec)]
+
+                    (when model
+                      (if (not= old-col-vec col-vec)
+                        #(do (.fireTableStructureChanged @model)
+                             (.fireTableDataChanged @model))
+                        #(.fireTableDataChanged @model)))
+
+                    (assoc st relvar {:relvar-value relvar-value
+                                      :col-vec col-vec
+                                      :row-vec row-vec
+                                      :model (or model (delay (create-model ui-state relvar)))
+                                      :editable (boolean (rel/unwrap-table relvar-value))})))))]
+      (when (var? relvar)
+        (add-watch relvar ::watch (fn [k v o n] (setup-relvar! v n))))
+      (setup-relvar! relvar (if (var? relvar) @relvar relvar))
+      nil)))
+
+(def ^:private ui-state (atom {}))
 
 (defn ed [relvar]
-  (let [p (JFrame. (if-some [[[_ n]] (r/unwrap-table relvar)] (str "Base " n) "Derived View"))
-        mdl (init relvar)
-        table (JTable. mdl)
+  (let [nm (if (var? relvar) (str relvar) (if-some [[[_ n]] (rel/unwrap-table relvar)] (str "Base " n) "Derived View"))
+        p (JFrame. nm)
+        _ (assert (not (false? (ed* ui-state relvar))))
+        table (JTable. @(:model (@ui-state relvar)))
         _ (.setFillsViewportHeight table true)
+        _ (.addWindowListener p (proxy [WindowAdapter] []
+                                   (windowClosing [evt]
+                                     (when (var? relvar)
+                                       (remove-watch relvar ::watch))
+                                     (swap! ui-state (fn [st]
+                                                      (let [{ev :relvar-value} (st relvar)
+                                                            st (clear-old st relvar ev)]
+                                                        st)))
+                                     nil)))
+        _ (.setDefaultCloseOperation p JFrame/DISPOSE_ON_CLOSE)
         scroll-pane (JScrollPane. table)]
     (.add p scroll-pane BorderLayout/CENTER)
     (.setSize p 640 480)
     (.setVisible p true)))
+
+(defn global-transact! [& tx]
+  (apply transact! ui-state tx))
+
+(defn global-set-env! [env]
+  (global-transact! (rel/set-env-tx env)))

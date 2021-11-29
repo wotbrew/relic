@@ -2575,21 +2575,6 @@
         {:k agg}))))
 
 ;; --
-;; ed. probably best not to use right now.
-
-(defn ed [relvar]
-  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library!")))
-
-(defn ed-set [db]
-  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/set-state) db)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
-
-(defn ed-transact [& tx]
-  #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/transact) tx)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
-
-;; --
 ;; foreign keys
 
 (defn- bad-fk [left relvar clause row cascade]
@@ -2669,7 +2654,8 @@
 ;; env api
 
 (defn get-env [db] (first (q db Env)))
-(defn with-env [db env] (transact db [:delete Env] [:insert Env {::env env}]))
+(defn set-env-tx [env] (list [:delete Env] [:insert Env {::env env}]))
+(defn with-env [db env] (transact db (set-env-tx env)))
 (defn update-env [db f & args] (with-env db (apply f (get-env db) args)))
 
 ;; --
@@ -2684,3 +2670,17 @@
              ::transactor
              ::materialized
              ::watched))
+;; --
+;; ed. probably best not to use right now.
+
+(defn ed [relvar]
+  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library!")))
+
+(defn ed-transact [& tx]
+  #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/global-transact!) tx)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
+
+(defn ed-set-env [env]
+  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/global-set-env!) env)
+     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))

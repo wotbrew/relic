@@ -451,7 +451,8 @@
 
 (def Env [[:table ::Env]])
 (def ^:dynamic ^:private *env-deps* nil)
-(defn- track-env-dep [k] (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
+(defn- track-env-dep [k]
+  (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
 
 ;; --
 ;; dataflow
@@ -541,10 +542,11 @@
                   (if (::env-satisfied (meta stmt))
                     [(dataflow-node left stmt)]
                     (binding [*env-deps* #{}]
-                      [(dataflow-node left stmt) *env-deps*]))]
+                      (let [node (dataflow-node left stmt)]
+                        [node *env-deps*])))]
               (if (seq env-deps)
                 (dataflow-node (conj (or left [])
-                                     [:left-join (conj Env [:extend [::env ['select-keys ::env env-deps]]])]
+                                     [:left-join (conj Env [:extend [::env [select-keys ::env env-deps]]])]
                                      (vary-meta stmt assoc ::env-satisfied true))
                                [:without ::env])
                 node)))
@@ -615,28 +617,36 @@
   (when *trace*
     (apply println msg)))
 
+(defn- sys-time []
+  #?(:clj (System/nanoTime)
+     :cljs (.now (.-performance js/window))))
+
+(defn- timing-str [sys-time]
+  #?(:clj (format "%.2fms" (* 1e-6 sys-time))
+     :cljs (str (.toFixed sys-time 2) "ms")))
+
 (defn- traced-flow [k edge relvar f]
   (fn traced-flow
     ([db rows]
-     (if #?(:clj *trace* :cljs false)
+     (if *trace*
        (do (println (str (name k) ":") relvar)
            (println "  from" edge)
-           (let [enter-time (System/nanoTime)
+           (let [enter-time (sys-time)
                  ret (f db rows)
-                 exit-time (System/nanoTime)
+                 exit-time (sys-time)
                  elapsed-time (- exit-time enter-time)]
-             (println "  took" (format "%.2fms" (* 1e-6 elapsed-time)))
+             (println "  took" (timing-str elapsed-time))
              ret))
        (f db rows)))
     ([db rows inserted inserted1 deleted deleted1]
-     (if #?(:clj *trace* :cljs false)
+     (if *trace*
        (do (println (str (name k) ":") relvar)
            (println "  from" edge)
-           (let [enter-time (System/nanoTime)
+           (let [enter-time (sys-time)
                  ret (f db rows inserted inserted1 deleted deleted1)
-                 exit-time (System/nanoTime)
+                 exit-time (sys-time)
                  elapsed-time (- exit-time enter-time)]
-             (println "  took" (format "%.2fms" (* 1e-6 elapsed-time)))
+             (println "  took" (timing-str elapsed-time))
              ret))
        (f db rows inserted inserted1 deleted deleted1)))))
 
@@ -767,76 +777,13 @@
      :inserted flow-inserts-n
      :deleted flow-deletes-n
      :inserted1 flow-insert1
-     :deleted1 flow-delete1
-
-     :insert-await
-     (tr :insert-await
-         (cond
-           insert
-           (fn [db rows]
-             (let [ibuf (volatile! [])
-                   dbuf (volatile! [])
-                   inserted (fn [db rows] (vswap! ibuf into rows) db)
-                   inserted1 (fn [db row] (vswap! ibuf conj row) db)
-                   deleted (fn [db rows] (vswap! dbuf into rows) db)
-                   deleted1 (fn [db row] (vswap! dbuf conj row) db)
-                   db (insert db rows inserted inserted1 deleted deleted1)]
-               (-> [db @ibuf @dbuf]
-                   deleted-no-flow
-                   inserted-no-flow)))
-           insert1
-           (fn [db rows]
-             (let [ibuf (volatile! [])
-                   dbuf (volatile! [])
-                   inserted (fn [db rows] (vswap! ibuf into rows) db)
-                   inserted1 (fn [db row] (vswap! ibuf conj row) db)
-                   deleted (fn [db rows] (vswap! dbuf into rows) db)
-                   deleted1 (fn [db row] (vswap! dbuf conj row) db)
-                   db (reduce #(insert1 %1 %2 inserted inserted1 deleted deleted1) db rows)]
-               (-> [db @ibuf @dbuf]
-                   deleted-no-flow
-                   inserted-no-flow)))
-           :else (fn [db _] [db])))
-
-     :delete-await
-     (tr :delete-await
-         (cond
-           delete
-           (fn [db rows]
-             (let [ibuf (volatile! [])
-                   dbuf (volatile! [])
-                   inserted (fn [db rows] (vswap! ibuf into rows) db)
-                   inserted1 (fn [db row] (vswap! ibuf conj row) db)
-                   deleted (fn [db rows] (vswap! dbuf into rows) db)
-                   deleted1 (fn [db row] (vswap! dbuf conj row) db)
-                   db (delete db rows inserted inserted1 deleted deleted1)]
-               (-> [db @ibuf @dbuf]
-                   deleted-no-flow
-                   inserted-no-flow)))
-           delete1
-           (fn [db rows]
-             (let [ibuf (volatile! [])
-                   dbuf (volatile! [])
-                   inserted (fn [db rows] (vswap! ibuf into rows) db)
-                   inserted1 (fn [db row] (vswap! ibuf conj row) db)
-                   deleted (fn [db rows] (vswap! dbuf into rows) db)
-                   deleted1 (fn [db row] (vswap! dbuf conj row) db)
-                   db (reduce #(delete1 %1 %2 inserted inserted1 deleted deleted1) db rows)]
-               (-> [db @ibuf @dbuf]
-                   deleted-no-flow
-                   inserted-no-flow)))
-           :else (fn [db _] [db])))}))
+     :deleted1 flow-delete1}))
 
 (defn- get-flow [g relvar dependents]
   (let [flow-mat-fns (mapv #((:mat-fns (g %)) relvar) dependents)
 
         flow-inserters-n (mapv :insert flow-mat-fns)
         flow-deleters-n (mapv :delete flow-mat-fns)
-
-        flow-inserters-await (mapv :insert-await flow-mat-fns)
-        flow-forward-inserts (mapv :inserted flow-mat-fns)
-        flow-deleters-await (mapv :delete-await flow-mat-fns)
-        flow-forward-deletes (mapv :deleted flow-mat-fns)
 
         flow-inserts-n
         (case (count flow-inserters-n)
@@ -850,7 +797,7 @@
           0 (fn [db _] db)
           1 (first flow-deleters-n)
           (fn [db rows]
-               (reduce (fn [db f] (f db rows)) db flow-deleters-n)))
+            (reduce (fn [db f] (f db rows)) db flow-deleters-n)))
 
         flow-inserters-1 (mapv :insert1 flow-mat-fns)
 
@@ -1296,7 +1243,8 @@
             (= f ::env)
             (let [[k not-found] args]
               (track-env-dep k)
-              [(fn [row] (-> row ::env (get k not-found)))])
+              [(fn [row]
+                 (-> row ::env (get k not-found)))])
 
             (= f ::get) (let [[k not-found] args] [(fn [row] (row k not-found))])
 
@@ -1337,7 +1285,7 @@
   (binding [*env-deps* #{}]
     (let [expr-fns (mapv expr-row-fn exprs)]
       (if (seq *env-deps*)
-        [(conj relvar [:left-join (conj Env [:extend [::env ['select-keys ::env *env-deps*]]])]) expr-fns true]
+        [(conj relvar [:left-join (conj Env [:extend [::env [select-keys ::env *env-deps*]]])]) expr-fns true]
         [relvar expr-fns]))))
 
 (defn q

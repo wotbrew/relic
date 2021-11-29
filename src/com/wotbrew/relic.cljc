@@ -1451,23 +1451,30 @@
 
 (defmethod columns* :default [_ _] [])
 
-(defn columns [relvar]
+(defn full-columns [relvar]
   (if (empty? relvar)
     []
     (let [stmt (head-stmt relvar)
           left (left-relvar relvar)]
       (columns* left stmt))))
 
-(defn state-deps [relvar]
-  (if-some [state (unwrap-table relvar)]
-    #{state}
+(defn full-dependencies [relvar]
+  (if-some [table (unwrap-table relvar)]
+    #{table}
     (let [left (left-relvar relvar)
           stmt (head-stmt relvar)
           {:keys [deps]} (dataflow-node left stmt)]
-      (set (mapcat state-deps deps)))))
+      (set (mapcat full-dependencies deps)))))
 
-(defn col-keys [relvar]
-  (map :k (columns relvar)))
+(defn dependencies
+  "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
+  [relvar]
+  (distinct (map #(nth % 1) (full-dependencies relvar))))
+
+(defn columns
+  "Returns the (known) columns on the relvar, e.g what it might return."
+  [relvar]
+  (map :k (full-columns relvar)))
 
 ;; -
 
@@ -1617,7 +1624,7 @@
 
 (defmethod columns* :from
   [_ [_ relvar]]
-  (columns relvar))
+  (full-columns relvar))
 
 ;; --
 ;; :project
@@ -1634,7 +1641,7 @@
 
 (defmethod columns* ::project
   [left [_ & cols]]
-  (filter (comp (set cols) :k) (columns left)))
+  (filter (comp (set cols) :k) (full-columns left)))
 
 ;; --
 ;; :without
@@ -1651,7 +1658,7 @@
 
 (defmethod columns* :without
   [left [_ & cols]]
-  (remove (comp (set cols) :k) (columns left)))
+  (remove (comp (set cols) :k) (full-columns left)))
 
 ;; --
 ;; :union
@@ -1686,8 +1693,8 @@
 
 (defmethod columns* :union
   [left [_ right]]
-  (let [left-idx (index-by :k (columns left))
-        right-idx (index-by :k (columns right))]
+  (let [left-idx (index-by :k (full-columns left))
+        right-idx (index-by :k (full-columns right))]
     (concat
       (for [[k col] left-idx]
         (if (right-idx k)
@@ -1732,7 +1739,7 @@
 
 (defmethod columns* :intersection
   [left [_ _]]
-  (columns left))
+  (full-columns left))
 
 ;; --
 ;; :difference
@@ -1781,7 +1788,7 @@
 
 (defmethod columns* :difference
   [left [_ _]]
-  (columns left))
+  (full-columns left))
 
 ;; --
 ;; :index-lookup
@@ -1820,7 +1827,7 @@
 
 (defmethod columns* :where
   [left _]
-  (columns left))
+  (full-columns left))
 
 ;; --
 ;; :extend
@@ -1872,7 +1879,7 @@
   [left [_ & extensions]]
   (let [ext-keys (set (mapcat extend-form-cols extensions))]
     (concat
-      (for [col (columns left)
+      (for [col (full-columns left)
             :when (not (ext-keys (:k col)))]
         col)
       (for [k ext-keys]
@@ -1893,7 +1900,7 @@
 
 (defmethod columns* :qualify
   [left [_ namespace] _]
-  (for [col (columns left)]
+  (for [col (full-columns left)]
     (assoc col :k (keyword namespace (name (:k col))))))
 
 ;; --
@@ -1912,7 +1919,7 @@
 
 (defmethod columns* :rename
   [left [_ renames]]
-  (for [col (columns left)
+  (for [col (full-columns left)
         :let [nk (get renames (:k col))]]
     (if nk
       (assoc col :k nk)
@@ -1935,7 +1942,7 @@
                             k (if (vector? binding) binding [binding])]
                         k))]
     (concat
-      (for [col (columns left)
+      (for [col (full-columns left)
             :when (not (exp-keys (:k col)))]
         col)
       (for [k exp-keys]
@@ -1965,7 +1972,7 @@
   (let [[cols exts] ((juxt filter remove) keyword? selections)
         cols (set (concat cols (mapcat extend-form-cols exts)))]
     (concat
-      (for [col (columns left)
+      (for [col (full-columns left)
             :when (not (cols (:k col)))]
         col)
       (for [k cols]
@@ -1986,7 +1993,7 @@
 
 (defmethod columns* :hash
   [left _]
-  (columns left))
+  (full-columns left))
 
 ;; --
 ;; :unique (index)
@@ -2028,7 +2035,7 @@
 
 (defmethod columns* :btree
   [left _]
-  (columns left))
+  (full-columns left))
 
 ;; --
 ;; :join
@@ -2075,8 +2082,8 @@
 
 (defmethod columns* :join
   [left [_ right]]
-  (let [left-cols (columns left)
-        right-cols (columns right)
+  (let [left-cols (full-columns left)
+        right-cols (full-columns right)
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
@@ -2178,8 +2185,8 @@
 (defmethod columns* :left-join
   [left [_ right _clause]]
   [left [_ right]]
-  (let [left-cols (columns left)
-        right-cols (columns right)
+  (let [left-cols (full-columns left)
+        right-cols (full-columns right)
         right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
     (concat
       (remove (comp right-idx :k) left-cols)
@@ -2594,7 +2601,7 @@
 (defmethod columns* :agg
   [left [_ cols & aggs]]
   (let [agg-keys (set (for [[binding] aggs] binding))
-        left-cols (filter (comp (set cols) :k) (columns left))]
+        left-cols (filter (comp (set cols) :k) (full-columns left))]
     (concat
       (remove agg-keys left-cols)
       (for [agg agg-keys]

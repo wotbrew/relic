@@ -26,7 +26,7 @@
                                       (let [{:keys [model, col-vec]} (st a)
                                             now-editable (some? (rel/unwrap-table relvar))
                                             row-vec (vec (rel/q result relvar))
-                                            col-seq (rel/col-keys relvar)
+                                            col-seq (rel/columns relvar)
                                             real-cols (into #{} (mapcat keys) row-vec)
                                             old-col-vec col-vec
                                             col-vec (->> (concat col-seq real-cols) (distinct) vec)]
@@ -114,7 +114,7 @@
                         db (rel/watch db relvar-value)
                         st (assoc st :db db)
                         row-vec (vec (rel/q db relvar-value))
-                        col-seq (rel/col-keys relvar-value)
+                        col-seq (rel/columns relvar-value)
                         real-cols (into #{} (mapcat keys) row-vec)
                         old-col-vec col-vec
                         col-vec (->> (concat col-seq real-cols) (distinct) vec)]

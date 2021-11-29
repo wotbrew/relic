@@ -2201,7 +2201,7 @@
   [left [_ cols binding expr sfn]]
   (let [cols (vec (set cols))
         elfn (expr-row-fn expr)
-        idx-key [::group left cols elfn sfn]
+        idx-key [::group left cols expr sfn]
         group-fn (apply juxt2 cols)
         group->row #(zipmap cols %)]
     {:deps [left]
@@ -2275,7 +2275,7 @@
 (defn row-count
   "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
   []
-  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding identity count]))})
+  {:custom-node (fn [left cols [binding]] (conj left [::group cols binding identity count]))})
 
 ;; --
 ;; greatest / least
@@ -2356,14 +2356,14 @@
 ;; set-concat
 
 (defn set-concat [expr]
-  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr identity]))})
+  {:custom-node (fn [left cols [binding]] (conj left [::group cols binding expr identity]))})
 
 ;; --
 ;; count-distinct
 
 (defn count-distinct [& exprs]
   (let [expr (if (= 1 (count exprs)) (first exprs) (into [vector] exprs))]
-    {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr count]))}))
+    {:custom-node (fn [left cols [binding]] (conj left [::group cols binding expr count]))}))
 
 ;; --
 ;; any, like some but this one is called any.
@@ -2383,33 +2383,111 @@
 ;; --
 ;; top / bottom
 
+(defmethod dataflow-node ::sorted-group
+  [left [_ cols binding expr sfn]]
+  (let [cols (vec (set cols))
+        elfn (expr-row-fn expr)
+        idx-key [::sorted-group left cols expr sfn]
+        group-fn (apply juxt2 cols)
+        group->row #(zipmap cols %)
+        add-row (fn [coll row]
+                  (if coll
+                    (update coll (elfn row) set-conj row)
+                    (update (sorted-map) (elfn row) set-conj row)))
+        rem-row (fn [coll row]
+                  (if coll
+                    (disjoc coll (elfn row) row)
+                    (sorted-map)))]
+    {:deps [left]
+     :extras [idx-key]
+     :insert {left (fn [db rows inserted _inserted1 deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           changed (volatile! (transient #{}))
+                           nidx (reduce
+                                  (fn [idx row]
+                                    (let [group (group-fn row)
+                                          ev (idx group)
+                                          nv (add-row ev row)]
+                                      (if (identical? ev nv)
+                                        idx
+                                        (do
+                                          (vswap! changed conj! group)
+                                          (assoc idx group nv)))))
+                                  idx rows)
+                           db (assoc db idx-key nidx)
+                           _ (vswap! changed persistent!)
+
+                           old-rows (keep
+                                      (fn [group]
+                                        (when-some [s (idx group)]
+                                          (assoc (group->row group) binding (sfn s))))
+                                      @changed)
+                           new-rows (mapv
+                                      (fn [group]
+                                        (when-some [s (nidx group)]
+                                          (assoc (group->row group) binding (sfn s))))
+                                      @changed)]
+
+                       (-> db
+                           (deleted old-rows)
+                           (inserted new-rows))))}
+
+     :delete {left (fn [db rows inserted _inserted1 deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           changed (volatile! (transient #{}))
+                           nidx (reduce
+                                  (fn [idx row]
+                                    (let [group (group-fn row)
+                                          ev (idx group)
+                                          nv (rem-row ev row)]
+                                      (if (identical? ev nv)
+                                        idx
+                                        (do
+                                          (vswap! changed conj! group)
+                                          (if (empty? nv)
+                                            (dissoc idx group)
+                                            (assoc idx group nv))))))
+                                  idx rows)
+                           db (assoc db idx-key nidx)
+                           _ (vswap! changed persistent!)
+
+                           old-rows (keep
+                                      (fn [group]
+                                        (when-some [ev (idx group)]
+                                          (assoc (group->row group) binding (sfn ev))))
+                                      @changed)
+                           new-rows (keep
+                                      (fn [group]
+                                        (when-some [nv (nidx group)]
+                                          (assoc (group->row group) binding (sfn nv))))
+                                      @changed)]
+                       (-> db
+                           (deleted old-rows)
+                           (inserted new-rows))))}}))
+
 (defn top-by [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
-  (let [f (expr-row-fn expr)]
-    {:reducer #(reduce (fn [sm row] (update sm (f row) set-conj row)) (sorted-map) %)
-     :combiner #(merge-with (fnil set/union #{}) %1 %2)
-     :complete #(into [] (comp (mapcat val) (take n)) (rseq %))}))
+  {:custom-node
+   (fn [left cols [binding]]
+     (conj left [::sorted-group cols binding expr #(into [] (comp (mapcat val) (take n)) (rseq %))]))})
 
 (defn bottom-by [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
-  (let [f (expr-row-fn expr)]
-    {:reducer #(reduce (fn [sm row] (update sm (f row) set-conj row)) (sorted-map) %)
-     :combiner #(merge-with (fnil set/union #{}) %1 %2)
-     :complete #(into [] (comp cat (take n)) (vals %))}))
+  {:custom-node
+   (fn [left cols [binding]]
+     (conj left [::sorted-group cols binding expr #(into [] (comp (mapcat val) (take n)) (seq %))]))})
 
 (defn top [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
-  (let [f (expr-row-fn expr)]
-    {:reducer #(into (sorted-set) (map f) %)
-     :combiner #(reduce conj %1 %2)
-     :complete #(into [] (take n) (rseq %))}))
+  {:custom-node
+   (fn [left cols [binding]]
+     (conj left [::sorted-group cols binding expr #(into [] (comp (map key) (take n)) (rseq %))]))})
 
 (defn bottom [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
-  (let [f (expr-row-fn expr)]
-    {:reducer #(into (sorted-set) (map f) %)
-     :combiner #(reduce conj %1 %2)
-     :complete #(into [] (take n) (seq %))}))
+  {:custom-node
+   (fn [left cols [binding]]
+     (conj left [::sorted-group cols binding expr #(into [] (comp (map key) (take n)) (seq %))]))})
 
 ;; --
 ;; agg expressions e.g [rel/sum :foo]
@@ -2460,9 +2538,9 @@
 
 (defn- maybe-deref [x] (some-> x deref))
 
-(defn- get-custom-agg-node [left stmt [_ expr]]
+(defn- get-custom-agg-node [left cols [_ expr :as agg]]
   (when-some [n (:custom-node (agg-expr-agg expr))]
-    (n left stmt)))
+    (n left cols agg)))
 
 ;; --
 ;; :agg
@@ -2502,7 +2580,7 @@
   [left [_ cols & aggs :as stmt]]
   (let [cols (vec (set cols))
         join-clause (zipmap cols cols)
-        [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left stmt %) aggs)]
+        [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
     (if (seq custom-nodes)
       (let [joins (concat (for [node custom-nodes] [:left-join node join-clause])
                           (when (seq standard-aggs) [[:join (conj left [::generic-agg cols standard-aggs]) join-clause]]))

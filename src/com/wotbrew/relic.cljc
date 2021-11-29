@@ -118,6 +118,15 @@
            #{}
            (get index (first ks))))})))
 
+(defn- update-in2
+  ([m empty ks f & args]
+   (let [up (fn up [m ks f args]
+              (let [[k & ks] ks]
+                (if ks
+                  (assoc m k (up (get m k empty) ks f args))
+                  (assoc m k (apply f (get m k) args)))))]
+     (up m ks f args))))
+
 (defn- map-index
   [empty keyfns]
   (case (count keyfns)
@@ -128,7 +137,7 @@
           map-contains-row? (fn map-contains-row? [index row] (contains? (get-in index (path row) #{}) row))]
       (with-meta
         empty
-        {`index-row (fn [index row] (update-in index (path row) set-conj row))
+        {`index-row (fn [index row] (update-in2 index empty (path row) set-conj row))
          `unindex-row (fn [index row] (disjoc-in index (path row) row))
          `contains-row? map-contains-row?
          `row-seqable
@@ -199,7 +208,7 @@
            replace (fn [a b] (if a (collision-fn a b) b))]
        (with-meta
          empty
-         {`index-row (fn [index row] (update-in index (path row) replace row))
+         {`index-row (fn [index row] (update-in2 index empty (path row) replace row))
           `unindex-row (fn [index row] (dissoc-in index (path row)))
           `contains-row? map-contains-row?
           `row-seqable
@@ -1205,11 +1214,11 @@
 
   Note:
   As relic stores its state and dataflow graph in metadata, all modifications to the database must be made using
-  relic transact/tracked-transact - all bets are off otherwise.
+  relic transact/track-transact - all bets are off otherwise.
 
   --
 
-  See also tracked-transact, what-if."
+  See also track-transact, what-if."
   [db & tx]
   (if-some [transactor (::transactor (meta db))]
     (binding [*foreign-key-violations* {}
@@ -1482,8 +1491,7 @@
           deleted (for [[relvar deleted] *deleted*
                         :let [oidx (or (index ost relvar) empty-set-index)
                               idx (or (index db relvar) empty-set-index)]]
-                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %))
-                                                           #(contains-row? oidx %)) deleted)}])]
+                    [relvar {:deleted (filterv (every-pred #(not (contains-row? idx %)) #(contains-row? oidx %)) deleted)}])]
       {:result db
        :changes (merge-with merge (into {} added) (into {} deleted))})))
 

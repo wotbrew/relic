@@ -317,7 +317,7 @@
                         reduced
                         combined
                         (combine-reduced combined reduced)))
-                    (let [branch (add tree row)
+                    (let [branch (add branch row)
                           rm (assoc rm row branch-id)
                           a (if grow-a branch a)
                           b (if grow-a b branch)
@@ -2252,12 +2252,12 @@
      :extras [idx-key]
      :insert {left (fn [db rows inserted _inserted1 deleted _deleted1]
                      (let [idx (db idx-key {})
-                           changed (volatile! (transient []))
+                           changed (volatile! (transient #{}))
                            nidx (reduce
                                   (fn [idx row]
                                     (let [group (group-fn row)
-                                          eset (idx group #{})
-                                          nset (if-some [v (elfn row)] (conj eset v) eset)]
+                                          eset (idx group)
+                                          nset (if-some [v (elfn row)] (set-conj eset v) eset)]
                                       (if (identical? eset nset)
                                         idx
                                         (do
@@ -2269,12 +2269,13 @@
 
                            old-rows (keep
                                       (fn [group]
-                                        (when-some [eset (idx group)]
-                                          (assoc (group->row group) binding (sfn eset))))
+                                        (when-some [s (idx group)]
+                                          (assoc (group->row group) binding (sfn s))))
                                       @changed)
                            new-rows (mapv
                                       (fn [group]
-                                        (assoc (group->row group) binding (sfn (nidx group))))
+                                        (when-some [s (nidx group)]
+                                          (assoc (group->row group) binding (sfn s))))
                                       @changed)]
 
                        (-> db
@@ -2283,17 +2284,20 @@
 
      :delete {left (fn [db rows inserted _inserted1 deleted _deleted1]
                      (let [idx (db idx-key {})
-                           changed (volatile! (transient []))
+                           changed (volatile! (transient #{}))
                            nidx (reduce
                                   (fn [idx row]
                                     (let [group (group-fn row)
-                                          eset (idx group #{})
-                                          nset (disj eset row)]
+                                          eset (idx group)
+                                          v (elfn row)
+                                          nset (if (some? v) (disj eset v) eset)]
                                       (if (identical? eset nset)
                                         idx
                                         (do
                                           (vswap! changed conj! group)
-                                          (assoc idx group nset)))))
+                                          (if (empty? nset)
+                                            (dissoc idx group)
+                                            (assoc idx group nset))))))
                                   idx rows)
                            db (assoc db idx-key nidx)
                            _ (vswap! changed persistent!)
@@ -2312,15 +2316,10 @@
                            (deleted old-rows)
                            (inserted new-rows))))}}))
 
-(defn- row-count-node [left [_ cols [binding]]]
-  (conj left [::group cols binding identity count]))
-
 (defn row-count
   "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
   []
-  {:combiner +
-   :reducer count
-   :custom-node row-count-node})
+  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding identity count]))})
 
 ;; --
 ;; greatest / least
@@ -2401,18 +2400,13 @@
 ;; set-concat
 
 (defn set-concat [expr]
-  (let [f (expr-row-fn expr)
-        xf (comp (mapcat f) (remove nil?))]
-    {:combiner set/union
-     :reducer (fn [rows] (into #{} xf rows))
-     :custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr identity]))}))
+  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr identity]))})
 
 ;; --
 ;; count-distinct
 
-(defn count-distinct [& exprs]
-  (let [agg (apply set-concat exprs)]
-    (comp-complete agg count)))
+(defn count-distinct [expr]
+  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr count]))})
 
 ;; --
 ;; any, like some but this one is called any.
@@ -2553,10 +2547,11 @@
         join-clause (zipmap cols cols)
         [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left stmt %) aggs)]
     (if (seq custom-nodes)
-      (let [joins (concat (for [node custom-nodes] [:join node join-clause])
+      (let [joins (concat (for [node custom-nodes] [:left-join node join-clause])
                           (when (seq standard-aggs) [[:join (conj left [::generic-agg cols standard-aggs]) join-clause]]))
             left (reduce conj (conj left (into [:select] cols)) joins)]
         {:deps [left]
+         :pass true
          :insert {left pass-through-insert}
          :delete {left pass-through-delete}})
       (dataflow-node left [::generic-agg cols standard-aggs]))))

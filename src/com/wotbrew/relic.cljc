@@ -2405,8 +2405,9 @@
 ;; --
 ;; count-distinct
 
-(defn count-distinct [expr]
-  {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr count]))})
+(defn count-distinct [& exprs]
+  (let [expr (if (= 1 (count exprs)) (first exprs) (into [vector] exprs))]
+    {:custom-node (fn [left [_ cols [binding]]] (conj left [::group cols binding expr count]))}))
 
 ;; --
 ;; any, like some but this one is called any.

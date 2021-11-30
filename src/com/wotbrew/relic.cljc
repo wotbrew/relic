@@ -9,7 +9,6 @@
   - put data in with `transact`, see also `what-if`.
   - get data out with `q`, see also `index`.
   - go faster maybe with `materialize`, see also `dematerialize`
-  - constrain your domain with `constrain`
   - track changes with `track-transact`, `watch` and `unwatch`.
 
   I like to alias :as rel. @wotbrew"

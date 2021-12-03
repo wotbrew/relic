@@ -569,3 +569,52 @@
   (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact {} {[[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] [{:a 1}]})))
   (is (= {:A #{{:a 1}}
           :B #{{:a 1}}} (rel/transact {} {[[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] [{:a 1}], :B [{:a 1}]}))))
+
+(deftest false-req-col-is-allowed-test
+  (let [A [[:table :A {:req [:a]}]]
+        db (rel/materialize {} A)]
+    (is (= {:A #{{:a false}}} (rel/transact db {A [{:a false}]})))))
+
+(deftest self-join-glitch-bug-test1
+  (let [A [[:table :A]]
+        B [[:from A]
+           [:agg
+            []
+            [:a [count [even? :a]]]]]
+        db (rel/materialize {} B)
+        db (rel/transact db {A [{:a 1} {:a 2}, {:a 3} {:a 4}]})]
+
+    (is (= #{{:a 2}} (rel/q db B)))
+    (is (= #{{:a 2}} (rel/what-if db B [:delete-exact :A {:a 1}])))
+    (is (= #{{:a 2}} (rel/what-if db B [:delete-exact :A {:a 1}] {:A [{:a 1}]})))))
+
+(deftest self-join-glitch-bug-test2
+  (let [A [[:table :A]]
+        B [[:from A]
+           [:agg
+            []
+            [:a [count [even? :a]]]
+            [:b count]]]
+        db (rel/materialize {} B)
+        db (rel/transact db {A [{:a 1} {:a 2}, {:a 3} {:a 4}]})]
+
+    (is (= #{{:a 2, :b 4}} (rel/q db B)))
+    (is (= #{{:a 2, :b 3}} (rel/what-if db B [:delete-exact :A {:a 1}])))
+    (is (= #{{:a 2, :b 4}} (rel/what-if db B [:delete-exact :A {:a 1}] {:A [{:a 1}]})))))
+
+(deftest narrowing-delete-extend-glitch-test
+  (let [A [[:table :A]]
+        B [[:from A] [:extend [:a 1]]]
+        db (rel/transact (rel/materialize {} B) {:A [{:a 42} {:a 43}]})]
+    (is (= #{{:a 1}} (rel/q db B)))
+    (is (= #{{:a 1}} (rel/what-if db B [:delete-exact :A {:a 42}])))))
+
+(deftest narrowing-delete-select-glitch-test
+  (let [A [[:table :A]]
+        B [[:from A] [:select [:a 1]]]
+        db (rel/transact (rel/materialize {} B) {:A [{:a 42} {:a 43}]})]
+    (is (= #{{:a 1}} (rel/q db B)))
+    (is (= #{{:a 1}} (rel/what-if db B [:delete-exact :A {:a 42}])))))
+
+(comment
+  (clojure.test/run-all-tests #"relic"))

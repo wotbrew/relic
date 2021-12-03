@@ -440,8 +440,9 @@
   (if (table-relvar? relvar)
     relvar
     (let [relvar (unwrap-from relvar)]
-      (when (= :table (operator (head-stmt relvar)))
-        [(head-stmt relvar)]))))
+      (cond
+        (table-relvar? relvar) relvar
+        (table*-relvar? relvar) relvar))))
 
 ;; --
 ;; Env tracking
@@ -704,16 +705,6 @@
           :else
           flow-inserts-n)
 
-        inserted-no-flow
-        (if empty-index
-          (fn inserted-no-flow [[db rows deleted]]
-            (let [idx (db relvar empty-index)
-                  new-rows (into [] (remove #(contains-row? idx %)) rows)]
-              (if (seq new-rows)
-                [(-> db (assoc relvar (reduce index-row idx new-rows))) new-rows deleted]
-                [db [] deleted])))
-          identity)
-
         deleted1
         (if empty-index
           (fn deleted1 [db row]
@@ -736,16 +727,6 @@
                     (flow-deletes-n del-rows))
                 db)))
           flow-deletes-n)
-
-        deleted-no-flow
-        (if empty-index
-          (fn deleted-no-flow [[db inserted rows]]
-            (let [idx (db relvar empty-index)
-                  del-rows (filterv #(contains-row? idx %) rows)]
-              (if (seq del-rows)
-                [(-> db (assoc relvar (reduce unindex-row idx del-rows))) inserted del-rows]
-                [db inserted []])))
-          identity)
 
         tr (fn [k f] (traced-flow k edge relvar f))]
     {:insert1
@@ -777,6 +758,12 @@
      :deleted flow-deletes-n
      :inserted1 flow-insert1
      :deleted1 flow-delete1}))
+
+(defn- dependent-sort [relvar]
+  (case (operator (head-stmt relvar))
+    :hash -1
+    :btree 0
+    (+ 1 (count relvar))))
 
 (defn- get-flow [g relvar dependents]
   (let [flow-mat-fns (mapv #((:mat-fns (g %)) relvar) dependents)
@@ -904,6 +891,7 @@
              (if (contains? @visited relvar)
                g
                (let [{:keys [dependents] :as node} (g relvar)
+                     dependents (sort-by dependent-sort dependents)
                      g (reduce #(rf %1 %2 relvar) g dependents)
                      flow (get-flow g relvar dependents)
                      mat-fns (derived-mat-fns node edge flow)
@@ -1043,7 +1031,8 @@
             (trace "Initialising root" relvar)
             (let [g (::graph m {})
                   db (::state m {})
-                  {:keys [provide, dirty, empty-index, mat]} (g relvar)]
+                  {:keys [provide, dirty, empty-index, mat]} (g relvar)
+                  dirty (when (seq dirty) (sort-by dependent-sort dirty))]
               (cond
                 (contains? db relvar)
                 (let [_ (trace "init: contains" relvar)
@@ -1541,25 +1530,6 @@
 (defn- pass-through-delete1 [db row _inserted _inserted1 _deleted deleted1] (deleted1 db row))
 
 ;; --
-;; transform applies a function to each row then flows
-
-(defn- transform-insert [f]
-  (fn [db rows inserted _inserted1 _deleted _deleted1]
-    (inserted db (mapv f rows))))
-
-(defn- transform-delete [f]
-  (fn [db rows _inserted _inserted1 deleted _deleted1]
-    (deleted db (mapv f rows))))
-
-(defn- transform-insert1 [f]
-  (fn [db row _inserted inserted1 _deleted _deleted1]
-    (inserted1 db (f row))))
-
-(defn- transform-delete1 [f]
-  (fn [db row _inserted _inserted1 _deleted deleted1]
-    (deleted1 db (f row))))
-
-;; --
 ;; :table
 
 (defmethod dataflow-node ::table*
@@ -1571,7 +1541,7 @@
    :provide (fn [db] (db table-key empty-set-index))})
 
 (defn- req-col-check [table-key col]
-  {:pred col,
+  {:pred [some? col],
    :error [str [::esc col] " required by " [::esc table-key] ", but not found."]})
 
 (defmethod dataflow-node :table
@@ -1625,23 +1595,70 @@
   [_ [_ relvar]]
   (full-columns relvar))
 
-;; --
-;; :project
+;; non overwriting extend could use more straightforward dataflow
+;; as it cannot narrow rows to share the same value.
 
-(defmethod dataflow-node ::project
-  [left [_ & cols]]
-  (let [cols (vec (set cols))
-        f (fn [row] (select-keys row cols))]
+(defn- transform-node
+  [left f]
+  (let [idx-key [::transform left f]]
     {:deps [left]
-     :insert {left (transform-insert f)}
-     :insert1 {left (transform-insert1 f)}
-     :delete {left (transform-delete f)}
-     :delete1 {left (transform-delete1 f)}}))
-
-(defmethod columns* ::project
-  [left [_ & cols]]
-  (filter (comp (set cols) :k) (full-columns left)))
-
+     :insert1 {left (fn [db row _inserted inserted1 _deleted _deleted1]
+                      (let [new-row (f row)
+                            idx (db idx-key {})
+                            s (idx new-row #{})
+                            ns (conj s row)]
+                        (if (identical? s ns)
+                          db
+                          (let [db (assoc db idx-key (assoc idx new-row ns))]
+                            (if (empty? s)
+                              (inserted1 db new-row)
+                              db)))))}
+     :insert {left (fn [db rows inserted _inserted1 _deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           added (volatile! (transient #{}))
+                           nidx (reduce (fn [idx row]
+                                          (let [new-row (f row)
+                                                s (idx new-row #{})
+                                                ns (conj s row)]
+                                            (if (identical? s ns)
+                                              idx
+                                              (let [idx (assoc idx new-row ns)]
+                                                (when (empty? s)
+                                                  (vswap! added conj! new-row))
+                                                idx))))
+                                        idx rows)
+                           db (assoc db idx-key nidx)
+                           added (persistent! @added)]
+                       (if (seq added)
+                         (inserted db added)
+                         db)))}
+     :delete1 {left (fn [db row _inserted _inserted1 _deleted deleted1]
+                      (let [new-row (f row)
+                            idx (db idx-key {})
+                            s (idx new-row #{})
+                            ns (disj s row)]
+                        (cond
+                          (identical? s ns) db
+                          (empty? ns) (-> db (assoc idx-key (dissoc idx new-row)) (deleted1 new-row))
+                          :else (-> db (assoc idx-key (assoc idx new-row ns))))))}
+     :delete {left (fn [db rows _inserted _inserted1 deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           deleted-rows (volatile! (transient #{}))
+                           nidx (reduce (fn [idx row]
+                                          (let [new-row (f row)
+                                                s (idx new-row #{})
+                                                ns (disj s row)]
+                                            (cond
+                                              (identical? s ns) idx
+                                              (empty? ns) (do (vswap! deleted-rows conj! new-row)
+                                                              (dissoc idx new-row))
+                                              :else (assoc idx new-row ns))))
+                                        idx rows)
+                           db (assoc db idx-key nidx)
+                           deleted-rows (persistent! @deleted-rows)]
+                       (if (seq deleted-rows)
+                         (deleted db deleted-rows)
+                         db)))}}))
 ;; --
 ;; :without
 
@@ -1649,11 +1666,7 @@
   [left [_ & cols]]
   (let [cols (vec (set cols))
         f (fn [row] (apply dissoc row cols))]
-    {:deps [left]
-     :insert {left (transform-insert f)}
-     :insert1 {left (transform-insert1 f)}
-     :delete {left (transform-delete f)}
-     :delete1 {left (transform-delete1 f)}}))
+    (transform-node left f)))
 
 (defmethod columns* :without
   [left [_ & cols]]
@@ -1839,15 +1852,12 @@
 (defn- join-first-expr? [expr] (and (vector? expr) (= ::join-first (nth expr 0 nil))))
 (defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
 
+
 (defmethod dataflow-node ::extend*
   [left [_ & extensions]]
   (let [extend-fns (mapv extend-form-fn extensions)
         f (apply comp (rseq extend-fns))]
-    {:deps [left]
-     :insert {left (transform-insert f)}
-     :insert1 {left (transform-insert1 f)}
-     :delete {left (transform-delete f)}
-     :delete1 {left (transform-delete1 f)}}))
+    (transform-node left f)))
 
 (defmethod dataflow-node :extend
   [left [_ & extensions]]
@@ -1891,19 +1901,14 @@
   [left [_ namespace]]
   (let [namespace (name namespace)
         f #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]
-    {:deps [left]
-     :insert {left (transform-insert f)}
-     :insert1 {left (transform-insert1 f)}
-     :delete {left (transform-delete f)}
-     :delete1 {left (transform-delete1 f)}}))
+    (transform-node left f)))
 
 (defmethod columns* :qualify
   [left [_ namespace] _]
   (for [col (full-columns left)]
     (assoc col :k (keyword namespace (name (:k col))))))
 
-;; --
-;; :rename
+;; --;; :rename
 
 (defmethod dataflow-node :rename
   [left [_ renames]]
@@ -1960,11 +1965,7 @@
                              #(bind-fn %1 (expr-fn %2)))
                            #(assoc-if-not-nil %1 binding-or-col (%2 binding-or-col)))) selections)
         select-fn (fn [row] (reduce (fn [r f] (f r row)) {} expr-fns))]
-    {:deps [left]
-     :insert {left (transform-insert select-fn)}
-     :insert1 {left (transform-insert1 select-fn)}
-     :delete {left (transform-delete select-fn)}
-     :delete1 {left (transform-delete1 select-fn)}}))
+    (transform-node left select-fn)))
 
 (defmethod columns* :select
   [left [_ & selections]]
@@ -2207,37 +2208,79 @@
   [left [_ cols binding expr sfn]]
   (let [cols (vec (set cols))
         elfn (expr-row-fn expr)
-        idx-key [::group left cols expr sfn]
+        idx-key [::group left cols binding expr sfn]
         group-fn (apply juxt2 cols)
-        group->row #(zipmap cols %)]
+        group->row #(zipmap cols %)
+        adder (if (= identity expr)
+                (fn [idx row changed]
+                  (let [group (group-fn row)
+                        eset (idx group)
+                        nset (set-conj eset row)]
+                    (if (identical? eset nset)
+                      idx
+                      (do
+                        (vswap! changed conj! group)
+                        (assoc idx group nset)))))
+                (fn [idx row changed]
+                  (let [group (group-fn row)
+                        [rows eset] (idx group)
+                        nrows (set-conj rows row)
+                        nset (if-some [v (elfn row)] (set-conj eset v) eset)]
+                    (if (identical? nrows rows)
+                      idx
+                      (do
+                        (when-not (identical? nset eset)
+                          (vswap! changed conj! group))
+                        (assoc idx group [nrows nset]))))))
+        deleter (if (= identity expr)
+                  (fn [idx row changed]
+                    (let [group (group-fn row)
+                          eset (idx group)
+                          nset (disj eset row)]
+                      (if (identical? eset nset)
+                        idx
+                        (do
+                          (vswap! changed conj! group)
+                          (if (empty? nset)
+                            (dissoc idx group)
+                            (assoc idx group nset))))))
+                  (fn [idx row changed]
+                    (let [group (group-fn row)
+                          [rows eset] (idx group)
+                          nrows (disj rows row)
+                          nset (if-some [v (elfn row)] (disj eset v) eset)]
+                      (if (identical? nrows rows)
+                        idx
+                        (do
+                          (when-not (identical? nset eset)
+                            (vswap! changed conj! group))
+                          (if (empty? nrows)
+                            (dissoc idx group)
+                            (assoc idx group [nrows nset])))))))
+        sfn (if (= identity expr)
+              sfn
+              #(sfn (nth % 1)))]
     {:deps [left]
      :extras [idx-key]
      :insert {left (fn [db rows inserted _inserted1 deleted _deleted1]
                      (let [idx (db idx-key {})
                            changed (volatile! (transient #{}))
                            nidx (reduce
-                                  (fn [idx row]
-                                    (let [group (group-fn row)
-                                          eset (idx group)
-                                          nset (if-some [v (elfn row)] (set-conj eset v) eset)]
-                                      (if (identical? eset nset)
-                                        idx
-                                        (do
-                                          (vswap! changed conj! group)
-                                          (assoc idx group nset)))))
+                                  #(adder %1 %2 changed)
                                   idx rows)
                            db (assoc db idx-key nidx)
                            _ (vswap! changed persistent!)
 
                            old-rows (keep
                                       (fn [group]
-                                        (when-some [s (idx group)]
-                                          (assoc (group->row group) binding (sfn s))))
+                                        (when-some [eret (idx group)]
+                                          (assoc (group->row group) binding (sfn eret))))
                                       @changed)
-                           new-rows (mapv
+
+                           new-rows (keep
                                       (fn [group]
-                                        (when-some [s (nidx group)]
-                                          (assoc (group->row group) binding (sfn s))))
+                                        (when-some [nret (nidx group)]
+                                          (assoc (group->row group) binding (sfn nret))))
                                       @changed)]
 
                        (-> db
@@ -2248,31 +2291,20 @@
                      (let [idx (db idx-key {})
                            changed (volatile! (transient #{}))
                            nidx (reduce
-                                  (fn [idx row]
-                                    (let [group (group-fn row)
-                                          eset (idx group)
-                                          v (elfn row)
-                                          nset (if (some? v) (disj eset v) eset)]
-                                      (if (identical? eset nset)
-                                        idx
-                                        (do
-                                          (vswap! changed conj! group)
-                                          (if (empty? nset)
-                                            (dissoc idx group)
-                                            (assoc idx group nset))))))
+                                  #(deleter %1 %2 changed)
                                   idx rows)
                            db (assoc db idx-key nidx)
                            _ (vswap! changed persistent!)
 
                            old-rows (keep
                                       (fn [group]
-                                        (when-some [eset (idx group)]
-                                          (assoc (group->row group) binding (sfn eset))))
+                                        (when-some [eret (idx group)]
+                                          (assoc (group->row group) binding (sfn eret))))
                                       @changed)
                            new-rows (keep
                                       (fn [group]
-                                        (when-some [nset (nidx group)]
-                                          (assoc (group->row group) binding (sfn nset))))
+                                        (when-some [nret (nidx group)]
+                                          (assoc (group->row group) binding (sfn nret))))
                                       @changed)]
                        (-> db
                            (deleted old-rows)
@@ -2280,8 +2312,10 @@
 
 (defn row-count
   "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
-  []
-  {:custom-node (fn [left cols [binding]] (conj left [::group cols binding identity count]))})
+  ([]
+   {:custom-node (fn [left cols [binding]] (conj left [::group cols binding identity count]))})
+  ([expr]
+   {:custom-node (fn [left cols [binding]] (conj left [::group cols binding [:if expr ::%] count]))}))
 
 ;; --
 ;; greatest / least
@@ -2509,7 +2543,7 @@
     (vector? expr)
     (let [[f & args] expr]
       (if (#{count 'count `count} f)
-        (row-count)
+        (apply row-count args)
         (apply f args)))
 
     :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr}))))
@@ -2588,13 +2622,14 @@
         join-clause (zipmap cols cols)
         [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
     (if (seq custom-nodes)
-      (let [joins (concat (for [node custom-nodes] [:left-join node join-clause])
+      (let [joins (concat (for [node custom-nodes] [:join node join-clause])
                           (when (seq standard-aggs) [[:join (conj left [::generic-agg cols standard-aggs]) join-clause]]))
-            left (reduce conj (conj left (into [:select] cols)) joins)]
+            left (conj left (into [:select] cols))
+            left (reduce conj left joins)]
         {:deps [left]
          :pass true
          :insert {left pass-through-insert}
-         :delete {left pass-through-delete}})
+         :delete {left (fn [db rows _ _ d _] (d db rows) )}})
       (dataflow-node left [::generic-agg cols standard-aggs]))))
 
 (defmethod columns* :agg
@@ -2664,8 +2699,8 @@
   [left [_ & checks]]
   (let [f (apply comp (map (partial check->pred left) (reverse checks)))]
     {:deps [left]
-     :insert1 {left (transform-insert1 f)}
-     :delete1 {left (transform-delete1 f)}}))
+     :insert1 {left (fn [db row _ _ _ _] (f row) db)}
+     :delete1 {left (fn [db row _ _ _ _] (f row) db)}}))
 
 ;; --
 ;; :constrain

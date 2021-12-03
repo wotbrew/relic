@@ -1602,6 +1602,7 @@
   [left f]
   (let [idx-key [::transform left f]]
     {:deps [left]
+     :extras [idx-key]
      :insert1 {left (fn [db row _inserted inserted1 _deleted _deleted1]
                       (let [new-row (f row)
                             idx (db idx-key {})
@@ -1952,6 +1953,7 @@
                  (empty? ns) (do (deleted new-row) (dissoc idx new-row))
                  :else (assoc idx new-row ns))))]
     {:deps [left]
+     :extras [idx-key]
      :insert {left (fn [db rows inserted _inserted1 _deleted _deleted1]
                      (let [idx (db idx-key {})
                            added (volatile! (transient #{}))

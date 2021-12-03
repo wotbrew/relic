@@ -1932,13 +1932,58 @@
 ;; --
 ;; :expand
 
+(defn- expand-node
+  [left xf]
+  (let [idx-key [::expand left xf]
+        i1 (fn [idx inserted row new-row]
+             (let [s (idx new-row #{})
+                   ns (conj s row)]
+               (if (identical? s ns)
+                 idx
+                 (let [idx (assoc idx new-row ns)]
+                   (when (empty? s)
+                     (inserted new-row))
+                   idx))))
+        d1 (fn [idx deleted row new-row]
+             (let [s (idx new-row #{})
+                   ns (disj s row)]
+               (cond
+                 (identical? s ns) idx
+                 (empty? ns) (do (deleted new-row) (dissoc idx new-row))
+                 :else (assoc idx new-row ns))))]
+    {:deps [left]
+     :insert {left (fn [db rows inserted _inserted1 _deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           added (volatile! (transient #{}))
+                           i! #(vswap! added conj! %)
+                           nidx (reduce (fn [idx row]
+                                          (let [new-rows (into [] xf [row])]
+                                            (reduce #(i1 %1 i! row %2) idx new-rows)))
+                                        idx rows)
+                           db (assoc db idx-key nidx)
+                           added (persistent! @added)]
+                       (if (seq added)
+                         (inserted db added)
+                         db)))}
+     :delete {left (fn [db rows _inserted _inserted1 deleted _deleted1]
+                     (let [idx (db idx-key {})
+                           deleted-rows (volatile! (transient #{}))
+                           d! #(vswap! deleted-rows conj! %)
+                           nidx (reduce (fn [idx row]
+                                          (let [new-rows (into [] xf [row])]
+                                            (reduce #(d1 %1 d! row %2) idx new-rows)))
+                                        idx rows)
+                           db (assoc db idx-key nidx)
+                           deleted-rows (persistent! @deleted-rows)]
+                       (if (seq deleted-rows)
+                         (deleted db deleted-rows)
+                         db)))}}))
+
 (defmethod dataflow-node :expand
   [left [_ & expansions]]
   (let [exp-xforms (mapv expand-form-xf expansions)
         exp-xf (apply comp (rseq exp-xforms))]
-    {:deps [left]
-     :insert {left (fn [db rows inserted _inserted1 _deleted _deleted1] (inserted db (into [] exp-xf rows)))}
-     :delete {left (fn [db rows _inserted _inserted1 deleted _deleted1] (deleted db (into [] exp-xf rows)))}}))
+    (expand-node left exp-xf)))
 
 (defmethod columns* :expand
   [left [_ & expansions]]
@@ -2038,58 +2083,6 @@
   (full-columns left))
 
 ;; --
-;; :join
-
-(defmethod dataflow-node :join
-  [left [_ right clause]]
-  (let [left-exprs (set (keys clause))
-        left (conj left (into [:hash] left-exprs))
-        right-path-fn (apply juxt2 (map expr-row-fn left-exprs))
-
-        right-exprs (map clause left-exprs)
-        right (conj right (into [:hash] right-exprs))
-        left-path-fn (apply juxt2 (map expr-row-fn right-exprs))
-        join-row merge]
-    {:deps [left right]
-     :insert {left (fn [db rows inserted _inserted1 _deleted _deleted1]
-                     (let [idx (db right)
-                           matches (for [row rows
-                                         :let [path (right-path-fn row)]
-                                         match (seek-n idx path)]
-                                     (join-row row match))]
-                       (inserted db matches)))
-              right (fn [db rows inserted _inserted1 _deleted _deleted1]
-                      (let [idx (db left)
-                            matches (for [row rows
-                                          :let [path (left-path-fn row)]
-                                          match (seek-n idx path)]
-                                      (join-row match row))]
-                        (inserted db matches)))}
-     :delete {left (fn [db rows _inserted _inserted1 deleted _deleted1]
-                     (let [idx (db right)
-                           matches (for [row rows
-                                         :let [path (right-path-fn row)]
-                                         match (seek-n idx path)]
-                                     (join-row row match))]
-                       (deleted db matches)))
-              right (fn [db rows _inserted _inserted1 deleted _deleted1]
-                      (let [idx (db left)
-                            matches (for [row rows
-                                          :let [path (left-path-fn row)]
-                                          match (seek-n idx path)]
-                                      (join-row match row))]
-                        (deleted db matches)))}}))
-
-(defmethod columns* :join
-  [left [_ right]]
-  (let [left-cols (full-columns left)
-        right-cols (full-columns right)
-        right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
-    (concat
-      (remove (comp right-idx :k) left-cols)
-      right-cols)))
-
-;; --
 ;; join as coll, implementation detail, a royal pain. Can somebody with a PHD help me?!
 (defmethod dataflow-node ::join-as-coll
   [left [_ right clause k]]
@@ -2138,6 +2131,8 @@
      :delete {left (fn join-as-coll-left-delete [db rows _inserted _inserted1 deleted _deleted1]
                      (let [mem (db mem-key {})
                            matches (find-left-rows mem right-path-fn rows)
+                           row-set (set rows)
+                           matches (filter #(row-set (dissoc % k)) matches)
                            mem2 (reduce (fn [mem row] (disjoc mem (right-path-fn row) row)) mem matches)]
                        (-> db
                            (assoc mem-key mem2)
@@ -2159,28 +2154,39 @@
                             (inserted inserts))))}}))
 
 ;; --
+;; :join
+
+(defmethod dataflow-node :join
+  [left [_ right clause]]
+  (let [jac (conj left
+                  [::join-as-coll right clause ::join]
+                  [:where [seq ::join]])]
+    (expand-node jac (mapcat (fn [row]
+                               (let [rrows (::join row)
+                                     row (dissoc row ::join)]
+                                 (mapv (fn [rrow] (merge row rrow)) rrows)))))))
+
+(defmethod columns* :join
+  [left [_ right]]
+  (let [left-cols (full-columns left)
+        right-cols (full-columns right)
+        right-idx (reduce #(assoc %1 (:k %2) %2) {} right-cols)]
+    (concat
+      (remove (comp right-idx :k) left-cols)
+      right-cols)))
+
+;; --
 ;; :left-join
 
 (defmethod dataflow-node :left-join
   [left [_ right clause]]
-  (let [join-as-coll (conj left [::join-as-coll right clause ::left-join])
-        join-row merge
-        xf (fn [rf]
-             (fn
-               ([acc] (rf acc))
-               ([acc row]
-                (let [rrows (::left-join row)
-                      row (dissoc row ::left-join)]
-                  (if (empty? rrows)
-                    (rf acc row)
-                    (reduce (fn [acc rrow] (rf acc (join-row row rrow))) acc rrows))))))]
-    {:deps [join-as-coll]
-     :insert {join-as-coll (fn left-join-insert [db rows inserted _inserted1 _deleted _deleted1]
-                             (->> (into [] xf rows)
-                                  (inserted db)))}
-     :delete {join-as-coll (fn left-join-delete [db rows _inserted _inserted1 deleted _deleted1]
-                             (->> (into [] xf rows)
-                                  (deleted db)))}}))
+  (let [jac (conj left [::join-as-coll right clause ::join])]
+    (expand-node jac (mapcat (fn [row]
+                               (let [rrows (::join row)
+                                     row (dissoc row ::join)]
+                                 (if (empty? rrows)
+                                   [row]
+                                   (mapv (fn [rrow] (merge row rrow)) rrows))))))))
 
 (defmethod columns* :left-join
   [left [_ right _clause]]

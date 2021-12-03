@@ -616,5 +616,38 @@
     (is (= #{{:a 1}} (rel/q db B)))
     (is (= #{{:a 1}} (rel/what-if db B [:delete-exact :A {:a 42}])))))
 
+(deftest narrowing-expand-glitch-test
+  (let [A [[:table :A]]
+        B [[:from A] [:expand [[:b] :b]]]
+        db (rel/transact
+             (rel/materialize {} B)
+             {A [{:b [{:b 1}]}
+                 {:b [{:b 1}, {:b 2}]}]})]
+    (is (= #{{:b 1} {:b 2}} (rel/q db B)))
+    (is (= #{{:b 1}} (rel/what-if db B [:delete-exact A {:b [{:b 1}, {:b 2}]}])))))
+
+(deftest narrowing-join-glitch-test
+  (let [A [[:table :A]]
+        B [[:table :B]]
+        J [[:from A] [:join B {:a :a}]]
+        db (rel/transact
+             (rel/materialize {} J)
+             {A [{:a 1} {:a 1, :b 2}]
+              B [{:a 1, :b 2}]})]
+    (is (= #{{:a 1 :b 2}} (rel/q db J)))
+    (is (= #{{:a 1}} (binding [rel/*trace* true] (rel/what-if db A [:delete-exact A {:a 1, :b 2}]))))
+    (is (= #{{:a 1 :b 2}} (binding [rel/*trace* true] (rel/what-if db J [:delete-exact A {:a 1, :b 2}]))))))
+
+(deftest narrowing-left-join-glitch-test
+  (let [A [[:table :A]]
+        B [[:table :B]]
+        J [[:from A] [:left-join B {:a :a}]]
+        db (rel/transact
+             (rel/materialize {} J)
+             {A [{:a 1} {:a 1, :b 2}]
+              B [{:a 1, :b 2}]})]
+    (is (= #{{:a 1 :b 2}} (rel/q db J)))
+    (is (= #{{:a 1 :b 2}} (rel/what-if db J [:delete-exact A {:a 1, :b 2}])))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

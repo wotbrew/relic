@@ -635,8 +635,8 @@
              {A [{:a 1} {:a 1, :b 2}]
               B [{:a 1, :b 2}]})]
     (is (= #{{:a 1 :b 2}} (rel/q db J)))
-    (is (= #{{:a 1}} (binding [rel/*trace* true] (rel/what-if db A [:delete-exact A {:a 1, :b 2}]))))
-    (is (= #{{:a 1 :b 2}} (binding [rel/*trace* true] (rel/what-if db J [:delete-exact A {:a 1, :b 2}]))))))
+    (is (= #{{:a 1}} (rel/what-if db A [:delete-exact A {:a 1, :b 2}])))
+    (is (= #{{:a 1 :b 2}} (rel/what-if db J [:delete-exact A {:a 1, :b 2}])))))
 
 (deftest narrowing-left-join-glitch-test
   (let [A [[:table :A]]

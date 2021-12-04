@@ -172,7 +172,7 @@ It can be convenient to express certain constraints on directly on the table, th
 (def Order 
  [[:table :Order 
    {:req [:customer-id], 
-    :fk [[Order {:customer-id :customer-id} {:cascade true}]
+    :fk [[Customer {:customer-id :customer-id} {:cascade true}]
 ``` 
 
 

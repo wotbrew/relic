@@ -30,8 +30,9 @@ Are you spending too much time writing mechanical wiring and glue? That has *not
 - like SQL for clojure data, but _actually composes_.
 - munge with joy via the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
-- relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance..
+- relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance.
 - __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](#constraint-reference).
+- absolutely jam packed with vectors, because [] is [clearly better](https://github.com/videlalvaro/clochure) than (), you _don't even need to hold shift_.
 
 Definitely not at all like the other in-memory databases in clojure. this time its different, really.
 

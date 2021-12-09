@@ -1,4 +1,6 @@
-(ns com.wotbrew.relic.dataflow)
+(ns com.wotbrew.relic.dataflow
+  (:require [com.wotbrew.relic.generic-agg-index :as gai]
+            [clojure.set :as set]))
 
 (defn- raise
   ([msg] (throw (ex-info msg {})))
@@ -14,7 +16,7 @@
   (cond
     (= [] expr) (constantly [])
 
-    (= ::% expr) identity
+    (= :com.wotbrew.relic/% expr) identity
 
     (vector? expr)
     (let [[f & args] expr
@@ -34,15 +36,15 @@
                            (fn [row]
                              (when (c row)
                                (t row))))])
-            (= f ::env)
+            (= f :com.wotbrew.relic/env)
             (let [[k not-found] args]
               (track-env-dep k)
               [(fn [row]
                  (-> row ::env (get k not-found)))])
 
-            (= f ::get) (let [[k not-found] args] [(fn [row] (row k not-found))])
+            (= f :com.wotbrew.relic/get) (let [[k not-found] args] [(fn [row] (row k not-found))])
 
-            (= f ::esc) (let [[v] args] [(constantly v)])
+            (= f :com.wotbrew.relic/esc) (let [[v] args] [(constantly v)])
             :else [f args])
           args (map row-fn args)]
       (case (count args)
@@ -86,7 +88,7 @@
 
 (defn bind-fn [binding]
   (if (keyword? binding)
-    (if (= ::* binding)
+    (if (= :com.wotbrew.relic/* binding)
       #(merge % %2)
       #(assoc-if-not-nil % binding %2))
     #(merge % (select-keys %2 binding))))
@@ -104,7 +106,9 @@
 (defn extend-form-cols [form]
   (let [[binding] form]
     (if (keyword? binding)
-      #{binding}
+      (if (= :com.wotbrew.relic/* binding)
+        (raise "Cannot use ::rel/* in select expressions yet, use :extend.")
+        #{binding})
       (set binding))))
 
 (defn extend-fn [extensions]
@@ -131,7 +135,7 @@
 
 (defn req-col-check [table-key col]
   {:pred [some? col],
-   :error [str [::esc col] " required by " [::esc table-key] ", but not found."]})
+   :error [str [:com.wotbrew.relic/esc col] " required by " [:com.wotbrew.relic/esc table-key] ", but not found."]})
 
 (defn- check-pred [relvar check]
   (if (map? check)
@@ -170,7 +174,7 @@
 (defn table*-relvar?
   [relvar]
   (case (count relvar)
-    1 (= ::table* (operator (head-stmt relvar)))
+    1 (= ::table (operator (head-stmt relvar)))
     false))
 
 (defn unwrap-from [relvar]
@@ -187,6 +191,10 @@
       (cond
         (table-relvar? relvar) relvar
         (table*-relvar? relvar) relvar))))
+
+(defn unwrap-table-key [relvar]
+  (let [[_ table-key] (some-> (unwrap-table relvar) head-stmt)]
+    table-key))
 
 (defn- dissoc-in
   "Recursive dissoc, like assoc-in.
@@ -239,20 +247,33 @@
 
 ;; cross platform mutable set
 (defn- mutable-set [] (volatile! (transient #{})))
-(defn- add-to-mutable-set [mset v] (vswap! mset conj! v))
+(defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
+(defn- del-from-mutable-set [mset v] (vswap! mset disj! v) mset)
 (defn- iterable-mut-set [mset] (persistent! @mset))
 
-(defn- fast-key [value] value)
+;; cross platform mutable list
+(defn- mutable-list [] (volatile! (transient [])))
+(defn- add-to-mutable-list [mlist v] (vswap! mlist conj! v) mlist)
+(defn- iterable-mut-list [mlist] (persistent! @mlist))
 
 (def ^:dynamic *ids* nil)
 (def ^:dynamic *idn* nil)
 
+(defn get-id [graph relvar]
+  ((::ids graph {}) relvar))
+
+(defn get-node [graph relvar]
+  (graph (get-id graph relvar)))
+
 (defn id [relvar]
   (or (get *ids* relvar)
-      (let [n *idn*]
-        (set! *ids* (assoc *ids* relvar n))
-        (set! *idn* (inc n))
-        n)))
+      (if-not *idn*
+        relvar
+        (let [n *idn*
+              nid n]
+          (set! *ids* (assoc *ids* relvar nid))
+          (set! *idn* (inc n))
+          nid))))
 
 (defn mem
   [relvar]
@@ -308,18 +329,16 @@
 
 (defn transform-unsafe
   "Like transform but with no narrowing protection, faster but only use if you guarantee that inputs rows do not converge
-  on the same output rows."
+  on the same output rows, otherwise you'll get glitches."
   [graph self left f]
   (let [xf (map f)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward] (forward db (eduction xf inserted) (eduction xf deleted))))}))
 
 (defn union
-  "Set union"
+  "Set union, rows in either left or right are flowed."
   [graph self left right]
-  (let [left (conj left [:set])
-        right (conj right [:set])
-        [mgetl] (mem left)
+  (let [[mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [left right]
      :flow (flow left (fn [db inserted deleted forward]
@@ -332,7 +351,7 @@
                            (forward db inserted deleted))))}))
 
 (defn intersection
-  "Set intersection"
+  "Set intersection, rows that are both in left and right are flowed."
   [graph self left right]
   (let [left (conj left [:set])
         right (conj right [:set])
@@ -349,7 +368,7 @@
                            (forward db inserted deleted))))}))
 
 (defn difference
-  "Set difference"
+  "Set difference, rows that are in left and not right are flowed."
   [graph self left right]
   (let [left (conj left [:set])
         right (conj right [:set])
@@ -380,10 +399,17 @@
   "A dataflow node that runs the callbacks on-insert / on-delete (presumably for side effects). Used for constraints."
   [graph self left on-insert on-delete]
   {:deps [left]
-   :flow (flow left (fn [db inserted deleted forward]
-                      (run! on-delete deleted)
-                      (run! on-insert inserted)
-                      (forward db inserted deleted)))})
+   :flow (flow left
+               (fn [db inserted deleted forward]
+                 (let [inserted (if (coll? inserted)
+                                  (do (run! on-insert inserted) inserted)
+                                  (eduction
+                                    (map (fn [x] (on-insert x) x)) inserted))
+                       deleted (if (coll? deleted)
+                                 (do (run! on-delete deleted) deleted)
+                                 (eduction
+                                   (map (fn [x] (on-delete x) x)) deleted))]
+                   (forward db inserted deleted))))})
 
 (defn where
   "A dataflow node that removes rows that do not meet (pred row) before flowing."
@@ -412,12 +438,14 @@
      :flow (flow left (fn [db inserted deleted forward] (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn find-hash-index
-  "Looks up an index that allows seeking on the exprs, returns a pair [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
+  "Looks up an index that allows seeking on the exprs, returns a tuple [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
   [graph left exprs]
   (let [fns (mapv row-fn exprs)
         path (if (empty? fns) (constantly []) (apply juxt fns))]
-    [(conj left (into [:hash] exprs))]
-    (fn [idx row] (get-in idx (path row)))))
+    [(conj left (into [:hash] exprs))
+     (if (seq fns)
+       (fn [idx row] (get-in idx (path row)))
+       (fn [idx _] (when idx (idx nil))))]))
 
 (defn join
   "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).
@@ -491,8 +519,12 @@
                                   (assoc idx row nj))))
                             nidx
                             inserted)
+
+                          adds (iterable-mut-set adds)
+                          dels (iterable-mut-set dels)
+
                           db (mset db nidx)]
-                      (forward db (iterable-mut-set adds) (iterable-mut-set dels))))
+                      (forward db adds dels)))
              right (fn [db inserted deleted forward]
                      (let [idx (mget db {})
                            lidx (mgetl db {})
@@ -514,34 +546,42 @@
                              idx
                              lrows)
 
+                           adds (iterable-mut-set adds)
+                           dels (iterable-mut-set dels)
+
                            db (mset db nidx)]
-                       (forward db (iterable-mut-set adds) (iterable-mut-set dels)))))}))
+                       (forward db adds dels))))}))
 
 (defn left-join [graph self left seekl right seekr]
   (conj
     left
     [join-coll seekl right seekr]
-    [expand (fn [{:keys [coll]}] (if (seq coll) coll [nil]))]
-    [transform-unsafe (fn [{:keys [left right]}] (->Joined (:row left) right))]))
+    [expand (fn [{:keys [left coll]}]
+              (if (seq coll)
+                coll
+                [nil]))]
+    [transform-unsafe #(update % :left :left)]))
 
 (defn save-set [graph self left]
   (let [[mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
-                        (let [s (mget db)
+                        (let [s (mget db #{})
                               s (transient s)
                               s (reduce disj! s deleted)
                               s (reduce conj! s inserted)
                               db (mset db (persistent! s))]
                           (forward db inserted deleted))))
-     :provide (fn [db] (mget db))}))
+     :provide (fn [db] (not-empty (mget db)))}))
 
 (defn- enumerate-nested-map-of-sets [m depth]
-  (loop [depth depth
-         coll (vals m)]
-    (case depth
-      0 (eduction cat coll)
-      (recur (dec depth) (eduction (mapcat vals) coll)))))
+  (if (= 0 depth)
+    (eduction cat (vals m))
+    (loop [depth depth
+           coll (vals m)]
+      (case depth
+        0 (eduction cat coll)
+        (recur (dec depth) (eduction (mapcat vals) coll))))))
 
 (defn save-hash [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
@@ -553,9 +593,9 @@
                         (let [m (mget db)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
-                              db (mset db m m)]
+                              db (mset db m)]
                           (forward db inserted deleted))))
-     :provide (fn [db] (when-some [m (mget db)] (enumerate-nested-map-of-sets m (count fns))))}))
+     :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-sets m (count fns))))}))
 
 (defn save-btree [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
@@ -570,7 +610,7 @@
                               m (reduce add-row m inserted)
                               db (mset db m)]
                           (forward db inserted deleted))))
-     :provide (fn [db] (when-some [m (mget db)] (enumerate-nested-map-of-sets m (count fns))))}))
+     :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-sets m (count fns))))}))
 
 (defn- enumerate-nested-map-of-maps [m depth]
   (loop [depth depth
@@ -579,21 +619,153 @@
       0 coll
       (recur (dec depth) (eduction (mapcat vals) coll)))))
 
-(defn save-unique [graph self left fns collision-fn]
+(def ^:private ^:dynamic *upsert-collisions* nil)
+
+(defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        replace-fn (fn [old-row row] (if (nil? old-row) row (collision-fn old-row row)))
+        raise-violation (fn [old-row new-row] (raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
+        upsert-collision
+        (if-some [[_ table-key] (some-> (unwrap-table left) head-stmt)]
+          (fn [old-row new-row]
+            (set! *upsert-collisions* (update *upsert-collisions* table-key set-conj old-row))
+            new-row)
+          raise-violation)
+        on-collision (fn on-collision [old-row new-row]
+                       (if *upsert-collisions*
+                         (upsert-collision old-row new-row)
+                         (raise-violation old-row new-row)))
+        replace-fn (fn [old-row row] (if (nil? old-row) row (on-collision old-row row)))
         add-row (fn [m row] (update-in m (path row) replace-fn row))
         del-row (fn [m row] (dissoc-in m (path row)))
         [mget mset] (mem self)]
-    {:flow (flow left (fn [db inserted deleted forward]
+    {:deps [left]
+     :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
                           (forward db inserted deleted))))
-     :provide (fn [db] (when-some [m (mget db)] (enumerate-nested-map-of-maps m (count fns))))}))
+     :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-maps m (count fns))))}))
 
-(defn group [graph self left cols binding elfn sfn]
+(def ^:dynamic *foreign-key-violations* nil)
+(def ^:dynamic *foreign-key-cascades* nil)
+
+(defn- bad-fk [left right clause row cascade]
+  (when (and cascade *foreign-key-cascades*)
+    (set! *foreign-key-cascades* (update *foreign-key-cascades* [left right clause] set-conj (dissoc row ::fk))))
+  (if *foreign-key-violations*
+    (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] set-conj (dissoc row ::fk)))
+    (raise "Foreign key violation" {:relvar left
+                                    :references right
+                                    :clause clause
+                                    :row (dissoc row ::fk)})))
+
+(defn- good-fk [left right clause row cascade]
+  (when (and cascade *foreign-key-cascades*)
+    (set! *foreign-key-cascades* (disjoc *foreign-key-cascades* [left right clause] (dissoc row ::fk))))
+  (when *foreign-key-violations*
+    (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left right clause] (dissoc row ::fk)))))
+
+(defn fk [graph self left seekl right seekr clause origin references {:keys [cascade]}]
+  (let [good #(good-fk origin references clause % cascade)
+        bad #(bad-fk origin references clause % cascade)
+        on-insert (fn [{row :left
+                        :keys [coll]
+                        :as m}]
+                    (if (empty? coll)
+                      (bad row)
+                      (good row)))]
+    (conj (pop left)
+          [runf identity (fn [row]
+                           (good row))]
+          (peek left)
+          [join-coll seekl right seekr]
+          [runf on-insert identity]
+          [transform-unsafe :left])))
+
+(defn- flow-noop [db & _]
+  db)
+
+(defn- flow-pass [db inserted deleted forward]
+  (forward db inserted deleted))
+
+(defn table [graph self _ table-key & [opts]]
+  (if opts
+    (let [{:keys [req
+                  check
+                  unique
+                  fk]} opts
+          req-checks (map (partial req-col-check table-key) req)
+          check-stmt (into [:check] req-checks)
+          check-stmt (into check-stmt check)
+          check-stmt (when-not (= 1 (count check-stmt)) check-stmt)
+          fk-stmts (map (fn [[relvar clause opts]] [:fk relvar clause opts]) fk)
+          unique-stmts (map (fn [cols] (into [:unique] cols)) unique)
+          constrain (when (or check-stmt (seq fk-stmts) (seq unique-stmts))
+                      (cond-> [:constrain]
+                              check-stmt (conj check-stmt)
+                              (seq fk-stmts) (into fk-stmts)
+                              (seq unique-stmts) (into unique-stmts)))
+          left [[::table table-key]]
+          left (if constrain
+                 (conj left constrain)
+                 left)]
+      {:deps [left]
+       :flow (flow left flow-pass)})
+    (let [left [[::table table-key]]]
+      {:deps [left]
+       :flow (flow left flow-pass)})))
+
+(defn add-implicit-joins [thunk]
+  (binding [*env-deps* #{}]
+    (let [relvar (thunk)
+          env-deps *env-deps*]
+      (if (empty? env-deps)
+        relvar
+        (let [left (left-relvar relvar)
+              stmt (head-stmt relvar)]
+          (conj left
+                [:left-join
+                 (conj Env [:select [::env [select-keys ::env env-deps]]])
+                 {}]
+                stmt
+                [:without ::env]))))))
+
+(defn- join-merge [{:keys [left, right]}] (merge left right))
+
+(defn- add-join [left right clause graph]
+  (add-implicit-joins
+    (fn []
+      (let [[left seekl] (find-hash-index graph left (keys clause))
+            [right seekr] (find-hash-index graph right (vals clause))]
+        (conj left [join seekl right seekr] [transform join-merge])))))
+
+(defn- add-left-join [left right clause graph]
+  (add-implicit-joins
+    (fn []
+      (let [[left seekl] (find-hash-index graph left (keys clause))
+            [right seekr] (find-hash-index graph right (vals clause))]
+        (conj left
+              [left-join seekl right seekr]
+              [transform join-merge])))))
+
+(defn- project-fn [kvec]
+  (case (count kvec)
+    0 (constantly {})
+    #(select-keys % kvec)))
+
+(defn- pass [graph _ left]
+  {:deps [left]
+   :flow (flow left flow-pass)})
+
+(defrecord Grouped [group value])
+
+(defn bind-group
+  [binding f]
+  (fn [{:keys [group value]}]
+    (assoc group binding (f value))))
+
+(defn group [graph self left cols elfn]
   (let [cols (vec (set cols))
         group-fn (if (empty? cols) (constantly []) (apply juxt cols))
         group->row #(zipmap cols %)
@@ -641,8 +813,8 @@
                               (assoc idx group [nrows nset])))))))
 
         sfn (if (= identity elfn)
-              sfn
-              #(sfn (nth % 1)))
+              identity
+              #(nth % 1))
 
         [mget mset] (mem self)]
     {:deps [left]
@@ -664,7 +836,7 @@
                        (keep
                          (fn [group]
                            (when-some [entry (idx group)]
-                             (assoc (group->row group) binding (sfn entry)))))
+                             (->Grouped (group->row group) (sfn entry)))))
                        changed)
 
                      inserted
@@ -672,82 +844,238 @@
                        (keep
                          (fn [group]
                            (when-some [entry (nidx group)]
-                             (assoc (group->row group) binding (sfn entry)))))
+                             (->Grouped (group->row group) (sfn entry)))))
                        changed)]
                  (forward db inserted deleted))))}))
 
-(def ^:dynamic *foreign-key-violations* nil)
-(def ^:dynamic *foreign-key-cascades* nil)
+(defn sorted-group [graph self left cols elfn]
+  (let [cols (vec (set cols))
+        group-fn (if (empty? cols) (constantly []) (apply juxt cols))
+        group->row #(zipmap cols %)
+        add-row (fn [coll row]
+                  (if coll
+                    (update coll (elfn row) set-conj row)
+                    (update (sorted-map) (elfn row) set-conj row)))
+        rem-row (fn [coll row]
+                  (if coll
+                    (disjoc coll (elfn row) row)
+                    (sorted-map)))
 
-(defn- bad-fk [left right clause row cascade]
-  (when (and cascade *foreign-key-cascades*)
-    (set! *foreign-key-cascades* (update *foreign-key-cascades* [left right clause] set-conj (dissoc row ::fk))))
-  (if *foreign-key-violations*
-    (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] set-conj (dissoc row ::fk)))
-    (raise "Foreign key violation" {:relvar left
-                                    :references right
-                                    :clause clause
-                                    :row (dissoc row ::fk)})))
+        adder (fn [idx row changed]
+                (let [group (group-fn row)
+                      ev (idx group)
+                      nv (add-row ev row)]
+                  (if (identical? ev nv)
+                    idx
+                    (do
+                      (add-to-mutable-set changed group)
+                      (assoc idx group nv)))))
 
-(defn- good-fk [left right clause row cascade]
-  (when (and cascade *foreign-key-cascades*)
-    (set! *foreign-key-cascades* (disjoc *foreign-key-cascades* [left right clause] (dissoc row ::fk))))
-  (when *foreign-key-violations*
-    (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left right clause] (dissoc row ::fk)))))
+        deleter (fn [idx row changed]
+                  (let [group (group-fn row)
+                        ev (idx group)
+                        nv (rem-row ev row)]
+                    (if (identical? ev nv)
+                      idx
+                      (do
+                        (del-from-mutable-set changed group)
+                        (if (empty? nv)
+                          (dissoc idx group)
+                          (assoc idx group nv))))))
 
-(defn fk [graph self left seekl right seekr clause {:keys [cascade]}]
-  (let [_ (when (and cascade (not (unwrap-table left)))
-            (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar left, :references right, :clause clause}))
-        on-insert (fn [{:keys [row coll]}]
-                    (if (empty? coll)
-                      (bad-fk left right clause row cascade)
-                      (good-fk left right clause row cascade)))
-        on-delete (fn [{:keys [row]}]
-                    (good-fk left right clause row cascade))]
-    (conj left
-          [join-coll seekl right seekr]
-          [runf on-insert on-delete]
-          [transform-unsafe :row])))
+        sfn identity
+        [mget mset] (mem self)]
+    {:deps [left]
+     :flow (flow
+             left
+             (fn [db inserted deleted forward]
+               (let [idx (mget db {})
 
-(defn add-implicit-joins [thunk]
-  (binding [*env-deps* #{}]
-    (let [relvar (thunk)
-          env-deps *env-deps*]
-      (if (empty? env-deps)
-        relvar
-        (let [left (left-relvar relvar)
-              stmt (head-stmt relvar)]
-          (conj left
-                [:left-join
-                 (conj Env [:select [::env [select-keys ::env env-deps]]])]
-                stmt
-                [:without ::env]))))))
+                     changed (mutable-set)
 
-(defn- join-merge [{:keys [left, right]}] (merge left right))
+                     nidx (reduce #(deleter %1 %2 changed) idx deleted)
+                     nidx (reduce #(adder %1 %2 changed) nidx inserted)
+                     db (mset db nidx)
 
-(defn- add-join [left right clause graph]
-  (add-implicit-joins
-    (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause))
-            [right seekr] (find-hash-index graph right (vals clause))]
-        (conj left [join seekl right seekr] [transform join-merge])))))
+                     changed (iterable-mut-set changed)
 
-(defn- add-left-join [left right clause graph]
-  (add-implicit-joins
-    (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause))
-            [right seekr] (find-hash-index graph right (vals clause))]
-        (conj left [left-join seekl right seekr] [transform join-merge])))))
+                     deleted
+                     (eduction
+                       (keep
+                         (fn [group]
+                           (when-some [entry (idx group)]
+                             (->Grouped (group->row group) (sfn entry)))))
+                       changed)
 
-(defn to-dataflow* [graph relvar]
+                     inserted
+                     (eduction
+                       (keep
+                         (fn [group]
+                           (when-some [entry (nidx group)]
+                             (->Grouped (group->row group) (sfn entry)))))
+                       changed)]
+
+                 (forward db inserted deleted))))}))
+
+(defn row-count
+  "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
+  ([]
+   {:custom-node (fn [left cols [binding]]
+                   (conj left
+                         [group cols identity]
+                         [transform-unsafe (bind-group binding count)]))})
+  ([expr]
+   (let [f (row-fn [:if expr :com.wotbrew.relic/%])]
+     {:custom-node (fn [left cols [binding]]
+                     (conj left
+                           [group cols f]
+                           [transform-unsafe (bind-group binding count)]))})))
+
+;; --
+;; agg expressions e.g [rel/sum :foo]
+
+(defn- agg-expr-agg [expr]
+  (cond
+    (map? expr) expr
+
+    (#{count 'count `count} expr) (row-count)
+
+    (fn? expr) (expr)
+
+    (vector? expr)
+    (let [[f & args] expr]
+      (if (#{count 'count `count} f)
+        (apply row-count args)
+        (apply f args)))
+
+    :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr}))))
+
+;; --
+;;
+
+(defn- agg-form-fn [form]
+  (let [[binding expr] form
+        {:keys [combiner reducer complete]} (agg-expr-agg expr)]
+    (assert (keyword? binding) "Only keyword bindings are not permitted for agg forms")
+    (assert (keyword? binding) "* bindings are not permitted for agg forms")
+    {:complete (if complete (fn [m] (update m binding complete)) identity)
+     :combiner
+     (fn [m a b] (assoc m binding (combiner (binding a) (binding b))))
+     :reducer
+     (fn [m rows] (assoc m binding (reducer rows)))}))
+
+(defn- agg-fns [forms]
+  (case (count forms)
+    1
+    (let [[binding expr] (first forms)
+          agg (agg-expr-agg expr)]
+      (assoc agg :merger #(assoc %1 binding %2)))
+    (let [fs (mapv agg-form-fn forms)
+          reducer-fns (mapv :reducer fs)
+          combiner-fns (mapv :combiner fs)
+          complete-fns (mapv :complete fs)]
+      {:complete (fn [m] (reduce (fn [m f] (f m)) m complete-fns))
+       :reducer (fn [rows] (reduce (fn [m reducer-fn] (reducer-fn m rows)) {} reducer-fns))
+       :combiner (fn [a b] (reduce (fn [m combiner-fn] (combiner-fn m a b)) {} combiner-fns))})))
+
+(defn- realise-collection [maybe-eduction]
+  (if (coll? maybe-eduction)
+    maybe-eduction
+    (vec maybe-eduction)))
+
+(defn generic-agg [graph self left cols aggs]
+  (let [key-fn (project-fn cols)
+        key-xf (map key-fn)
+        {:keys [reducer combiner complete merger]} (agg-fns aggs)
+        complete (or complete identity)
+        merge-fn (or merger merge)
+        empty-idx (gai/index key-fn reducer combiner complete merge-fn 32)
+        [mget mset] (mem self)]
+    {:deps [left]
+     :flow (flow
+             left
+             (fn [db inserted deleted forward]
+               (let [idx (mget db empty-idx)
+                     deleted (realise-collection deleted)
+                     inserted (realise-collection inserted)
+                     ks (into #{} key-xf deleted)
+                     ks (into ks key-xf inserted)
+                     nidx (reduce gai/unindex-row idx deleted)
+                     nidx (reduce gai/index-row nidx inserted)
+                     db (mset db nidx)
+                     old-rows
+                     (eduction
+                       (keep
+                         (fn [k]
+                           (when-some [{:keys [indexed-row]} (idx k)]
+                             @indexed-row)))
+                       ks)
+                     new-rows
+                     (eduction
+                       (keep
+                         (fn [k]
+                           (when-some [{:keys [indexed-row]} (nidx k)]
+                             @indexed-row)))
+                       ks)]
+                 (forward db new-rows old-rows))))}))
+
+(defn- get-custom-agg-node [left cols [_ expr :as agg]]
+  (when-some [n (:custom-node (agg-expr-agg expr))]
+    (n left cols agg)))
+
+(defn agg [graph self left cols aggs]
+  (if (empty? aggs)
+    (conj left [transform (project-fn (vec (set cols)))])
+    (let [cols (vec (set cols))
+          join-clause (zipmap cols cols)
+          [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
+      (case (count custom-nodes)
+        0 (conj left [generic-agg cols standard-aggs])
+        1 (first custom-nodes)
+        (let [joins (concat (for [node custom-nodes]
+                              [:join node join-clause])
+                            (when (seq standard-aggs)
+                              [[:join (conj left [generic-agg cols standard-aggs]) join-clause]]))
+              left (conj left (into [:select] cols))
+              left (reduce conj left joins)]
+          left)))))
+
+(defn- join-expr? [expr] (and (vector? expr) (= :com.wotbrew.relic/join-coll (nth expr 0 nil))))
+(defn- extend-expr [[_ expr]] expr)
+(defn- join-ext? [extension] (join-expr? (extend-expr extension)))
+
+(defn- join-first-expr? [expr] (and (vector? expr) (= :com.wotbrew.relic/join-first (nth expr 0 nil))))
+(defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
+
+(defn split-extensions [extensions]
+  (for [extensions (partition-by (fn [ext] (cond
+                                             (join-ext? ext) :join
+                                             (join-first-ext? ext) :join1
+                                             :else :std)) extensions)]
+    (cond
+      (join-ext? (first extensions))
+      (for [[binding [_ relvar clause]] extensions
+            :let [_ (assert (keyword? binding) "only keyword bindings allowed for join-coll expressions")]]
+        [:join-as-coll relvar clause binding])
+
+      (join-first-ext? (first extensions))
+      (for [[binding [_ relvar clause]] extensions
+            stmt
+            [[:join-as-coll relvar clause ::join-expr]
+             [transform #(assoc-if-not-nil (dissoc % ::join-expr) binding (first (::join-expr %)))]]]
+        stmt)
+
+      :else [(into [:extend*] extensions)])))
+
+(defn to-dataflow* [graph relvar self]
   (let [left (left-relvar relvar)
         stmt (head-stmt relvar)
         operator (operator stmt)]
     (if (fn? operator)
-      (let [[op & args] stmt] (apply op graph relvar left args))
+      (let [[op & args] stmt] (apply op graph self left args))
       (case operator
         :from
-        (let [[_ relvar] stmt] relvar)
+        (let [[_ relvar] stmt] (conj relvar [pass]))
 
         :where
         (let [[_ & exprs] stmt]
@@ -757,31 +1085,62 @@
         (let [[_ & cols] stmt]
           (conj left [transform (without-fn cols)]))
 
+        :join-as-coll
+        (let [[_ right clause binding] stmt]
+          (add-implicit-joins
+            (fn []
+              (let [[left seekl] (find-hash-index graph left (keys clause))
+                    [right seekr] (find-hash-index graph right (vals clause))]
+                (conj left
+                      [join-coll seekl right seekr]
+                      [transform (fn [{:keys [left coll]}]
+                                   (assoc left binding coll))])))))
+
         :join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-join left right clause graph)) left (partition 2 joins)))
+          (reduce (fn [left [right clause]] (add-join left right clause graph)) left (partition-all 2 joins)))
 
         :left-join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-left-join left right clause graph)) left (partition 2 joins)))
+          (reduce (fn [left [right clause]] (add-left-join left right clause graph)) left (partition-all 2 joins)))
 
-        :extend
+        :extend*
         (let [[_ & extends] stmt]
           (add-implicit-joins #(conj left [transform (extend-fn extends)])))
 
+        :extend-unsafe*
+        (let [[_ & extends] stmt]
+          (add-implicit-joins #(conj left [transform-unsafe (extend-fn extends)])))
+
+        :extend
+        (let [[_ & extends] stmt]
+          (if (seq extends)
+            (transduce cat conj left (split-extensions extends))
+            (conj left [pass])))
+
         :expand
         (let [[_ & expansions] stmt]
-          (add-implicit-joins #(conj left [expand (expand-fn expansions)])))
+          (add-implicit-joins #(conj left [expand (expand-fn expansions)] [transform join-merge])))
 
         :select
         (let [[_ & selections] stmt
               cols (filterv keyword? selections)
               extensions (filterv vector? selections)
-              deps (into (set cols) (mapcat extend-form-cols) extensions)
-              project-fn #(select-keys % deps)]
+              deps (vec (into (set cols) (mapcat extend-form-cols) extensions))
+              project (project-fn deps)]
           (if (seq extensions)
-            (add-implicit-joins #(conj left [transform (comp project-fn (extend-fn extensions))]))
-            (conj left [transform project-fn])))
+            (conj left (into [:extend] extensions) [transform project])
+            (conj left [transform project])))
+
+        :select-unsafe
+        (let [[_ & selections] stmt
+              cols (filterv keyword? selections)
+              extensions (filterv vector? selections)
+              deps (vec (into (set cols) (mapcat extend-form-cols) extensions))
+              project (project-fn deps)]
+          (if (seq extensions)
+            (add-implicit-joins #(conj left [transform-unsafe (comp project (extend-fn extensions))]))
+            (conj left [transform-unsafe project])))
 
         :set
         (let [[_] stmt]
@@ -789,11 +1148,11 @@
 
         :hash
         (let [[_ & exprs] stmt]
-          (add-implicit-joins #(conj left [save-hash (mapv row-fn exprs) exprs])))
+          (add-implicit-joins #(conj left [save-hash (mapv row-fn exprs)])))
 
         :btree
         (let [[_ & exprs] stmt]
-          (add-implicit-joins #(conj left [save-btree (mapv row-fn exprs) exprs])))
+          (add-implicit-joins #(conj left [save-btree (mapv row-fn exprs)])))
 
         :check
         (let [[_ & checks] stmt]
@@ -803,13 +1162,21 @@
         (let [[_ right clause opts] stmt]
           (add-implicit-joins
             (fn []
-              (let [[left seekl] (find-hash-index graph left (keys clause))
+              (let [references right
+                    origin left
+                    _ (when (and (:cascade opts) (not (unwrap-table origin)))
+                        (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
+                    [left seekl] (find-hash-index graph left (keys clause))
                     [right seekr] (find-hash-index graph right (vals clause))]
-                (conj left [fk seekl right seekr clause opts])))))
+                (conj left [fk seekl right seekr clause origin references opts])))))
+
+        :unique
+        (let [[_ & exprs] stmt]
+          (add-implicit-joins #(conj left [save-unique (mapv row-fn exprs)])))
 
         :constrain
         (let [[_ & constraints] stmt]
-          {:deps (mapv #(conj left %) constraints)})
+          (reduce conj left constraints))
 
         :const
         (let [[_ coll] stmt]
@@ -820,18 +1187,43 @@
           (reduce conj left (mapv (fn [r] [intersection r]) relvars)))
 
         :union
-        (let [[_ & relvars] stmt]
-          (reduce conj left (mapv (fn [r] [union r]) relvars)))
+        (let [[_ & relvars] stmt
+              left (conj left [:set])]
+          (reduce conj left (mapv (fn [r] [union (conj r [:set])]) relvars)))
 
         :difference
         (let [[_ & relvars] stmt]
-          (reduce conj left (mapv (fn [r] [difference r]) relvars)))))))
+          (reduce conj left (mapv (fn [r] [difference r]) relvars)))
+
+        :table
+        (let [[_ table-key opts] stmt]
+          [[table table-key opts]])
+
+        ::table
+        (let [[_ table-key] stmt]
+          {:deps []
+           :table table-key
+           :flow {nil flow-pass}
+           :provide (fn [db] (db table-key))})
+
+        :agg
+        (let [[_ cols & aggs] stmt]
+          (conj left [agg cols aggs]))
+
+        :qualify
+        (let [[_ namespace] stmt]
+          (conj left [transform #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]))
+
+        :rename
+        (let [[_ renames] stmt]
+          (conj left [transform #(set/rename-keys % renames)]))))))
 
 (defn to-dataflow [graph relvar]
-  (let [ret (to-dataflow* graph relvar)]
-    (if (vector? ret)
-      (to-dataflow graph ret)
-      ret)))
+  (let [ret (to-dataflow* graph relvar relvar)]
+    ((fn ! [ret]
+       (if (vector? ret)
+         (! (to-dataflow* graph ret relvar))
+         ret)) ret)))
 
 (defn- depend [graph dep dependent]
   (let [{:keys [dependents
@@ -861,9 +1253,10 @@
     (= [] relvar) graph
     (contains? graph (*ids* relvar)) graph
     :else
-    (let [{:keys [deps] :as node} (to-dataflow graph relvar)
+    (let [{:keys [deps table] :as node} (to-dataflow graph relvar)
           nid (id relvar)
-          graph (assoc graph nid (assoc node :relvar relvar))
+          graph (assoc graph nid (assoc node :relvar relvar :score 0))
+          graph (if table (update graph ::tables assoc table nid) graph)
           graph (reduce add-to-graph* graph deps)
           graph (reduce #(depend %1 (id %2) nid) graph deps)]
       graph)))
@@ -879,14 +1272,17 @@
   (cond
     (= [] relvar) graph
     (contains? (::materialized graph) relvar) graph
-    (not (contains? graph ((::ids graph {}) relvar))) graph
+    (contains? (::watched graph) (get-id graph relvar)) graph
+    (not (contains? graph (get-id graph relvar))) graph
     :else
     (let [{:keys [dependents
-                  deps]} (graph (id relvar))]
+                  deps
+                  table]} (graph (id relvar))]
       (if (seq dependents)
         (update graph ::unlinked set-conj (id relvar))
         (let [nid (id relvar)
               graph (dissoc graph nid)
+              graph (if table (update graph ::tables dissoc table) graph)
               graph (reduce #(undepend %1 (id %2) nid) graph deps)
               graph (reduce del-from-graph* graph deps)
               _ (set! *ids* (dissoc *ids* relvar))]
@@ -899,11 +1295,20 @@
           graph (assoc graph ::ids *ids* ::idn *idn*)]
       graph)))
 
-(defn- flow-noop [db & _]
-  db)
+(def ^:private ^:dynamic *tracking* nil)
 
-(defn- flow-pass [db inserted deleted forward]
-  (forward db inserted deleted))
+(defn- track [id added deleted]
+  (when (and *tracking* (*tracking* id))
+    (let [ntracking (update *tracking* id (fn [{:keys [adds dels]}]
+                                            {:adds (reduce add-to-mutable-list (or adds (mutable-list)) added)
+                                             :dels (reduce add-to-mutable-list (or dels (mutable-list)) deleted)}))]
+      (set! *tracking* ntracking)))
+  nil)
+
+(defn- tracked-flow [id f]
+  (fn tracking-flow [db inserted deleted]
+    (track id inserted deleted)
+    (f db inserted deleted)))
 
 (defn link
   [graph edge relvar]
@@ -921,26 +1326,28 @@
                     db
                     fns)))))
           (build [graph edge id]
-            (if (:linked (graph id))
-              graph
-              (let [{:keys [dependents
-                            flow]
-                     :as node} (graph id)
-                    dependents (sort-dependents dependents)
-                    flow-fn (get flow edge flow-noop)
-                    graph (reduce #(build %1 id %2) graph dependents)
-                    forward (forward-fn id dependents)
-                    linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
-                (assoc graph id (assoc node :linked linked)))))]
+            (let [{:keys [dependents
+                          flow]
+                   :as node} (graph id)
+                  dependents (sort-dependents dependents)
+                  flow-fn (get flow edge flow-noop)
+                  graph (reduce #(build %1 id %2) graph dependents)
+                  forward (tracked-flow id (forward-fn graph dependents))
+                  linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
+              (assoc graph id (assoc node :linked linked))))]
     (build graph edge ((::ids graph {}) relvar relvar))))
 
 (defn relink
   [graph]
-  (-> (reduce link graph (::unlinked graph))
+  (-> (reduce (fn [graph relvar]
+                (reduce (fn [graph dep]
+                          (link graph dep relvar))
+                        graph
+                        (:deps (graph (get-id graph relvar))))) graph (::unlinked graph))
       (dissoc ::unlinked)))
 
 (defn init [graph relvar]
-  (letfn [(id [relvar] ((::ids graph {}) relvar))
+  (letfn [(id [relvar] (get-id graph relvar))
           (sort-dependents [dependents]
             (sort-by (comp :score graph) > dependents))
           (forward-fn [graph dep dependents]
@@ -955,10 +1362,9 @@
                     db
                     fns)))))
           (dirty [graph id]
-            (let [{:keys [dependents
-                          initialised]
-                   :or {initialised #{}}} (graph id)]
-              (remove initialised dependents)))
+            (let [{:keys [dependents]} (graph id)]
+              ;; todo can this be filtered, worried I'm back in spam-a-lot
+              dependents))
           (link-uninitialised [graph uninit]
             (let [{:keys [deps
                           flow]
@@ -969,11 +1375,9 @@
                   init (reduce
                          (fn [m edge]
                            (let [dep (id edge)
-                                 flow-fn (flow dep)]
+                                 flow-fn (get flow dep flow-noop)]
                              (assoc m dep (fn init [db inserted deleted]
-                                             (let [db (update db dep update :initialised set-conj uninit)
-                                                   db (flow-fn db inserted deleted forward)]
-                                               db)))))
+                                            (flow-fn db inserted deleted forward)))))
                          {}
                          deps)]
               (assoc graph uninit (assoc node :init init :init-forward forward))))
@@ -996,20 +1400,31 @@
 (defn- result [graph self left box]
   {:deps [left]
    :flow (flow left (fn [db inserted _ forward]
-                      (vreset! box
-                               (if (coll? inserted)
-                                 inserted
-                                 (vec inserted)))
+                      (vswap! box
+                              (fn [existing]
+                                (cond
+                                  existing
+                                  (into (set existing) inserted)
+
+                                  (coll? inserted)
+                                  inserted
+
+                                  :else (vec inserted))))
                       db))})
 
+(defn gg [db] (::graph (meta db) {}))
+(defn- sg [db graph] (vary-meta db assoc ::graph graph))
+
 (defn q [db query]
-  (let [{::keys [graph] :or {graph {}}} (meta db)]
-    (or (:results (graph query))
-        (let [rbox (volatile! nil)
-              query (conj query [result rbox])
-              graph (add-to-graph graph query)
-              _ (init graph query)]
-          @rbox))))
+  (if (keyword? query)
+    (query db)
+    (let [graph (gg db)]
+      (or (:results (graph (get-id graph query)))
+          (let [rbox (volatile! nil)
+                query (conj query [result rbox])
+                graph (add-to-graph graph query)
+                _ (init graph query)]
+            @rbox)))))
 
 (defn- mat [graph self left]
   (let [left-id (id left)]
@@ -1022,16 +1437,18 @@
                           (update db left-id assoc :results (persistent! s)))))
      :provide (fn [db] (:results (db left)))}))
 
-(defn- gg [db] (::graph (meta db) {}))
-(defn- sg [db graph] (vary-meta db assoc ::graph graph))
-
-(defn materialize [db relvar]
-  (let [graph (gg db)
-        graph (update graph ::materialized set-conj relvar)
-        relvar (conj relvar [mat])
-        graph (add-to-graph graph relvar)
-        graph (init graph relvar)]
-    (sg db graph)))
+(defn materialize
+  ([db relvar] (materialize db relvar {}))
+  ([db relvar opts]
+   (if (contains? (::materialized (gg db)) relvar)
+     db
+     (let [graph (gg db)
+           graph (if (:ephemeral opts) graph (update graph ::materialized set-conj relvar))
+           relvar (conj relvar [mat])
+           graph (add-to-graph graph relvar)
+           graph (relink graph)
+           graph (init graph relvar)]
+       (sg db graph)))))
 
 (defn dematerialize [db relvar]
   (let [graph (gg db)
@@ -1041,6 +1458,136 @@
         graph (relink graph)]
     (sg db graph)))
 
-;; todo watch
-;; todo transact
-;; todo tracing
+(defn change-table [db table-key inserts deletes]
+  (let [graph (gg db)
+        table-id (-> graph ::tables (get table-key))
+        {:keys [linked
+                relvar]} (graph table-id)]
+    (if linked
+      (let [data (graph table-key)
+            drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
+            nrows (if data (into [] (remove data) inserts) (set inserts))
+            ndata (if data (into data nrows) nrows)
+            ndata (if drows (reduce disj ndata drows) ndata)
+
+            graph (assoc graph table-key ndata)
+            db (assoc db table-key ndata)
+            graph (linked graph nrows drows)]
+        (sg db graph))
+      (if relvar
+        (let [graph (link graph nil relvar)]
+          (change-table (sg db graph) table-key inserts deletes))
+        (let [data (graph table-key)
+              drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
+              ndata (if data (into data inserts) (set inserts))
+              ndata (if drows (reduce disj ndata drows) ndata)
+              graph (assoc graph table-key ndata)
+              db (assoc db table-key ndata)]
+          (sg db graph))))))
+
+(defn watch [db relvar]
+  (let [db (materialize db relvar {:ephemeral true})
+        graph (gg db)
+        graph (update graph ::watched set-conj (get-id graph relvar))]
+    (sg db graph)))
+
+(defn unwatch [db relvar]
+  (let [graph (gg db)
+        graph (update graph ::watched disj (get-id graph relvar))
+        db (sg db graph)
+        db (if (contains? (::materialized graph) relvar)
+             db
+             (dematerialize db relvar))]
+    db))
+
+(defn- to-table-key [k-or-relvar]
+  (if (keyword? k-or-relvar)
+    k-or-relvar
+    (unwrap-table-key k-or-relvar)))
+
+(defn- delete-where [db table-key exprs]
+  (let [rows (q db (conj [[:table table-key]] (into [:where] exprs)))]
+    (if (seq rows)
+      (change-table db table-key nil rows)
+      db)))
+
+(defn- update-f-or-set-map-to-fn [f-or-set-map]
+  (if (map? f-or-set-map)
+    (reduce-kv (fn [f k e] (comp f (let [f2 (row-fn e)] #(assoc % k (f2 %))))) identity f-or-set-map)
+    f-or-set-map))
+
+(defn- update-where [db table-key f-or-set-map exprs]
+  (let [rows (q db (conj [[:table table-key]] (into [:where] exprs)))
+        f (update-f-or-set-map-to-fn f-or-set-map)
+        new-rows (eduction (map f) rows)]
+    (if (seq rows)
+      (change-table db table-key new-rows rows)
+      db)))
+
+(defn- table-with-opts? [v]
+  (if (vector? v)
+    (not= 2 (count (head-stmt v)))
+    false))
+
+(defn materialized? [db relvar]
+  (contains? (::materialized (gg db)) relvar))
+
+(defn- transact* [db tx]
+  (cond
+    (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
+    (seq? tx) (reduce transact* db tx)
+    :else
+    (let [[op table & args] tx
+          table-key (to-table-key table)]
+      (case op
+        :insert (change-table db table-key args nil)
+        :delete-exact (change-table db table-key nil args)
+        :delete (delete-where db table-key args)
+        :update (let [[f-or-set-map & exprs] args] (update-where db table-key f-or-set-map exprs))
+        :upsert (binding [*upsert-collisions* {}]
+                  (let [db2 (change-table db table-key args nil)
+                        db-new (reduce-kv (fn [db table-key rows]
+                                            (change-table db table-key nil rows)) db *upsert-collisions*)]
+                    (if (identical? db-new db2)
+                      db2
+                      (change-table db-new table-key (remove (*upsert-collisions* table-key #{}) args) nil))))))))
+(defn- cascade [db]
+  (let [cascade-tx (reduce-kv (fn [acc [table2 _references _clause] rows]
+                                (conj acc (into [:delete-exact table2] rows)))
+                              [] *foreign-key-cascades*)
+        _ (set! *foreign-key-cascades* {})
+        db (reduce transact* db cascade-tx)]
+    (if (seq *foreign-key-cascades*)
+      (cascade db)
+      db)))
+
+(defn transact [db tx-coll]
+  (binding [*foreign-key-cascades* {}
+            *foreign-key-violations* {}]
+    (let [db (reduce transact* db tx-coll)
+          db (cascade db)]
+      (doseq [[[relvar references clause] rows] *foreign-key-violations*]
+        (when (seq rows)
+          (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+      db)))
+
+(defn track-transact
+  "Like transact, but instead of returning you a database, returns a map of
+
+    :db the result of (apply transact db tx)
+    :changes a map of {relvar {:added [row1, row2 ...], :deleted [row1, row2, ..]}, ..}
+
+  The :changes allow you to react to additions/removals from derived relvars, and build reactive systems."
+  [db tx-coll]
+  (binding [*tracking* (zipmap (::watched (gg db)) (repeat #{}))]
+    (let [ost db
+          ograph (gg ost)
+          db (transact db tx-coll)
+          graph (gg db)
+          changes (for [[id {:keys [adds dels]}] *tracking*
+                        :let [{:keys [results, relvar] :or {results #{}}} (graph id)
+                              {oresults :results, :or {oresults #{}}} (ograph id)]]
+                    [relvar {:added (filterv results (iterable-mut-list adds))
+                             :deleted (filterv (every-pred (complement results) oresults) (iterable-mut-list dels))}])]
+      {:db db
+       :changes (into {} changes)})))

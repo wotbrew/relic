@@ -154,29 +154,6 @@ note: Unlike in SQL tables are sets of rows, not bags / multi-sets.
 
 spec: `[:table table-name opts]`
 
-### Inline constraints
-
-It can be convenient to express certain constraints on directly on the table, though it is not necessary to do this  - constraints can be applied to [any relvar](#constraint-reference).
-
- - `:check` Used to apply inline check constraints, see [check constraints](#test-predicates-against-columns-and-rows-using-check)
- - `:req` Used to apply inline required key check constraints
- - `:fk` Use to apply inline [foreign key](#ensure-a-referenced-row-exists-with-fk) constraints
- - `:unique` Use to apply inline [unique](#ensure-only-one-row-exists-for-a-combination-of-columns-unique) key constraints
-
-```clojure 
-(def Customer
- [[:table :Customer 
-   {:req [:firstname, :lastname],
-    :check [[string? :firstname]],
-    :unique [[:customer-id]]}])
-
-(def Order 
- [[:table :Order 
-   {:req [:customer-id], 
-    :fk [[Customer {:customer-id :customer-id} {:cascade true}]
-``` 
-
-
 ### Filtering with `:where`
 
 ```clojure 
@@ -557,8 +534,6 @@ e.g
    [:unique :customer-id]
    [:fk Address {:address-id :address-id}]]]
 ```
-
-See also: [inline constraints](#inline-constraints)
 
 ### Ensure only one row exists for a combination of columns `:unique`
 

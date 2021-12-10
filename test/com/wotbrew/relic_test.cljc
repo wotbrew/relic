@@ -543,18 +543,6 @@
   (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a} {:cascade true}]])]
     (is (= #{} (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))
 
-(deftest inline-constraint-test
-  (let [tmat (fn [t & tx] (apply rel/transact (rel/materialize {} t) tx))]
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (tmat [[:table :A {:req [:a]}]] {:A [{}]})))
-    (is (= {:A #{{:a 42}}} (tmat [[:table :A {:req [:a]}]] {:A [{:a 42}]})))
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (tmat {[[:table :A {:req [:a], :check [[string? :b]]}]] {:A [{:a 42, :b 'not-a-string}]}})))
-    (is (= {:A #{{:a 42, :b "hello"}}} (tmat [[:table :A {:req [:a], :check [[string? :b]]}]] {:A [{:a 42, :b "hello"}]})))
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (tmat [[:table :A {:unique [[:a]]}]] {:A [{:a 42} {:a 42, :b 1}]})))
-    (is (= {:A #{{:a 42}, {:a 43, :b 1}}} (tmat [[:table :A {:unique [[:a]]}]] {:A [{:a 42} {:a 43, :b 1}]})))
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (tmat [[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] {:A [{:a 1}]})))
-    (is (= {:A #{{:a 1}}
-            :B #{{:a 1}}} (tmat [[:table :A {:fk [[[[:table :B]] {:a :a}]]}]] {:A [{:a 1}], :B [{:a 1}]})))))
-
 (deftest false-req-col-is-allowed-test
   (let [A [[:table :A {:req [:a]}]]
         db (rel/materialize {} A)]

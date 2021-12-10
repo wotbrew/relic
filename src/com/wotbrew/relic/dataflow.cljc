@@ -10,7 +10,9 @@
 (def Env [[:table ::Env]])
 (def ^:dynamic *env-deps* nil)
 (defn- track-env-dep [k]
-  (when *env-deps* (set! *env-deps* (conj *env-deps* k))))
+  (if *env-deps*
+    (set! *env-deps* (conj *env-deps* k))
+    (raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
 
 (defn row-fn [expr]
   (cond
@@ -133,9 +135,39 @@
           exp-xf (apply comp (rseq exp-xforms))]
       #(into #{} exp-xf [%]))))
 
-(defn req-col-check [table-key col]
-  {:pred [some? col],
-   :error [str [:com.wotbrew.relic/esc col] " required by " [:com.wotbrew.relic/esc table-key] ", but not found."]})
+(defn operator [stmt] (nth stmt 0))
+(defn left-relvar [relvar] (when (peek relvar) (subvec relvar 0 (dec (count relvar)))))
+(defn head-stmt [relvar] (peek relvar))
+
+(defn table-relvar?
+  "True if the relvar is a table."
+  [relvar]
+  (case (count relvar)
+    1 (= :table (operator (head-stmt relvar)))
+    false))
+
+(defn unwrap-from [relvar]
+  (if (= :from (operator (head-stmt relvar)))
+    (let [[_ relvar] (head-stmt relvar)] (unwrap-from relvar))
+    relvar))
+
+(defn unwrap-table
+  "If the relvar is a table (or :from chain containing a table) then unwrap the underlying table relvar and return it."
+  [relvar]
+  (if (table-relvar? relvar)
+    relvar
+    (let [relvar (unwrap-from relvar)]
+      (when (table-relvar? relvar)
+        relvar))))
+
+(defn unwrap-table-key [relvar]
+  (let [[_ table-key] (some-> (unwrap-table relvar) head-stmt)]
+    table-key))
+
+(defn req-col-check [relvar col]
+  (let [table-key-or-name (if-some [tk (unwrap-table-key relvar)] tk "(derived relvar)")]
+    {:pred [some? col],
+     :error [str [:com.wotbrew.relic/esc col] " required by " [:com.wotbrew.relic/esc table-key-or-name] ", but not found."]}))
 
 (defn- check-pred [relvar check]
   (if (map? check)
@@ -159,42 +191,6 @@
     0 identity
     1 (check-pred relvar (first checks))
     (apply comp (rseq (mapv #(check-pred relvar %) checks)))))
-
-(defn operator [stmt] (nth stmt 0))
-(defn left-relvar [relvar] (when (peek relvar) (subvec relvar 0 (dec (count relvar)))))
-(defn head-stmt [relvar] (peek relvar))
-
-(defn table-relvar?
-  "True if the relvar is a table."
-  [relvar]
-  (case (count relvar)
-    1 (= :table (operator (head-stmt relvar)))
-    false))
-
-(defn table*-relvar?
-  [relvar]
-  (case (count relvar)
-    1 (= ::table (operator (head-stmt relvar)))
-    false))
-
-(defn unwrap-from [relvar]
-  (if (= :from (operator (head-stmt relvar)))
-    (let [[_ relvar] (head-stmt relvar)] (unwrap-from relvar))
-    relvar))
-
-(defn unwrap-table
-  "If the relvar is a table (or :from chain containing a table) then unwrap the underlying table relvar and return it."
-  [relvar]
-  (if (table-relvar? relvar)
-    relvar
-    (let [relvar (unwrap-from relvar)]
-      (cond
-        (table-relvar? relvar) relvar
-        (table*-relvar? relvar) relvar))))
-
-(defn unwrap-table-key [relvar]
-  (let [[_ table-key] (some-> (unwrap-table relvar) head-stmt)]
-    table-key))
 
 (defn- dissoc-in
   "Recursive dissoc, like assoc-in.
@@ -689,33 +685,6 @@
 (defn- flow-pass [db inserted deleted forward]
   (forward db inserted deleted))
 
-(defn table [graph self _ table-key & [opts]]
-  (if opts
-    (let [{:keys [req
-                  check
-                  unique
-                  fk]} opts
-          req-checks (map (partial req-col-check table-key) req)
-          check-stmt (into [:check] req-checks)
-          check-stmt (into check-stmt check)
-          check-stmt (when-not (= 1 (count check-stmt)) check-stmt)
-          fk-stmts (map (fn [[relvar clause opts]] [:fk relvar clause opts]) fk)
-          unique-stmts (map (fn [cols] (into [:unique] cols)) unique)
-          constrain (when (or check-stmt (seq fk-stmts) (seq unique-stmts))
-                      (cond-> [:constrain]
-                              check-stmt (conj check-stmt)
-                              (seq fk-stmts) (into fk-stmts)
-                              (seq unique-stmts) (into unique-stmts)))
-          left [[::table table-key]]
-          left (if constrain
-                 (conj left constrain)
-                 left)]
-      {:deps [left]
-       :flow (flow left flow-pass)})
-    (let [left [[::table table-key]]]
-      {:deps [left]
-       :flow (flow left flow-pass)})))
-
 (defn add-implicit-joins [thunk]
   (binding [*env-deps* #{}]
     (let [relvar (thunk)
@@ -1158,6 +1127,10 @@
         (let [[_ & checks] stmt]
           (add-implicit-joins #(conj left [runf (check-fn left checks) identity])))
 
+        :req
+        (let [[_ & cols] stmt]
+          (conj left (into [:check] (map #(req-col-check left %)) cols)))
+
         :fk
         (let [[_ right clause opts] stmt]
           (add-implicit-joins
@@ -1196,10 +1169,6 @@
           (reduce conj left (mapv (fn [r] [difference r]) relvars)))
 
         :table
-        (let [[_ table-key opts] stmt]
-          [[table table-key opts]])
-
-        ::table
         (let [[_ table-key] stmt]
           {:deps []
            :table table-key
@@ -1363,7 +1332,6 @@
                     fns)))))
           (dirty [graph id]
             (let [{:keys [dependents]} (graph id)]
-              ;; todo can this be filtered, worried I'm back in spam-a-lot
               dependents))
           (link-uninitialised [graph uninit]
             (let [{:keys [deps
@@ -1532,6 +1500,9 @@
 (defn materialized? [db relvar]
   (contains? (::materialized (gg db)) relvar))
 
+(defn transact-error [tx]
+  (raise "Unrecognized transact form" {:tx tx}))
+
 (defn- transact* [db tx]
   (cond
     (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
@@ -1550,7 +1521,10 @@
                                             (change-table db table-key nil rows)) db *upsert-collisions*)]
                     (if (identical? db-new db2)
                       db2
-                      (change-table db-new table-key (remove (*upsert-collisions* table-key #{}) args) nil))))))))
+                      (change-table db-new table-key (remove (*upsert-collisions* table-key #{}) args) nil))))
+        :replace-all (change-table db table-key args (q db table-key))
+        (transact-error tx)))))
+
 (defn- cascade [db]
   (let [cascade-tx (reduce-kv (fn [acc [table2 _references _clause] rows]
                                 (conj acc (into [:delete-exact table2] rows)))

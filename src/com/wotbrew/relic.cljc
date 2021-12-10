@@ -401,14 +401,15 @@
 ;; env api
 
 (defn get-env [db] (first (q db ::dataflow/Env)))
+
 (defn set-env-tx [env]
-  (list [:delete ::dataflow/Env]
-        [:insert ::dataflow/Env {::dataflow/env env}]))
+  [:replace-all ::dataflow/Env {::dataflow/env env}])
 
 (defn with-env [db env]
   (if (seq (db ::dataflow/Env))
     (transact db [:update ::dataflow/Env (constantly {::dataflow/env env})])
     (transact db (set-env-tx env))))
+
 (defn update-env [db f & args] (with-env db (apply f (get-env db) args)))
 
 ;; --

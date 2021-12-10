@@ -698,7 +698,7 @@
                  (conj Env [:select [::env [select-keys ::env env-deps]]])
                  {}]
                 stmt
-                [:without ::env]))))))
+                [:without-unsafe* ::env]))))))
 
 (defn- join-merge [{:keys [left, right]}] (merge left right))
 
@@ -1053,6 +1053,10 @@
         :without
         (let [[_ & cols] stmt]
           (conj left [transform (without-fn cols)]))
+
+        :without-unsafe*
+        (let [[_ & cols] stmt]
+          (conj left [transform-unsafe (without-fn cols)]))
 
         :join-as-coll
         (let [[_ right clause binding] stmt]

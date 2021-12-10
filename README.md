@@ -590,7 +590,7 @@ e.g
 
 `track-transact` is like transact, but rather than returning the database, returns a map of:
 
-- `:result` the new database value
+- `:db` the new database value
 - `:changes` a map of `{watched-revlar {:added [row1, row2 ...], :deleted [row1, row2]}, ..}`
 
 e.g
@@ -605,7 +605,7 @@ e.g
   
 (track-transact db {:A [{:a 1} {:a 42}]})
 ;; =>
-{:result {:A #{{:a 1} {:a 42}}}, 
+{:db {:A #{{:a 1} {:a 42}}}, 
  :changes {[[:table :A] [:where [= :a 42]]] {:added [{:a 42}], :deleted []}}}
  
 (get (:changes *1) TestRelvar)

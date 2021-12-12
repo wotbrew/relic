@@ -27,7 +27,13 @@
   Insert with :insert vectors
   [:insert table row1, row2 ..]
 
-  Delete by predicates with :delete vectors
+  Upsert (insert or on :unique collision update by deleting colliding rows).
+  [:upsert table row1, row2 ..]
+
+  Delete rows (exact match) (faster)
+  [:delete-exact table rows]
+
+  Delete by predicates with :delete vectors (slower)
   [:delete table expr1 expr2 ..]
   e.g [:delete Customer [< :age 42]]
 
@@ -74,10 +80,57 @@
         {:keys [mem]} (graph id)]
     mem))
 
-(defn materialize [db & relvars]
+(defn materialize
+  "Causes relic to maintain the given relvars incrementally as the database changes.
+
+  This will improve query performance drastically at the cost of decreased write performance.
+
+  Additionally useful to start maintaining constraints by using relvars that throw if invariants are broken.
+
+  e.g (materialize db [[:from Customer] [:unique :email]])
+
+  Constraint quick reference:
+
+   [:req & cols]
+
+     Required key checks
+
+   [:check & check-pred]
+
+     Throws if rows do not meet the predicates.
+     Accepts predicates of the row (relic expressions / functions) or a map containing :pred and :error, both being relic expressions.
+
+     e.g:
+     [:check [< :age 32]] would require all :age values be under 32.
+
+     The same predicate with a custom error:
+     [:check {:pred [< :age 32], :error [str \"invalid age, got\" :age ]}]
+
+   [:fk relvar clause opts]
+
+     Foreign key, e.g ensure a row exists in the target table given a join clause.
+
+     e.g [:fk Customer {:id :id} {:cascade true}]
+
+     Can use the option :cascade to specify cascading deletes.
+
+   [:unique & exprs]
+
+     Unique constraint, ensures that only one row exists for some combination of relic expressions (e.g columns)
+
+     e.g [:unique :id] would make sure only one row exists for a given :id value.
+
+     Allows the use of :upsert in transact calls."
+  [db & relvars]
   (reduce dataflow/materialize db relvars))
 
-(defn dematerialize [db & relvars]
+(defn dematerialize
+  "Dematerializes the relvar, increasing write performance at the cost of reduced query performance.
+
+  Can also be used to remove constraints (e.g relvars that throw).
+
+  Note: relvars that are being watched with (watch) will continue to be materialized until (unwatch) is called."
+  [db & relvars]
   (reduce dataflow/dematerialize db relvars))
 
 (defn q
@@ -186,7 +239,7 @@
 
 (defn what-if
   "Returns the relation for relvar if you were to apply the transactions with transact.
-  Because databases are immutable, its not hard to do this anyway with q & transact. This is just sugar."
+  Because databases are immutable, it's not hard to do this anyway with q & transact. This is just sugar."
   [db relvar & tx]
   (q (dataflow/transact db tx) relvar))
 
@@ -199,12 +252,16 @@
 
   Returns a new database.
 
-  See track-transact."
+  See track-transact.
+
+  Remove watches with unwatch."
   [db & relvars]
   (reduce dataflow/watch db relvars))
 
 (defn unwatch
   "Removes a watched relvar, changes for that relvar will no longer be tracked.
+
+  Potentially dematerializes the relvar if it was only materialized to maintain the watch.
 
   See track-transact."
   [db & relvars]
@@ -394,10 +451,6 @@
               (dataflow/bind-group binding #(into [] (comp (map key) (take n)) (seq %)))]))}))
 
 ;; --
-;; agg expressions e.g [rel/sum :foo]
-
-
-;; --
 ;; env api
 
 (defn get-env [db] (first (q db ::dataflow/Env)))
@@ -405,10 +458,7 @@
 (defn set-env-tx [env]
   [:replace-all ::dataflow/Env {::dataflow/env env}])
 
-(defn with-env [db env]
-  (if (seq (db ::dataflow/Env))
-    (transact db [:update ::dataflow/Env (constantly {::dataflow/env env})])
-    (transact db (set-env-tx env))))
+(defn with-env [db env] (transact db (set-env-tx env)))
 
 (defn update-env [db f & args] (with-env db (apply f (get-env db) args)))
 

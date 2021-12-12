@@ -622,5 +622,34 @@
     (is (= #{{:a 1 :b 2}} (rel/q db J)))
     (is (= #{{:a 1 :b 2}} (rel/what-if db J [:delete-exact A {:a 1, :b 2}])))))
 
-(comment
-  (clojure.test/run-all-tests #"relic"))
+(deftest delayed-check-test
+  (let [A [[:table :A]]
+        B [[:from A] [:check [= :a 1]]]
+        db (rel/materialize {} B)]
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact db  {:A [{:a 2}]})))
+    (is (= {:A #{{:a 1}}} (rel/transact db  {:A [{:a 2}]} [:update :A {:a 1}])))
+    (is (= {:A #{}} (rel/transact db  {:A [{:a 2}]} [:delete :A])))))
+
+(deftest delayed-check-cascade-test
+  (let [A [[:table :A]]
+        B [[:table :B]]
+        C [[:from A] [:fk B {:a :a} {:cascade true}]]
+        D [[:from A] [:check [= :a 1]]]
+        db (rel/materialize {} C D)]
+
+    (is (thrown? #?(:clj Throwable :cljs js/Error)
+                 (rel/transact db {:A [{:a 2}]
+                                   :B [{:a 2}]})))
+
+    (is (= {:A #{}
+            :B #{{:a 1}}} (rel/transact db
+                               {:A [{:a 2}], :B [{:a 1} {:a 2}]}
+                               [:delete :B [= :a 2]])))
+
+    (is (= {:A #{{:a 1}}
+            :B #{{:a 1}}} (rel/transact db {:A [{:a 2}], :B [{:a 2}]}
+                                        [:update :A {:a 1}]
+                                        [:update :B {:a 1}]))))
+
+  (comment
+    (clojure.test/run-all-tests #"relic")))

@@ -1,6 +1,57 @@
 (ns com.wotbrew.relic.dataflow
+  "Core dataflow implementation - the 'innards'. All functions in this namespace
+  should be considered private."
   (:require [com.wotbrew.relic.generic-agg-index :as gai]
             [clojure.set :as set]))
+
+(defn- dissoc-in
+  "Recursive dissoc, like assoc-in.
+  Removes intermediates.
+  Not safe on records or vectors. Map only."
+  [m ks]
+  (if-let [[k & ks] (seq ks)]
+    (if (seq ks)
+      (let [v (dissoc-in (get m k) ks)]
+        (if (empty? v)
+          (dissoc m k)
+          (assoc m k v)))
+      (dissoc m k))
+    m))
+
+(defn- disjoc
+  "Convenience for remove the element x of the set at (m k) returning a new map.
+  If the resulting set is empty, drop k from the map."
+  [m k x]
+  (let [ns (disj (get m k) x)]
+    (if (empty? ns)
+      (dissoc m k)
+      (assoc m k ns))))
+
+(defn- disjoc-in
+  "Recursive disjoc for a set nested in a map given a path, see disjoc.
+  Removes intermediates. Not safe on records or vectors. Map only."
+  [m ks x]
+  (let [[k & ks] ks]
+    (if ks
+      (let [nm (disjoc-in (get m k) ks x)]
+        (if (empty? nm)
+          (dissoc m k)
+          (assoc m k nm)))
+      (let [ns (disj (get m k) x)]
+        (if (empty? ns)
+          (dissoc m k)
+          (assoc m k ns))))))
+
+(defn- update-in2
+  ([m empty ks f & args]
+   (let [up (fn up [m ks f args]
+              (let [[k & ks] ks]
+                (if ks
+                  (assoc m k (up (get m k empty) ks f args))
+                  (assoc m k (apply f (get m k) args)))))]
+     (up m ks f args))))
+
+(def ^:private set-conj (fnil conj #{}))
 
 (defn- raise
   ([msg] (throw (ex-info msg {})))
@@ -83,17 +134,26 @@
 (defn without-fn [cols]
   #(apply dissoc % cols))
 
-(defn- assoc-if-not-nil [m k v]
+(defn- overwrite-key
+  "If v is not nil, assoc into m, otherwise dissoc."
+  [m k v]
   (if (nil? v)
-    m
+    (dissoc m k)
     (assoc m k v)))
+
+(defn- overwrite-keys
+  ([m1 m2] (reduce-kv overwrite-key m1 m2))
+  ([m1 m2 ks]
+   (if (nil? m2)
+     m1
+     (reduce (fn [m k] (overwrite-key m k (m2 k))) m1 ks))))
 
 (defn bind-fn [binding]
   (if (keyword? binding)
     (if (= :com.wotbrew.relic/* binding)
-      #(merge % %2)
-      #(assoc-if-not-nil % binding %2))
-    #(merge % (select-keys %2 binding))))
+      overwrite-keys
+      #(overwrite-key %1 binding %2))
+    #(overwrite-keys %1 %2 binding)))
 
 (defn extend-form-fn [form]
   (cond
@@ -169,77 +229,41 @@
     {:pred [some? col],
      :error [str [:com.wotbrew.relic/esc col] " required by " [:com.wotbrew.relic/esc table-key-or-name] ", but not found."]}))
 
+(def ^:dynamic *check-violations* nil)
+
+(defn- bad-check [relvar check row]
+  (if-some [m *check-violations*]
+    (do
+      (set! *check-violations* (update m [relvar check] set-conj row))
+      row)
+    (let [{:keys [error]} check
+          error-fn (row-fn (or error "Check constraint violation"))]
+      (raise (error-fn row) {:check check, :row row, :relvar relvar}))))
+
+(defn- good-check [relvar check row]
+  row)
+
 (defn- check-pred [relvar check]
   (if (map? check)
-    (let [{:keys [pred, error]} check
-          pred-fn (row-fn pred)
-          error-fn (row-fn (or error "Check constraint violation"))]
+    (let [{:keys [pred]} check
+          pred-fn (row-fn pred)]
       (fn [m]
         (let [r (pred-fn m)]
           (if r
-            m
-            (raise (error-fn m) {:expr pred, :check check, :row m, :relvar relvar})))))
+            (good-check relvar check m)
+            (bad-check relvar check m)))))
     (let [f2 (row-fn check)]
       (fn [m]
         (let [r (f2 m)]
           (if r
-            m
-            (raise "Check constraint violation" {:expr check, :check check, :row m, :relvar relvar})))))))
+            (good-check relvar check m)
+            (bad-check relvar check m)))))))
 
 (defn check-fn [relvar checks]
   (case (count checks)
     0 identity
     1 (check-pred relvar (first checks))
     (apply comp (rseq (mapv #(check-pred relvar %) checks)))))
-
-(defn- dissoc-in
-  "Recursive dissoc, like assoc-in.
-  Removes intermediates.
-  Not safe on records or vectors. Map only."
-  [m ks]
-  (if-let [[k & ks] (seq ks)]
-    (if (seq ks)
-      (let [v (dissoc-in (get m k) ks)]
-        (if (empty? v)
-          (dissoc m k)
-          (assoc m k v)))
-      (dissoc m k))
-    m))
-
-(defn- disjoc
-  "Convenience for remove the element x of the set at (m k) returning a new map.
-  If the resulting set is empty, drop k from the map."
-  [m k x]
-  (let [ns (disj (get m k) x)]
-    (if (empty? ns)
-      (dissoc m k)
-      (assoc m k ns))))
-
-(defn- disjoc-in
-  "Recursive disjoc for a set nested in a map given a path, see disjoc.
-  Removes intermediates. Not safe on records or vectors. Map only."
-  [m ks x]
-  (let [[k & ks] ks]
-    (if ks
-      (let [nm (disjoc-in (get m k) ks x)]
-        (if (empty? nm)
-          (dissoc m k)
-          (assoc m k nm)))
-      (let [ns (disj (get m k) x)]
-        (if (empty? ns)
-          (dissoc m k)
-          (assoc m k ns))))))
-
-(defn- update-in2
-  ([m empty ks f & args]
-   (let [up (fn up [m ks f args]
-              (let [[k & ks] ks]
-                (if ks
-                  (assoc m k (up (get m k empty) ks f args))
-                  (assoc m k (apply f (get m k) args)))))]
-     (up m ks f args))))
-
-(def ^:private set-conj (fnil conj #{}))
 
 ;; cross platform mutable set
 (defn- mutable-set [] (volatile! (transient #{})))
@@ -273,13 +297,16 @@
 
 (defn mem
   [relvar]
-  (let [id (id relvar)]
-    [(fn mget
-       ([db] (:mem (db id)))
-       ([db default] (:mem (db id) default)))
-     (fn mset
-       [db val]
-       (assoc db id (assoc (db id) :mem val)))]))
+  (if-some [table-key (unwrap-table-key relvar)]
+    [(fn mget ([db] (db table-key)) ([db default] (db table-key default)))
+     (fn mset [& _] (raise "Cannot call mset on table memory"))]
+    (let [id (id relvar)]
+      [(fn mget
+         ([db] (:mem (db id)))
+         ([db default] (:mem (db id) default)))
+       (fn mset
+         [db val]
+         (assoc db id (assoc (db id) :mem val)))])))
 
 (defn- flow [relvar f & more]
   (loop [ret (array-map (id relvar) f)
@@ -349,9 +376,7 @@
 (defn intersection
   "Set intersection, rows that are both in left and right are flowed."
   [graph self left right]
-  (let [left (conj left [:set])
-        right (conj right [:set])
-        [mgetl] (mem left)
+  (let [[mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [left right]
      :flow (flow left (fn [db inserted deleted forward]
@@ -366,9 +391,7 @@
 (defn difference
   "Set difference, rows that are in left and not right are flowed."
   [graph self left right]
-  (let [left (conj left [:set])
-        right (conj right [:set])
-        [mgetl] (mem left)
+  (let [[mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [left right]
      :flow (flow left (fn [db inserted deleted forward]
@@ -630,7 +653,9 @@
                        (if *upsert-collisions*
                          (upsert-collision old-row new-row)
                          (raise-violation old-row new-row)))
-        replace-fn (fn [old-row row] (if (nil? old-row) row (on-collision old-row row)))
+        replace-fn (fn [old-row row] (cond (nil? old-row) row
+                                           (= old-row row) row
+                                           :else (on-collision old-row row)))
         add-row (fn [m row] (update-in m (path row) replace-fn row))
         del-row (fn [m row] (dissoc-in m (path row)))
         [mget mset] (mem self)]
@@ -1029,12 +1054,24 @@
 
       (join-first-ext? (first extensions))
       (for [[binding [_ relvar clause]] extensions
+            :let [bind-fn (bind-fn binding)]
             stmt
             [[:join-as-coll relvar clause ::join-expr]
-             [transform #(assoc-if-not-nil (dissoc % ::join-expr) binding (first (::join-expr %)))]]]
+             [transform #(bind-fn (dissoc % ::join-expr) (first (::join-expr %)))]]]
         stmt)
 
       :else [(into [:extend*] extensions)])))
+
+(defn- require-set
+  "Certain functions will require that an intermediate relvar is materialized as a set.
+
+  Returns a (potentially new) relvar that ensures mget will return a set of rows at all times."
+  [relvar]
+  (case (operator (head-stmt relvar))
+    :set relvar
+    (if (unwrap-table-key relvar)
+      relvar
+      (conj relvar [:set]))))
 
 (defn to-dataflow* [graph relvar self]
   (let [left (left-relvar relvar)
@@ -1128,7 +1165,8 @@
           (add-implicit-joins #(conj left [save-btree (mapv row-fn exprs)])))
 
         :check
-        (let [[_ & checks] stmt]
+        (let [[_ & checks] stmt
+              left (require-set left)]
           (add-implicit-joins #(conj left [runf (check-fn left checks) identity])))
 
         :req
@@ -1161,16 +1199,17 @@
 
         :intersection
         (let [[_ & relvars] stmt]
-          (reduce conj left (mapv (fn [r] [intersection r]) relvars)))
+          (reduce conj left (mapv (fn [r] [intersection (require-set r)]) relvars)))
 
         :union
         (let [[_ & relvars] stmt
-              left (conj left [:set])]
-          (reduce conj left (mapv (fn [r] [union (conj r [:set])]) relvars)))
+              left (require-set left)]
+          (reduce conj left (mapv (fn [r] [union (require-set r)]) relvars)))
 
         :difference
-        (let [[_ & relvars] stmt]
-          (reduce conj left (mapv (fn [r] [difference r]) relvars)))
+        (let [[_ & relvars] stmt
+              left (require-set left)]
+          (reduce conj left (mapv (fn [r] [difference (require-set r)]) relvars)))
 
         :table
         (let [[_ table-key] stmt]
@@ -1496,11 +1535,6 @@
       (change-table db table-key new-rows rows)
       db)))
 
-(defn- table-with-opts? [v]
-  (if (vector? v)
-    (not= 2 (count (head-stmt v)))
-    false))
-
 (defn materialized? [db relvar]
   (contains? (::materialized (gg db)) relvar))
 
@@ -1541,12 +1575,25 @@
 
 (defn transact [db tx-coll]
   (binding [*foreign-key-cascades* {}
-            *foreign-key-violations* {}]
+            *foreign-key-violations* {}
+            *check-violations* {}]
     (let [db (reduce transact* db tx-coll)
           db (cascade db)]
+
+      ;; todo rollup errors?
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
         (when (seq rows)
           (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+
+      (doseq [[[relvar check] rows] *check-violations*
+              :let [graph (gg db)
+                    id (get-id graph relvar)
+                    idx (if-some [tk (unwrap-table-key relvar)]
+                          (graph tk #{})
+                          (:mem (graph id) #{}))]]
+        (when-some [violating (seq (filter idx rows))]
+          (raise "Check violation" {:relvar relvar, :check check, :rows violating})))
+
       db)))
 
 (defn track-transact

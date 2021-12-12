@@ -469,18 +469,3 @@
   "Given a relic database map, removes any relic meta data."
   [db]
   (vary-meta db (comp not-empty dissoc) ::dataflow/graph))
-
-;; --
-;; ed. probably best not to use right now.
-
-(defn ed [relvar]
-  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/ed) relvar)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library!")))
-
-(defn ed-transact [& tx]
-  #?(:clj (apply (requiring-resolve 'com.wotbrew.relic.ed/global-transact!) tx)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))
-
-(defn ed-set-env [env]
-  #?(:clj ((requiring-resolve 'com.wotbrew.relic.ed/global-set-env!) env)
-     :cljs (js/console.log "No ed for cljs yet... Anybody know a good datagrid library?!")))

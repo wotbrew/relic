@@ -622,7 +622,6 @@ e.g
 ## Other cool stuff
 
 ### Speculate with `what-if`
-### Explore and play with your data `ed`
 ### Get raw indexes with `index`
 ### Find tables that could affect a relation with `dependencies`
 ### Ask what keys a row might have with `columns`

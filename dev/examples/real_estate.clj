@@ -1,6 +1,6 @@
 (ns examples.real-estate
   "Read along: http://curtclifton.net/papers/MoseleyMarks06a.pdf"
-  (:require [com.wotbrew.relic :as r]
+  (:require [com.wotbrew.relic :as rel]
             [clojure.string :as str]))
 
 ;; base relvars (essential state)
@@ -69,21 +69,21 @@
     [:area-code [area-code :address]]
 
     [[:number-of-rooms]
-     [::r/join-first
+     [::rel/join-first
       [[:from RoomInfo]
        [:agg [:address] [:number-of-rooms count]]]
       {:address :address}]]
 
     [[:square-feet]
-     [::r/join-first
+     [::rel/join-first
       [[:from RoomInfo]
-       [:agg [:address] [:square-feet [r/sum :room-size]]]]
+       [:agg [:address] [:square-feet [rel/sum :room-size]]]]
       {:address :address}]]]])
 
 (def CurrentOffer
   [[:from Offer]
    [:agg [:address :bidder-name :bidder-address]
-    [:latest-date [r/greatest :offer-date]]]
+    [:latest-date [rel/greatest :offer-date]]]
    [:join Offer {:address :address
                  :bidder-name :bidder-name
                  :bidder-address :bidder-address
@@ -142,7 +142,7 @@
 (def CommissionDue
   [[:from SalesCommissions]
    [:agg [:agent]
-    [:total-commission [r/sum :commission]]]
+    [:total-commission [rel/sum :commission]]]
    [:select :agent :total-commission]])
 
 ;; constraints
@@ -206,7 +206,7 @@
 
 (def NoMoreThan50AdvertisedPremiumProperties
   [[:from PropertyForWebsite]
-   [:agg [] [:premium-count [count [= [::r/esc :premium] [price-band :price]]]]]
+   [:agg [] [:premium-count [count [= [::rel/esc :premium] [price-band :price]]]]]
    [:check [:and :premium-count [:<= :premium-count 50]]]])
 
 (def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
@@ -216,7 +216,7 @@
             :error "No single bidder can submit more than 10 offers on a property"}]])
 
 (defn constrain [db]
-  (r/materialize
+  (rel/materialize
     db
     PropertyKey
     OfferKey
@@ -239,7 +239,7 @@
 (defn new-database []
   (-> {}
       (constrain)
-      (r/materialize PropertyInfo)))
+      (rel/materialize PropertyInfo)))
 
 (def data
   (let [address1 "abc def 55"

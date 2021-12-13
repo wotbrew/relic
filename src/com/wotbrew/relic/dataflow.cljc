@@ -344,11 +344,13 @@
                                                (if (identical? s ns)
                                                  idx
                                                  (let [idx (assoc idx new-row ns)]
-                                                   (when (empty? s)
-                                                     (add-to-mutable-set adds new-row))
+                                                   (add-to-mutable-set adds new-row)
                                                    idx)))) nidx inserted)
-                              db (mset db nidx)]
-                          (forward db (iterable-mut-set adds) (iterable-mut-set dels)))))}))
+                              db (mset db nidx)
+                              adds (iterable-mut-set adds)
+                              dels (iterable-mut-set dels)]
+                          (forward db adds dels))))
+     :provide (fn [db] (some-> (mget db) keys))}))
 
 (defn transform-unsafe
   "Like transform but with no narrowing protection, faster but only use if you guarantee that inputs rows do not converge
@@ -569,7 +571,9 @@
                            dels (iterable-mut-set dels)
 
                            db (mset db nidx)]
-                       (forward db adds dels))))}))
+                       (forward db adds dels))))
+
+     :provide (fn [db] (some-> db mget vals))}))
 
 (defn left-join [graph self left seekl right seekr]
   (conj
@@ -840,7 +844,11 @@
                            (when-some [entry (nidx group)]
                              (->Grouped (group->row group) (sfn entry)))))
                        changed)]
-                 (forward db inserted deleted))))}))
+                 (forward db inserted deleted))))
+     :provide
+     (fn [db]
+       (when-some [idx (mget db)]
+         (eduction (map (fn [[group entry]] (->Grouped (group->row group) (sfn entry)))) idx)))}))
 
 (defn sorted-group [graph self left cols elfn]
   (let [cols (vec (set cols))
@@ -909,7 +917,10 @@
                              (->Grouped (group->row group) (sfn entry)))))
                        changed)]
 
-                 (forward db inserted deleted))))}))
+                 (forward db inserted deleted))))
+     :provide (fn [db]
+                (when-some [idx (mget db)]
+                  (eduction (map (fn [[group entry]] (->Grouped (group->row group) (sfn entry)))) idx)))}))
 
 (defn row-count
   "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."

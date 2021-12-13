@@ -3,51 +3,28 @@
   (:require [com.wotbrew.relic :as r]
             [clojure.string :as str]))
 
+;; base relvars (essential state)
+
 (def Property
-  [[:table ::Property
-    {:req [:address
-           :price
-           :photo
-           :agent
-           :date-registered]}]])
+  [[:table ::Property]])
 
 (def Offer
-  [[:table ::Offer
-    {:req [:address
-           :offer-price
-           :offer-date
-           :bidder-name
-           :bidder-address]}]])
+  [[:table ::Offer]])
 
 (def Decision
-  [[:table ::Decision
-    {:req [:address
-           :offer-date
-           :bidder-name
-           :bidder-address
-           :decision-date
-           :accepted]}]])
+  [[:table ::Decision]])
 
 (def Room
-  [[:table ::Room
-    {:req [:address
-           :room-name
-           :width
-           :breadth
-           :type]}]])
+  [[:table ::Room]])
 
 (def Floor
-  [[:table ::Floor
-    {:req [:address
-           :room-name
-           :floor]}]])
+  [[:table ::Floor]])
 
 (def Commission
-  [[:table ::Commission
-    {:req [:area-code
-           :price-band
-           :sale-speed
-           :commission]}]])
+  [[:table ::Commission]])
+
+;; *functional* relational programming
+;; just use clojure functions & predicates on rows
 
 (defn- price-band [price]
   (condp >= price
@@ -68,6 +45,8 @@
       30 :medium
       60 :slow
       :very-slow)))
+
+;; derived relvars
 
 (def RoomInfo
   [[:from Room]
@@ -166,6 +145,102 @@
     [:total-commission [r/sum :commission]]]
    [:select :agent :total-commission]])
 
+;; constraints
+
+(def PropertyKey
+  [[:from Property]
+   [:unique :address]])
+
+(def OfferKey
+  [[:from Offer]
+   [:unique :address :offer-date :bidder-name :bidder-address]])
+
+(def DecisionKey
+  [[:from Decision]
+   [:unique :address :offer-date :bidder-name :bidder-address]])
+
+(def RoomKey
+  [[:from Room]
+   [:unique :address :room-name]])
+
+(def FloorKey
+  [[:from Floor]
+   [:unique :address :room-name]])
+
+(def CommissionKey
+  [[:from Commission]
+   [:unique :price-band :area-code :sale-speed]])
+
+(def OfferToProperty
+  [[:from Offer]
+   [:fk Property {:address :address}]])
+
+(def DecisionToOffer
+  [[:from Decision]
+   [:fk Offer {:address :address
+               :offer-date :offer-date
+               :bidder-name :bidder-name
+               :bidder-address :bidder-address}]])
+
+(def RoomToProperty
+  [[:from Room]
+   [:fk Property {:address :address}]])
+
+(def FloorToProperty
+  [[:from Floor]
+   [:fk Property {:address :address}]])
+
+(def PropertyHasToHaveAtLeastOneRoom
+  [[:from PropertyInfo]
+   [:check [:and :number-of-rooms [<= 1 :number-of-rooms]]]])
+
+(def CannotBidOnOwnProperty
+  [[:from Offer]
+   [:check [not= :address :bidder-address]]])
+
+(def CannotSubmitOfferOnceSaleAgreed
+  [[:from Offer]
+   [:join [[:from Acceptance] [:select :address :decision-date]] {:address :address}]
+   [:check {:pred [:and :offer-date :decision-date [<= [compare :offer-date :decision-date] 0]]
+            :error "Offer cannot be submitted after acceptance."}]])
+
+(def NoMoreThan50AdvertisedPremiumProperties
+  [[:from PropertyForWebsite]
+   [:agg [] [:premium-count [count [= [::r/esc :premium] [price-band :price]]]]]
+   [:check [:and :premium-count [:<= :premium-count 50]]]])
+
+(def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
+  [[:from Offer]
+   [:agg [:address :bidder-address :bidder-name] [:number-of-offers count]]
+   [:check {:pred [:and :number-of-offers [<= :number-of-offers 10]]
+            :error "No single bidder can submit more than 10 offers on a property"}]])
+
+(defn constrain [db]
+  (r/materialize
+    db
+    PropertyKey
+    OfferKey
+    DecisionKey
+    RoomKey
+    FloorKey
+    CommissionKey
+
+    OfferToProperty
+    DecisionToOffer
+    RoomToProperty
+    FloorToProperty
+    PropertyHasToHaveAtLeastOneRoom
+
+    CannotBidOnOwnProperty
+    CannotSubmitOfferOnceSaleAgreed
+    NoMoreThan50AdvertisedPremiumProperties
+    NoSingleBidderCanSubmitMoreThan10OffersOnAProperty))
+
+(defn new-database []
+  (-> {}
+      (constrain)
+      (r/materialize PropertyInfo)))
+
 (def data
   (let [address1 "abc def 55"
         alice-address "wonderland 42"]
@@ -173,7 +248,12 @@
                 :price 344000M
                 :photo "foo.jpg"
                 :agent "bob"
-                :date-registered #inst "2021-10-26"}]
+                :date-registered #inst "2021-10-26"}
+               {:address alice-address
+                :price 1690000M
+                :photo "foo.jpg"
+                :agent "bob"
+                :date-registered #inst "2021-10-27"}]
      Offer [{:address address1
              :offer-date #inst "2021-10-27"
              :offer-price 343000M
@@ -194,6 +274,11 @@
             :room-name "Room 1"
             :width 10.0M
             :breadth 10.0M
+            :type :living-room}
+           {:address alice-address
+            :room-name "Room 1"
+            :width 10.0M
+            :breadth 10.0M
             :type :living-room}]
      Floor [{:address address1
              :room-name "Room 1"
@@ -203,10 +288,3 @@
                   :area-code "55"
                   :sale-speed :very-fast
                   :commission 2000.0M}]}))
-
-(def db
-  (-> {}
-      (r/materialize PropertyInfo)
-      (r/transact data)))
-
-(def q (partial r/q db))

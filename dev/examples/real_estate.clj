@@ -212,7 +212,7 @@
 (def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
   [[:from Offer]
    [:agg [:address :bidder-address :bidder-name] [:number-of-offers count]]
-   [:check {:pred [<= :number-of-offers 10]
+   [:check {:pred [:? <= :number-of-offers 10]
             :error "No single bidder can submit more than 10 offers on a property"}]])
 
 (defn constrain [db]

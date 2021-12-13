@@ -65,14 +65,6 @@
     (set! *env-deps* (conj *env-deps* k))
     (raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
 
-(defn- maybe? [arg]
-  (and (vector? arg)
-       (= :com.wotbrew.relic/maybe (nth arg 0 nil))))
-
-(defn- deref-maybe [arg]
-  (when (maybe? arg)
-    (nth arg 1)))
-
 ;; cross platform mutable set
 (defn- mutable-set [] (volatile! (transient #{})))
 (defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
@@ -110,42 +102,24 @@
         #(apply f (get-args %))))))
 
 (defn- safe-row-fn-call [f args]
-  (case (count args)
-    0 f
-    1 (let [[a] args]
-        (if-some [a (deref-maybe a)]
-          (comp f (row-fn a))
-          (let [a (row-fn a)]
-            (fn apply1 [row]
-              (when-some [aval (a row)]
-                (f aval))))))
-    2 (let [[a b] args]
-        (if-some [a (deref-maybe a)]
-          (let [a (row-fn a)]
-            (if-some [b (deref-maybe b)]
-              (let [b (row-fn b)]
-                #(f (a %) (b %)))
-              (let [b (row-fn b)]
-                (fn apply2-amaybe [row]
-                  (when-some [bval (b row)]
-                    (f (a row) bval))))))
-          (let [a (row-fn a)]
-            (if-some [b (deref-maybe b)]
-              (let [b (row-fn b)]
-                (fn apply2-bmaybe [row]
-                  (when-some [aval (a row)]
-                    (f aval (b row)))))
-              (let [b (row-fn b)]
-                (fn apply2 [row]
-                  (when-some [aval (a row)]
-                    (when-some [bval (b row)]
-                      (f aval bval)))))))))
-    (let [as-rf (mapv expr-mut-reduction args)]
-      (fn [row]
-        (let [arg-buf (mutable-list)
-              arg-buf (reduce (fn [arg-buf f] (f arg-buf row)) arg-buf as-rf)]
-          (when arg-buf
-            (apply f (iterable-mut-list arg-buf))))))))
+  (let [args (mapv row-fn args)]
+    (case (count args)
+      0 f
+      1 (let [[a] args]
+          (fn apply1 [row]
+            (when-some [aval (a row)]
+              (f aval))))
+      2 (let [[a b] args]
+          (fn apply2 [row]
+            (when-some [aval (a row)]
+              (when-some [bval (b row)]
+                (f aval bval)))))
+      (let [as-rf (mapv expr-mut-reduction args)]
+        (fn [row]
+          (let [arg-buf (mutable-list)
+                arg-buf (reduce (fn [arg-buf f] (f arg-buf row)) arg-buf as-rf)]
+            (when arg-buf
+              (apply f (iterable-mut-list arg-buf)))))))))
 
 (defn- to-function [f]
   (cond
@@ -168,21 +142,19 @@
         :or (apply some-fn (map row-fn args))
         :not (unsafe-row-fn-call not args)
         :if (let [[c t e] (map row-fn args)]
-                    (if e
-                      (fn [row]
-                        (if (c row)
-                          (t row)
-                          (e row)))
-                      (fn [row]
-                        (when (c row)
-                          (t row)))))
+              (if e
+                (fn [row]
+                  (if (c row)
+                    (t row)
+                    (e row)))
+                (fn [row]
+                  (when (c row)
+                    (t row)))))
         :com.wotbrew.relic/env
         (let [[k not-found] args]
           (track-env-dep k)
           (fn [row]
             (-> row ::env (get k not-found))))
-
-        :com.wotbrew.relic/maybe (row-fn (deref-maybe (first args)))
 
         :com.wotbrew.relic/get
         (let [[k not-found] args]
@@ -533,13 +505,14 @@
 
 (defn find-hash-index
   "Looks up an index that allows seeking on the exprs, returns a tuple [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
-  [graph left exprs]
-  (let [fns (mapv row-fn exprs)
-        path (if (empty? fns) (constantly []) (apply juxt fns))]
-    [(conj left (into [:hash] exprs))
-     (if (seq fns)
-       (fn [idx row] (get-in idx (path row)))
-       (fn [idx _] (when idx (idx nil))))]))
+  ([graph left exprs] (find-hash-index graph left exprs exprs))
+  ([graph left exprs row-exprs]
+   (let [fns (mapv row-fn row-exprs)
+         path (if (empty? fns) (constantly []) (apply juxt fns))]
+     [(conj left (into [:hash] exprs))
+      (if (seq fns)
+        (fn [idx row] (get-in idx (path row)))
+        (fn [idx _] (when idx (idx nil))))])))
 
 (defn join
   "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).
@@ -662,22 +635,25 @@
   (let [[mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
-                        (let [s (mget db #{})
+                        (let [os (mget db)
+                              s (or os #{})
                               s (transient s)
                               s (reduce disj! s deleted)
                               s (reduce conj! s inserted)
-                              db (mset db (persistent! s))]
-                          (forward db inserted deleted))))
+                              ns (persistent! s)
+                              db (mset db ns)]
+                          (if os
+                            (forward db inserted deleted)
+                            (forward db ns deleted)))))
      :provide (fn [db] (not-empty (mget db)))}))
 
 (defn- enumerate-nested-map-of-sets [m depth]
-  (if (= 0 depth)
-    (eduction cat (vals m))
-    (loop [depth depth
-           coll (vals m)]
-      (case depth
-        0 (eduction cat coll)
-        (recur (dec depth) (eduction (mapcat vals) coll))))))
+  (case depth
+    0 (eduction cat (vals m))
+    1 (eduction cat (vals m))
+    2 (eduction (comp (mapcat vals) cat) (vals m))
+    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
+      (eduction (comp xf cat) (vals m)))))
 
 (defn save-hash [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
@@ -709,11 +685,12 @@
      :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-sets m (count fns))))}))
 
 (defn- enumerate-nested-map-of-maps [m depth]
-  (loop [depth depth
-         coll (vals m)]
-    (case depth
-      0 coll
-      (recur (dec depth) (eduction (mapcat vals) coll)))))
+  (case depth
+    0 (vals m)
+    1 (vals m)
+    2 (eduction (mapcat vals) (vals m))
+    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
+      (eduction comp xf (vals m)))))
 
 (def ^:private ^:dynamic *upsert-collisions* nil)
 
@@ -807,15 +784,15 @@
 (defn- add-join [left right clause graph]
   (add-implicit-joins
     (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause))
-            [right seekr] (find-hash-index graph right (vals clause))]
+      (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
+            [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
         (conj left [join seekl right seekr] [transform join-merge])))))
 
 (defn- add-left-join [left right clause graph]
   (add-implicit-joins
     (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause))
-            [right seekr] (find-hash-index graph right (vals clause))]
+      (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
+            [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
         (conj left
               [left-join seekl right seekr]
               [transform join-merge])))))
@@ -1183,8 +1160,8 @@
         (let [[_ right clause binding] stmt]
           (add-implicit-joins
             (fn []
-              (let [[left seekl] (find-hash-index graph left (keys clause))
-                    [right seekr] (find-hash-index graph right (vals clause))]
+              (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
+                    [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
                 (conj left
                       [join-coll seekl right seekr]
                       [transform (fn [{:keys [left coll]}]
@@ -1265,8 +1242,8 @@
                     origin left
                     _ (when (and (:cascade opts) (not (unwrap-table origin)))
                         (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
-                    [left seekl] (find-hash-index graph left (keys clause))
-                    [right seekr] (find-hash-index graph right (vals clause))]
+                    [left seekl] (find-hash-index graph left (keys clause) (vals clause))
+                    [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
 
         :unique

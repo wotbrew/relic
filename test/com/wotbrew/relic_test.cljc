@@ -409,8 +409,9 @@
 (deftest env-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:extend [:b [str [::rel/maybe [::rel/env :b]]]]]
-            [:where [any? [::rel/maybe [::rel/env :b]]]]]]
+            [:extend [:b [str [::rel/env :b]]]]
+            [:where [any? [::rel/env :b]]]
+            [:set]]]
 
     (is (= #{{:a 1, :b ""}}
            (-> {}

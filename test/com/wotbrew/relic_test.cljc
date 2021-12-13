@@ -179,9 +179,9 @@
 
     (is (= nil (rel/q db R)))
     (is (= #{{:n 3}} (rel/what-if db R {A [a0 a1 a2]})))
-    (is (= #{{:n 2}} (rel/what-if db R {A [a0 a1 a2]} [:delete A a0])))
-    (is (= #{{:n 1}} (rel/what-if db R {A [a1]} [:delete A a1] [:insert A a1])))
-    (is (= #{{:n 2}} (rel/what-if db R {A [a1, a2]} [:delete A a1] [:insert A a1])))))
+    (is (= #{{:n 2}} (rel/what-if db R {A [a0 a1 a2]} [:delete-exact A a0])))
+    (is (= #{{:n 1}} (rel/what-if db R {A [a1]} [:delete-exact A a1] [:insert A a1])))
+    (is (= #{{:n 2}} (rel/what-if db R {A [a1, a2]} [:delete-exact A a1] [:insert A a1])))))
 
 (deftest join-test
   (let [A [[:table :A]]
@@ -280,7 +280,7 @@
     (is (= #{ab0} (rel/what-if db R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))
     (is (= #{a0} (rel/what-if db R {A [a0] B [b0]} [:delete B b0])))
     (is (= #{a0} (rel/what-if db R {A [a0]} [:delete B b0])))
-    (is (= #{a0, ab1} (rel/what-if db R {A [a0, a1], B [b0, b1]} [:delete B b0])))))
+    (is (= #{a0, ab1} (rel/what-if db R {A [a0, a1], B [b0, b1]} [:delete B [= :% b0]])))))
 
 (deftest migrate-table-state-test
   (let [db {}
@@ -302,14 +302,14 @@
 (deftest where-lookup-test
   (let [A [[:table :A]]
         db {}]
-    (is (= [{:a 42}] (rel/what-if db [[:from A] [:where {:a 42}]] {A [{:a 42}, {:a 43}]})))
-    (is (= #{{:a 43}} (-> (rel/materialize db [[:from A] [:where {:a 43}]])
+    (is (= [{:a 42}] (rel/what-if db [[:from A] [:where [= :a 42]]] {A [{:a 42}, {:a 43}]})))
+    (is (= #{{:a 43}} (-> (rel/materialize db [[:from A] [:where [= :a 43]]])
                           (rel/transact {A [{:a 42}, {:a 43}]})
                           (dataflow/gg)
-                          (dataflow/get-node [[:from A] [:where {:a 43}]])
+                          (dataflow/get-node [[:from A] [:where [= :a 43]]])
                           :results)))
 
-    (is (= [{:a 42}] (rel/what-if db [[:from A] [:where {:a 42} {[:b ::rel/% [::rel/esc ::missing]] ::missing}]] {A [{:a 42}, {:a 43}]})))
+    (is (= [{:a 42}] (rel/what-if db [[:from A] [:where [= :a 42] {[:b :% [::rel/esc ::missing]] ::missing}]] {A [{:a 42}, {:a 43}]})))
     (is (= nil (rel/what-if db [[:from A] [:where {:a 42} {:a 43}]])))
     (is (= nil (rel/what-if db [[:from A] [:where [:or {:a 42} {:a 43}]]])))))
 
@@ -394,8 +394,8 @@
   (let [A [[:table :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]
     (is (= #{{:a 43}, {:a 45}} (rel/what-if db A [:update A {:a [inc :a]}])))
-    (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} {:a 42}])))
-    (is (= #{{:a 42}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} {:a 41}])))
+    (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} [= :a 42]])))
+    (is (= #{{:a 42}, {:a 44}} (rel/what-if db A [:update A {:a [inc :a]} [= :a 41]])))
     (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A {:a 43} [= :a 42]])))
     (is (= #{{:a 43}, {:a 44}} (rel/what-if db A [:update A #(assoc % :a 43) [= :a 42]])))))
 
@@ -403,14 +403,14 @@
   (let [A [[:table :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]
     (is (= #{} (rel/what-if db A [:delete A])))
-    (is (= #{{:a 42}} (rel/what-if db A [:delete A {:a 44}])))
+    (is (= #{{:a 42}} (rel/what-if db A [:delete A [= :a 44]])))
     (is (= #{{:a 42}} (rel/what-if db A [:delete A [< 43 :a] [:or [= 1 2] [= 1 1]]])))))
 
 (deftest env-test
   (let [A [[:table :A]]
         A2 [[:from A]
-            [:extend [:b [str [::rel/env :b]]]]
-            [:where [any? [::rel/env :b]]]]]
+            [:extend [:b [str [::rel/maybe [::rel/env :b]]]]]
+            [:where [any? [::rel/maybe [::rel/env :b]]]]]]
 
     (is (= #{{:a 1, :b ""}}
            (-> {}

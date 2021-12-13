@@ -192,7 +192,7 @@
 
 (def PropertyHasToHaveAtLeastOneRoom
   [[:from PropertyInfo]
-   [:check [:and :number-of-rooms [<= 1 :number-of-rooms]]]])
+   [:check [:? <= 1 :number-of-rooms]]])
 
 (def CannotBidOnOwnProperty
   [[:from Offer]
@@ -201,7 +201,7 @@
 (def CannotSubmitOfferOnceSaleAgreed
   [[:from Offer]
    [:join [[:from Acceptance] [:select :address :decision-date]] {:address :address}]
-   [:check {:pred [:and :offer-date :decision-date [<= [compare :offer-date :decision-date] 0]]
+   [:check {:pred [:? <= [compare :offer-date :decision-date] 0]
             :error "Offer cannot be submitted after acceptance."}]])
 
 (def NoMoreThan50AdvertisedPremiumProperties
@@ -212,7 +212,7 @@
 (def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
   [[:from Offer]
    [:agg [:address :bidder-address :bidder-name] [:number-of-offers count]]
-   [:check {:pred [:and :number-of-offers [<= :number-of-offers 10]]
+   [:check {:pred [<= :number-of-offers 10]
             :error "No single bidder can submit more than 10 offers on a property"}]])
 
 (defn constrain [db]

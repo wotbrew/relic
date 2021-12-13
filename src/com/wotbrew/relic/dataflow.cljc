@@ -65,50 +65,138 @@
     (set! *env-deps* (conj *env-deps* k))
     (raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
 
+(defn- maybe? [arg]
+  (and (vector? arg)
+       (= :com.wotbrew.relic/maybe (nth arg 0 nil))))
+
+(defn- deref-maybe [arg]
+  (when (maybe? arg)
+    (nth arg 1)))
+
+;; cross platform mutable set
+(defn- mutable-set [] (volatile! (transient #{})))
+(defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
+(defn- del-from-mutable-set [mset v] (vswap! mset disj! v) mset)
+(defn- iterable-mut-set [mset] (persistent! @mset))
+
+;; cross platform mutable list
+(defn- mutable-list [] (volatile! (transient [])))
+(defn- add-to-mutable-list [mlist v] (vswap! mlist conj! v) mlist)
+(defn- iterable-mut-list [mlist] (persistent! @mlist))
+
+(declare row-fn)
+
+(defn- expr-mut-reduction [expr]
+  (if-some [x (deref-maybe expr)]
+    (let [xfn (row-fn x)]
+      (fn [arg-buf row]
+        (add-to-mutable-list arg-buf (xfn row))))
+    (let [xfn (row-fn expr)]
+      (fn [arg-buf row]
+        (if-some [xval (xfn row)]
+          (add-to-mutable-list arg-buf xval)
+          (reduced nil))))))
+
+(defn- unsafe-row-fn-call [f args]
+  (let [args (mapv row-fn args)]
+    (case (count args)
+      0 f
+      1 (comp f (first args))
+      2 (let [[a b] args] #(f (a %) (b %)))
+      3 (let [[a b c] args] #(f (a %) (b %) (c %)))
+      4 (let [[a b c d] args] #(f (a %) (b %) (c %) (d %)))
+      5 (let [[a b c d e] args] #(f (a %) (b %) (c %) (d %) (e %)))
+      (let [get-args (apply juxt args)]
+        #(apply f (get-args %))))))
+
+(defn- safe-row-fn-call [f args]
+  (case (count args)
+    0 f
+    1 (let [[a] args]
+        (if-some [a (deref-maybe a)]
+          (comp f (row-fn a))
+          (let [a (row-fn a)]
+            (fn apply1 [row]
+              (when-some [aval (a row)]
+                (f aval))))))
+    2 (let [[a b] args]
+        (if-some [a (deref-maybe a)]
+          (let [a (row-fn a)]
+            (if-some [b (deref-maybe b)]
+              (let [b (row-fn b)]
+                #(f (a %) (b %)))
+              (let [b (row-fn b)]
+                (fn apply2-amaybe [row]
+                  (when-some [bval (b row)]
+                    (f (a row) bval))))))
+          (let [a (row-fn a)]
+            (if-some [b (deref-maybe b)]
+              (let [b (row-fn b)]
+                (fn apply2-bmaybe [row]
+                  (when-some [aval (a row)]
+                    (f aval (b row)))))
+              (let [b (row-fn b)]
+                (fn apply2 [row]
+                  (when-some [aval (a row)]
+                    (when-some [bval (b row)]
+                      (f aval bval)))))))))
+    (let [as-rf (mapv expr-mut-reduction args)]
+      (fn [row]
+        (let [arg-buf (mutable-list)
+              arg-buf (reduce (fn [arg-buf f] (f arg-buf row)) arg-buf as-rf)]
+          (when arg-buf
+            (apply f (iterable-mut-list arg-buf))))))))
+
+(defn- to-function [f]
+  (cond
+    (fn? f) f
+    #?@(:clj [(qualified-symbol? f) @(requiring-resolve f)])
+    #?@(:clj [(symbol? f) @(resolve f)])
+    (keyword? f) f
+    :else (raise "Expected a function in expression prefix position")))
+
 (defn row-fn [expr]
   (cond
     (= [] expr) (constantly [])
 
-    (= :com.wotbrew.relic/% expr) identity
+    (= :% expr) identity
 
     (vector? expr)
-    (let [[f & args] expr
-          [f args]
-          (cond
-            #?@(:clj [(qualified-symbol? f) [@(requiring-resolve f) args]])
-            #?@(:clj [(symbol? f) [@(resolve f) args]])
-            (= f :and) [(apply every-pred (map row-fn args))]
-            (= f :or) [(apply some-fn (map row-fn args))]
-            (= f :not) [not args]
-            (= f :if) (let [[c t e] (map row-fn args)]
-                        [(if e
-                           (fn [row]
-                             (if (c row)
-                               (t row)
-                               (e row)))
-                           (fn [row]
-                             (when (c row)
-                               (t row))))])
-            (= f :com.wotbrew.relic/env)
-            (let [[k not-found] args]
-              (track-env-dep k)
-              [(fn [row]
-                 (-> row ::env (get k not-found)))])
+    (let [[f & args] expr]
+      (case f
+        :and (apply every-pred (map row-fn args))
+        :or (apply some-fn (map row-fn args))
+        :not (unsafe-row-fn-call not args)
+        :if (let [[c t e] (map row-fn args)]
+                    (if e
+                      (fn [row]
+                        (if (c row)
+                          (t row)
+                          (e row)))
+                      (fn [row]
+                        (when (c row)
+                          (t row)))))
+        :com.wotbrew.relic/env
+        (let [[k not-found] args]
+          (track-env-dep k)
+          (fn [row]
+            (-> row ::env (get k not-found))))
 
-            (= f :com.wotbrew.relic/get) (let [[k not-found] args] [(fn [row] (row k not-found))])
+        :com.wotbrew.relic/maybe (row-fn (deref-maybe (first args)))
 
-            (= f :com.wotbrew.relic/esc) (let [[v] args] [(constantly v)])
-            :else [f args])
-          args (map row-fn args)]
-      (case (count args)
-        0 f
-        1 (let [[a] args] (comp f a))
-        2 (let [[a b] args] #(f (a %) (b %)))
-        3 (let [[a b c] args] #(f (a %) (b %) (c %)))
-        4 (let [[a b c d] args] #(f (a %) (b %) (c %) (d %)))
-        5 (let [[a b c d e] args] #(f (a %) (b %) (c %) (d %) (e %)))
-        (let [get-args (apply juxt args)]
-          #(apply f (get-args %)))))
+        :com.wotbrew.relic/get
+        (let [[k not-found] args]
+          (fn [row] (row k not-found)))
+
+        :com.wotbrew.relic/esc
+        (let [[v] args]
+          (constantly v))
+
+        :?
+        (let [[f & args] args]
+          (safe-row-fn-call (to-function f) args))
+
+        (unsafe-row-fn-call (to-function f) args)))
 
     (keyword? expr) expr
 
@@ -117,11 +205,6 @@
     #?@(:clj [(symbol? expr) @(resolve expr)])
 
     (fn? expr) expr
-
-    (map? expr)
-    (if (seq expr)
-      (apply every-pred (map (fn [[k v]] (let [kf (row-fn k)] #(= v (kf %)))) expr))
-      (constantly true))
 
     :else (constantly expr)))
 
@@ -265,16 +348,6 @@
     1 (check-pred relvar (first checks))
     (apply comp (rseq (mapv #(check-pred relvar %) checks)))))
 
-;; cross platform mutable set
-(defn- mutable-set [] (volatile! (transient #{})))
-(defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
-(defn- del-from-mutable-set [mset v] (vswap! mset disj! v) mset)
-(defn- iterable-mut-set [mset] (persistent! @mset))
-
-;; cross platform mutable list
-(defn- mutable-list [] (volatile! (transient [])))
-(defn- add-to-mutable-list [mlist v] (vswap! mlist conj! v) mlist)
-(defn- iterable-mut-list [mlist] (persistent! @mlist))
 
 (def ^:dynamic *ids* nil)
 (def ^:dynamic *idn* nil)
@@ -930,7 +1003,7 @@
                          [group cols identity]
                          [transform-unsafe (bind-group binding count)]))})
   ([expr]
-   (let [f (row-fn [:if expr :com.wotbrew.relic/%])]
+   (let [f (row-fn [:if expr :%])]
      {:custom-node (fn [left cols [binding]]
                      (conj left
                            [group cols f]

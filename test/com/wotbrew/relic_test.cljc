@@ -338,11 +338,11 @@
         A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2 A1)]
-    (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) :results)))
-    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
-    (is (some? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
-    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) :results)))
-    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
+   (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) :results)))
+   (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
+   (is (some? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
+   (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) :results)))
+   (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
 
 (deftest watch-table-test
   (let [A [[:table :A]]

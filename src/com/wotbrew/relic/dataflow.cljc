@@ -1248,28 +1248,34 @@
          (! (to-dataflow* graph ret relvar))
          ret)) ret)))
 
+(defn- tag-generation [graph node-id generation]
+  (let [{e-gen :generation
+         :keys [provide
+                deps]
+         :as node} (graph node-id)]
+    (if (and provide e-gen)
+      graph
+      (let [graph (assoc graph node-id (assoc node :generation generation))]
+        (reduce #(tag-generation %1 (id %2) generation) graph deps)))))
+
 (defn- depend [graph dep dependent]
-  (let [{:keys [dependents
-                score]
-         :or {dependents #{}
-              score 0}
+  (let [{:keys [dependents]
+         :or {dependents #{}}
          :as node} (graph dep)
-        dependents (conj dependents dependent)]
-    ;; todo score
-    (assoc graph dep (-> (assoc node :dependents dependents, :score score)
-                         (dissoc :linked)))))
+        dependents (conj dependents dependent)
+        node (-> (assoc node :dependents dependents,)
+                 (dissoc :linked))
+        graph (assoc graph dep node)]
+    graph))
 
 (defn- undepend [graph dep dependent]
-  (let [{:keys [dependents
-                score]
-         :or {dependents #{}
-              score 0}
+  (let [{:keys [dependents]
+         :or {dependents #{}}
          :as node} (graph dep)
-        dependents (disj dependents dependent)]
-    ;; todo score
-    (assoc graph dep
-                 (-> (assoc node :dependents dependents, :score score)
-                     (dissoc :linked)))))
+        dependents (disj dependents dependent)
+        node (-> (assoc node :dependents dependents)
+                 (dissoc :linked))]
+    (assoc graph dep node)))
 
 (defn- add-to-graph* [graph relvar]
   (cond
@@ -1281,7 +1287,8 @@
           graph (assoc graph nid (assoc node :relvar relvar :score 0))
           graph (if table (update graph ::tables assoc table nid) graph)
           graph (reduce add-to-graph* graph deps)
-          graph (reduce #(depend %1 (id %2) nid) graph deps)]
+          graph (reduce #(depend %1 (id %2) nid) graph deps)
+          graph (tag-generation graph nid (::generation graph 0))]
       graph)))
 
 (defn add-to-graph [graph relvar]
@@ -1317,6 +1324,9 @@
     (let [graph (del-from-graph* graph relvar)
           graph (assoc graph ::ids *ids* ::idn *idn*)]
       graph)))
+
+(defn inc-generation [graph]
+  (assoc graph ::generation (inc (::generation graph 0))))
 
 (def ^:private ^:dynamic *tracking* nil)
 
@@ -1369,55 +1379,74 @@
                         (:deps (graph (get-id graph relvar))))) graph (::unlinked graph))
       (dissoc ::unlinked)))
 
+;; d1, d2* d3
+;;  |  |   |
+;; c1, c2  |
+;; _|__|___|
+;; b1
+;; |
+;; a1 provide
+
+;; a1,b1,c1,d1 have generation 0
+;; add d2 to graph with generation 1
+;; we need to recur remove the generation on deps until we hit a :provide node
+
 (defn init [graph relvar]
-  (letfn [(id [relvar] (get-id graph relvar))
-          (sort-dependents [dependents]
-            (sort-by (comp :score graph) > dependents))
-          (forward-fn [graph dep dependents]
-            (case (count dependents)
-              0 flow-noop
-              1 (get (:init (graph (first dependents))) dep)
-              (let [dependents (sort-dependents dependents)
-                    fns (mapv (comp #(get % dep) :init graph) dependents)]
-                (fn flow-fan-out [db inserted deleted]
-                  (reduce
-                    (fn flow-step [db f] (f db inserted deleted))
-                    db
-                    fns)))))
-          (dirty [graph id]
-            (let [{:keys [dependents]} (graph id)]
-              dependents))
-          (link-uninitialised [graph uninit]
-            (let [{:keys [deps
-                          flow]
-                   :as node} (graph uninit)
-                  dirty (sort-dependents (dirty graph uninit))
-                  graph (reduce link-uninitialised graph dirty)
-                  forward (forward-fn graph uninit dirty)
-                  init (reduce
-                         (fn [m edge]
-                           (let [dep (id edge)
-                                 flow-fn (get flow dep flow-noop)]
-                             (assoc m dep (fn init [db inserted deleted]
-                                            (flow-fn db inserted deleted forward)))))
-                         {}
-                         deps)]
-              (assoc graph uninit (assoc node :init init :init-forward forward))))
-          (init [graph relvar]
-            (let [{:keys [deps
-                          provide
-                          results]} (graph (id relvar))
-                  rs (or results (when provide (provide graph)))]
+  (let [new-generation (::generation graph)]
+    (letfn [(id [relvar] (get-id graph relvar))
+            (sort-dependents [dependents]
+              (sort-by (comp :score graph) > dependents))
+            (forward-fn [graph dep dependents]
+              (case (count dependents)
+                0 flow-noop
+                1 (get (:init (graph (first dependents))) dep)
+                (let [dependents (sort-dependents dependents)
+                      fns (mapv (comp #(get % dep) :init graph) dependents)]
+                  (fn flow-fan-out [db inserted deleted]
+                    (reduce
+                      (fn flow-step [db f] (f db inserted deleted))
+                      db
+                      fns)))))
+            (dirty? [graph id]
+              (let [generation (:generation (graph id))]
+                (cond
+                  (= new-generation generation) true
+                  generation false
+                  :else true)))
+            (dirty [graph id]
+              (let [{:keys [dependents]} (graph id)]
+                (filterv #(dirty? graph %) dependents)))
+            (link-uninitialised [graph uninit]
+              (let [{:keys [deps
+                            flow]
+                     :as node} (graph uninit)
+                    dirty (sort-dependents (dirty graph uninit))
+                    graph (reduce link-uninitialised graph dirty)
+                    forward (forward-fn graph uninit dirty)
+                    init (reduce
+                           (fn [m edge]
+                             (let [dep (id edge)
+                                   flow-fn (get flow dep flow-noop)]
+                               (assoc m dep (fn init [db inserted deleted]
+                                              (flow-fn db inserted deleted forward)))))
+                           {}
+                           deps)]
+                (assoc graph uninit (assoc node :init init :init-forward forward))))
+            (init [graph relvar]
+              (let [{:keys [deps
+                            provide
+                            results]} (graph (id relvar))
+                    rs (or results (when provide (provide graph)))]
 
-              (cond
-                rs
-                (let [graph (link-uninitialised graph (id relvar))
-                      f (:init-forward (graph (id relvar)))]
-                  (f graph rs nil))
+                (cond
+                  rs
+                  (let [graph (link-uninitialised graph (id relvar))
+                        f (:init-forward (graph (id relvar)))]
+                    (f graph rs nil))
 
-                :else
-                (reduce init graph deps))))]
-    (init graph relvar)))
+                  :else
+                  (reduce init graph deps))))]
+      (init graph relvar))))
 
 (defn- result [graph self left box]
   {:deps [left]
@@ -1444,6 +1473,7 @@
       (or (:results (graph (get-id graph query)))
           (let [rbox (volatile! nil)
                 query (conj query [result rbox])
+                graph (inc-generation graph)
                 graph (add-to-graph graph query)
                 _ (init graph query)]
             @rbox)))))
@@ -1465,6 +1495,7 @@
    (if (contains? (::materialized (gg db)) relvar)
      db
      (let [graph (gg db)
+           graph (inc-generation graph)
            graph (if (:ephemeral opts) graph (update graph ::materialized set-conj relvar))
            relvar (conj relvar [mat])
            graph (add-to-graph graph relvar)

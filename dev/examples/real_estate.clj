@@ -207,13 +207,14 @@
 (def NoMoreThan50AdvertisedPremiumProperties
   [[:from PropertyForWebsite]
    [:agg [] [:premium-count [count [= [::rel/esc :premium] [price-band :price]]]]]
-   [:check [:and :premium-count [:<= :premium-count 50]]]])
+   [:check {:pred [:<= :premium-count 50]
+            :error "At most 50 properties can be advertised on the website."}]])
 
 (def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
   [[:from Offer]
    [:agg [:address :bidder-address :bidder-name] [:number-of-offers count]]
-   [:check {:pred [:? <= :number-of-offers 10]
-            :error "No single bidder can submit more than 10 offers on a property"}]])
+   [:check {:pred [<= :number-of-offers 10]
+            :error "No single bidder can submit more than 10 offers on a property."}]])
 
 (defn constrain [db]
   (rel/materialize
@@ -277,9 +278,14 @@
             :type :living-room}
            {:address alice-address
             :room-name "Room 1"
-            :width 10.0M
-            :breadth 10.0M
-            :type :living-room}]
+            :width 12.0M
+            :breadth 14.5M
+            :type :living-room}
+           {:address alice-address
+            :room-name "Kitchen"
+            :width 13.0M
+            :breadth 8.0M
+            :type :kitchen}]
      Floor [{:address address1
              :room-name "Room 1"
              :floor 0}]

@@ -79,15 +79,11 @@
 (declare row-fn)
 
 (defn- expr-mut-reduction [expr]
-  (if-some [x (deref-maybe expr)]
-    (let [xfn (row-fn x)]
-      (fn [arg-buf row]
-        (add-to-mutable-list arg-buf (xfn row))))
-    (let [xfn (row-fn expr)]
-      (fn [arg-buf row]
-        (if-some [xval (xfn row)]
-          (add-to-mutable-list arg-buf xval)
-          (reduced nil))))))
+  (let [xfn (row-fn expr)]
+    (fn [arg-buf row]
+      (if-some [xval (xfn row)]
+        (add-to-mutable-list arg-buf xval)
+        (reduced nil)))))
 
 (defn- unsafe-row-fn-call [f args]
   (let [args (mapv row-fn args)]

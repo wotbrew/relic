@@ -163,28 +163,28 @@
         (let [[k not-found] args]
           (fn [row] (row k not-found)))
 
-        :com.wotbrew.relic/esc
+        (:com.wotbrew.relic/esc :_)
         (let [[v] args]
           (constantly v))
 
-        :com.wotbrew.relic/join-coll
+        (:com.wotbrew.relic/join-coll :$)
         (let [[relvar clause] args
               k [relvar clause]]
           (add-implicit-join relvar clause)
           (fn [row]
             (row k)))
 
-        :com.wotbrew.relic/join-first
+        (:com.wotbrew.relic/join-first :$1)
         (let [[relvar clause] args
               k [relvar clause]]
           (add-implicit-join relvar clause)
           (fn [row] (first (row k))))
 
-        :?
+        (:com.wotbrew.relic/nil-safe :?)
         (let [[f & args] args]
           (nil-safe-row-fn-call (to-function f) args))
 
-        :!
+        (:com.wotbrew.relic/unsafe :!)
         (let [[f & args] args]
           (unsafe-row-fn-call (to-function f) args))
 

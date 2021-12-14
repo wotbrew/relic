@@ -69,13 +69,13 @@
     [:area-code [area-code :address]]
 
     [[:number-of-rooms]
-     [::rel/join-first
+     [:$1
       [[:from RoomInfo]
        [:agg [:address] [:number-of-rooms count]]]
       {:address :address}]]
 
     [[:square-feet]
-     [::rel/join-first
+     [:$1
       [[:from RoomInfo]
        [:agg [:address] [:square-feet [rel/sum :room-size]]]]
       {:address :address}]]]])
@@ -206,7 +206,7 @@
 
 (def NoMoreThan50AdvertisedPremiumProperties
   [[:from PropertyForWebsite]
-   [:agg [] [:premium-count [count [= [::rel/esc :premium] [price-band :price]]]]]
+   [:agg [] [:premium-count [count [= [:_ :premium] [price-band :price]]]]]
    [:check {:pred [:<= :premium-count 50]
             :error "At most 50 properties can be advertised on the website."}]])
 

@@ -644,13 +644,13 @@
 
     (is (= {:A #{}
             :B #{{:a 1}}} (rel/transact db
-                               {:A [{:a 2}], :B [{:a 1} {:a 2}]}
-                               [:delete :B [= :a 2]])))
+                                        {:A [{:a 2}], :B [{:a 1} {:a 2}]}
+                                        [:delete :B [= :a 2]])))
 
     (is (= {:A #{{:a 1}}
             :B #{{:a 1}}} (rel/transact db {:A [{:a 2}], :B [{:a 2}]}
                                         [:update :A {:a 1}]
-                                        [:update :B {:a 1}]))))
+                                        [:update :B {:a 1}])))))
 
-  (comment
-    (clojure.test/run-all-tests #"relic")))
+(comment
+  (clojure.test/run-all-tests #"relic"))

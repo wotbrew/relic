@@ -65,12 +65,12 @@
   "Returns the raw index storing rows for relvar.
 
   Normally a set, but if the last statement in the relvar is an index statement, you will get a specialised
-  datastructure, this can form the bases of using materialized relic indexes in other high-performance work on your data.
+  data structure, this can form the basis of using materialized relic indexes in other high-performance work on your data.
 
   :hash will yield nested maps (path being the expressions in the hash e.g [:hash :a :b :c])
   will yield an index {(a ?row) {(b ?row) {(:c ?row) #{?row}}}
 
-  :btree is the same as hash but gives you a sorted map instead.
+  :btree is the same as hash but gives you a sorted map (sorted at each level) instead to enable range queries.
 
   :unique will give you an index where the keys map to exactly one row, so [:unique :a :b :c]
   will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
@@ -83,9 +83,9 @@
 (defn materialize
   "Causes relic to maintain the given relvars incrementally as the database changes.
 
-  This will improve query performance drastically at the cost of decreased write performance.
+  This will make queries against that relvar effectively free at the cost of decreased write performance.
 
-  Additionally useful to start maintaining constraints by using relvars that throw if invariants are broken.
+  Additionally, useful to start maintaining constraints by using relvars that throw if invariants are broken.
 
   e.g (materialize db [[:from Customer] [:unique :email]])
 
@@ -120,7 +120,13 @@
 
      e.g [:unique :id] would make sure only one row exists for a given :id value.
 
-     Allows the use of :upsert in transact calls."
+     Allows the use of :upsert in transact calls.
+
+   [:constrain & constraint-statements]
+
+    Lets you combine multiple constraints in one statement.
+
+    e.g [[:from Customer] [:constrain [:req :id :firstname] [:unique :id]]"
   [db & relvars]
   (reduce dataflow/materialize db relvars))
 

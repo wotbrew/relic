@@ -97,7 +97,7 @@
       (let [get-args (apply juxt args)]
         #(apply f (get-args %))))))
 
-(defn- safe-row-fn-call [f args]
+(defn- nil-safe-row-fn-call [f args]
   (let [args (mapv row-fn args)]
     (case (count args)
       0 f
@@ -152,6 +152,7 @@
                 (fn [row]
                   (when (c row)
                     (t row)))))
+
         :com.wotbrew.relic/env
         (let [[k not-found] args]
           (track-env-dep k)
@@ -181,7 +182,11 @@
 
         :?
         (let [[f & args] args]
-          (safe-row-fn-call (to-function f) args))
+          (nil-safe-row-fn-call (to-function f) args))
+
+        :!
+        (let [[f & args] args]
+          (unsafe-row-fn-call (to-function f) args))
 
         (unsafe-row-fn-call (to-function f) args)))
 
@@ -1133,6 +1138,17 @@
               left (reduce conj left joins)]
           left)))))
 
+(defn hash-lookup [graph self _ index path]
+  (let [path (vec path)
+        [iget] (mem index)]
+    (when-not (graph (id index))
+      (raise ":hash-lookup used but index is not materialized" {:index index}))
+    (when-not (= (count path) (dec (count (head-stmt index))))
+      (raise ":hash-lookup path length must currently match indexed expressions"))
+    {:provide (fn [db]
+                (when-some [i (iget db)]
+                  (get-in i path)))}))
+
 (defn- require-set
   "Certain functions will require that an intermediate relvar is materialized as a set.
 
@@ -1294,7 +1310,13 @@
 
         :rename
         (let [[_ renames] stmt]
-          (conj left [transform #(set/rename-keys % renames)]))))))
+          (conj left [transform #(set/rename-keys % renames)]))
+
+        :hash-lookup
+        (let [[_ index & path] stmt]
+          ;; todo index might use expressions requiring implicit joins?
+          ;; need to figure out a better way of handling this
+          [[hash-lookup index path]])))))
 
 (defn to-dataflow [graph relvar]
   (let [ret (to-dataflow* graph relvar relvar)]

@@ -652,5 +652,13 @@
                                         [:update :A {:a 1}]
                                         [:update :B {:a 1}])))))
 
+(deftest hash-lookup-test
+  (let [index [[:table :A]
+               [:hash :a [inc :a]]]
+        db (rel/materialize {} index)]
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:hash-lookup index "a" "b"]])))
+    (is (= #{{:a 1}} (rel/what-if db [[:hash-lookup index 1 2]] {:A [{:a 1} {:a 2}]})))
+    (is (= #{{:a 1} {:a 1, :b 2}} (rel/what-if db [[:hash-lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

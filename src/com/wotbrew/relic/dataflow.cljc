@@ -125,6 +125,12 @@
     (keyword? f) f
     :else (raise "Expected a function in expression prefix position")))
 
+(def ^:dynamic *implicit-joins* nil)
+
+(defn- add-implicit-join [relvar clause]
+  (when-some [j *implicit-joins*]
+    (set! *implicit-joins* (conj j [relvar clause]))))
+
 (defn row-fn [expr]
   (cond
     (= [] expr) (constantly [])
@@ -159,6 +165,19 @@
         :com.wotbrew.relic/esc
         (let [[v] args]
           (constantly v))
+
+        :com.wotbrew.relic/join-coll
+        (let [[relvar clause] args
+              k [relvar clause]]
+          (add-implicit-join relvar clause)
+          (fn [row]
+            (row k)))
+
+        :com.wotbrew.relic/join-first
+        (let [[relvar clause] args
+              k [relvar clause]]
+          (add-implicit-join relvar clause)
+          (fn [row] (first (row k))))
 
         :?
         (let [[f & args] args]
@@ -497,7 +516,9 @@
                acc
                (f row)))))]
     {:deps [left]
-     :flow (flow left (fn [db inserted deleted forward] (forward db (eduction exf inserted) (eduction exf deleted))))}))
+     :flow (flow left
+                 (fn [db inserted deleted forward]
+                   (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn find-hash-index
   "Looks up an index that allows seeking on the exprs, returns a tuple [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
@@ -663,7 +684,8 @@
                               m (reduce add-row m inserted)
                               db (mset db m)]
                           (forward db inserted deleted))))
-     :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-sets m (count fns))))}))
+     :provide (fn [db] (when-some [m (not-empty (mget db))]
+                         (enumerate-nested-map-of-sets m (count fns))))}))
 
 (defn save-btree [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
@@ -678,7 +700,8 @@
                               m (reduce add-row m inserted)
                               db (mset db m)]
                           (forward db inserted deleted))))
-     :provide (fn [db] (when-some [m (not-empty (mget db))] (enumerate-nested-map-of-sets m (count fns))))}))
+     :provide (fn [db] (when-some [m (not-empty (mget db))]
+                         (enumerate-nested-map-of-sets m (count fns))))}))
 
 (defn- enumerate-nested-map-of-maps [m depth]
   (case depth
@@ -760,20 +783,39 @@
 (defn- flow-pass [db inserted deleted forward]
   (forward db inserted deleted))
 
-(defn add-implicit-joins [thunk]
-  (binding [*env-deps* #{}]
+(defn add-implicit-joins [thunk & remainder]
+  (binding [*env-deps* #{}
+            *implicit-joins* #{}]
     (let [relvar (thunk)
-          env-deps *env-deps*]
-      (if (empty? env-deps)
-        relvar
+          env-deps *env-deps*
+          joins *implicit-joins*
+
+          join-statements
+          (mapv (fn [[relvar clause :as jk]]
+                  [:join-as-coll relvar clause jk {:unsafe true}]) joins)
+
+          env-join
+          (when (seq env-deps)
+            [:left-join
+             (conj Env [:select [::env [select-keys ::env env-deps]]])
+             {}])
+
+          without-cols
+          (if (seq env-deps)
+            [::env]
+            [])
+
+          without-cols (into without-cols joins)]
+
+      (if (or (seq joins) env-join)
         (let [left (left-relvar relvar)
-              stmt (head-stmt relvar)]
-          (conj left
-                [:left-join
-                 (conj Env [:select [::env [select-keys ::env env-deps]]])
-                 {}]
-                stmt
-                [:without-unsafe* ::env]))))))
+              stmt (head-stmt relvar)
+              left (if env-join (conj left env-join) left)
+              left (reduce conj left join-statements)
+              left (conj left stmt)
+              left (reduce conj left remainder)]
+          (conj left (into [:without-unsafe] without-cols)))
+        (reduce conj relvar remainder)))))
 
 (defn- join-merge [{:keys [left, right]}] (merge left right))
 
@@ -1091,34 +1133,6 @@
               left (reduce conj left joins)]
           left)))))
 
-(defn- join-expr? [expr] (and (vector? expr) (= :com.wotbrew.relic/join-coll (nth expr 0 nil))))
-(defn- extend-expr [[_ expr]] expr)
-(defn- join-ext? [extension] (join-expr? (extend-expr extension)))
-
-(defn- join-first-expr? [expr] (and (vector? expr) (= :com.wotbrew.relic/join-first (nth expr 0 nil))))
-(defn- join-first-ext? [extension] (join-first-expr? (extend-expr extension)))
-
-(defn split-extensions [extensions]
-  (for [extensions (partition-by (fn [ext] (cond
-                                             (join-ext? ext) :join
-                                             (join-first-ext? ext) :join1
-                                             :else :std)) extensions)]
-    (cond
-      (join-ext? (first extensions))
-      (for [[binding [_ relvar clause]] extensions
-            :let [_ (assert (keyword? binding) "only keyword bindings allowed for join-coll expressions")]]
-        [:join-as-coll relvar clause binding])
-
-      (join-first-ext? (first extensions))
-      (for [[binding [_ relvar clause]] extensions
-            :let [bind-fn (bind-fn binding)]
-            stmt
-            [[:join-as-coll relvar clause ::join-expr]
-             [transform #(bind-fn (dissoc % ::join-expr) (first (::join-expr %)))]]]
-        stmt)
-
-      :else [(into [:extend*] extensions)])))
-
 (defn- require-set
   "Certain functions will require that an intermediate relvar is materialized as a set.
 
@@ -1148,20 +1162,21 @@
         (let [[_ & cols] stmt]
           (conj left [transform (without-fn cols)]))
 
-        :without-unsafe*
+        :without-unsafe
         (let [[_ & cols] stmt]
           (conj left [transform-unsafe (without-fn cols)]))
 
         :join-as-coll
-        (let [[_ right clause binding] stmt]
+        (let [[_ right clause binding {:keys [unsafe]}] stmt]
           (add-implicit-joins
             (fn []
               (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
                     [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
                 (conj left
                       [join-coll seekl right seekr]
-                      [transform (fn [{:keys [left coll]}]
-                                   (assoc left binding coll))])))))
+                      [(if unsafe transform-unsafe transform)
+                       (fn [{:keys [left coll]}]
+                         (assoc left binding coll))])))))
 
         :join
         (let [[_ & joins] stmt]
@@ -1171,23 +1186,17 @@
         (let [[_ & joins] stmt]
           (reduce (fn [left [right clause]] (add-left-join left right clause graph)) left (partition-all 2 joins)))
 
-        :extend*
+        :extend
         (let [[_ & extends] stmt]
           (add-implicit-joins #(conj left [transform (extend-fn extends)])))
 
-        :extend-unsafe*
+        :extend-unsafe
         (let [[_ & extends] stmt]
           (add-implicit-joins #(conj left [transform-unsafe (extend-fn extends)])))
 
-        :extend
-        (let [[_ & extends] stmt]
-          (if (seq extends)
-            (transduce cat conj left (split-extensions extends))
-            (conj left [pass])))
-
         :expand
         (let [[_ & expansions] stmt]
-          (add-implicit-joins #(conj left [expand (expand-fn expansions)] [transform join-merge])))
+          (add-implicit-joins #(conj left [expand (expand-fn expansions)]) [transform join-merge]))
 
         :select
         (let [[_ & selections] stmt
@@ -1480,9 +1489,13 @@
                 (assoc graph uninit (assoc node :init init :init-forward forward))))
             (init [graph relvar]
               (let [{:keys [deps
+                            generation
                             provide
                             results]} (graph (id relvar))
-                    rs (or results (when provide (provide graph)))]
+                    rs (or results (when (and provide
+                                              (or (not= generation new-generation)
+                                                  (empty? deps)))
+                                     (provide graph)))]
 
                 (cond
                   rs

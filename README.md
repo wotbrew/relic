@@ -1,16 +1,16 @@
 # relic
 
-`STATUS: PRIMORDIAL TAR, this readme, and library are still a work in progress`
+`STATUS: PRIMORDIAL TAR, ready soon...`
 
-A Clojure(Script) functional __relational__ programming library.
+`relic` is an in-memory database and data processing library, inspired by codd's relational algebra. It is immutable, functional and declarative.
 
-``` 
-"Show me your flowchart and conceal your tables, and I shall continue to be mystified.
- 
- Show me your tables, and I won't usually need your flowchart; it'll be obvious." 
- 
- -- Fred Brooks, The Mythical Man Month
-```
+It supports change tracking and incremental materialization of arbitrary relations. This makes it a great fit for reactive programs that operate over a large data domains, for example SPA's or mobile apps.
+Though it is intended for use on the server as well for any kind of work with data.
+
+`relic` aims to compete with and exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas
+where any kind of query at all is too slow.
+
+Embedded in and integrated with regular clojure functional programming, functional-relational-programming for the JVM has arrived with `relic`.
 
 ## Pitch 
 

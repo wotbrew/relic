@@ -4,7 +4,7 @@
 
 `relic` is an in-memory database and data processing library, inspired by codd's relational algebra. It is immutable, functional and declarative.
 
-It supports change tracking and incremental materialization of arbitrary relations. This makes it a great fit for reactive programs that operate over a large data domains, for example SPA's or mobile apps.
+It supports change tracking and incremental materialization of arbitrary relations. This makes it a great fit for reactive programs that operate over large data domains, for example SPA's or mobile apps.
 Though it is intended for use on the server as well for any kind of work with data.
 
 `relic` aims to compete with and exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas

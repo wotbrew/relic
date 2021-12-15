@@ -7,7 +7,7 @@
 As well as use as database for answering ad-hoc queries, 
 it supports change tracking and incremental materialization of arbitrary relations. This makes it a great fit for reactive programs that operate over large data domains, for example SPA's or mobile apps.
 
-`relic` aims to compete with and exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas
+`relic` aims to compete with or exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas
 where any kind of query at all is too slow.
 
 Embedded in and integrated with regular clojure functional programming, functional-relational-programming for Clojure/Script has arrived with `relic`.

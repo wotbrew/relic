@@ -98,7 +98,27 @@
        [:extend [::rel/* :a]]
        [:select :a :b]]
       ;; =>
-      #{{:a 42, :b 42}})))
+      #{{:a 42, :b 42}}
+
+      [[:const [{:a 42}]]
+       [:intersection [[:const [{:a 42} {:b 1}]]]]]
+      ;; =>
+      #{{:a 42}}
+
+      [[:const [{:a 42}]]
+       [:union [[:const [{:a 42} {:b 1}]]]]]
+      ;; =>
+      #{{:a 42} {:b 1}}
+
+      [[:const [{:a 42}]]
+       [:difference [[:const [{:a 42} {:b 1}]]]]]
+      ;; =>
+      #{}
+
+      [[:const [{:a 42}]]
+       [:difference [[:const [{:a 43} {:b 1}]]]]]
+      ;; =>
+      #{{:a 42}})))
 
 (deftest const-test
   (is (= #{{:a 42}} (rel/q {} [[:const #{{:a 42}}]])))

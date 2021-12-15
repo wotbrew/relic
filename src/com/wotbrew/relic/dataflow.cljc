@@ -448,11 +448,13 @@
     {:deps [left right]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [ridx (mgetr db #{})
+                              inserted (eduction (filter ridx) inserted)
                               deleted (eduction (filter ridx) deleted)]
                           (forward db inserted deleted)))
                  right (fn [db inserted deleted forward]
                          (let [lidx (mgetl db #{})
-                               inserted (eduction (filter lidx) inserted)]
+                               inserted (eduction (filter lidx) inserted)
+                               deleted (eduction (filter lidx) deleted)]
                            (forward db inserted deleted))))}))
 
 (defn difference
@@ -468,7 +470,6 @@
                           (forward db inserted deleted)))
                  right (fn [db inserted deleted forward]
                          (let [lidx (mgetl db #{})
-
                                ;; flip :)
                                inserted2 (eduction (filter lidx) deleted)
                                deleted2 (eduction (filter lidx) inserted)]
@@ -1281,17 +1282,17 @@
 
         :intersection
         (let [[_ & relvars] stmt]
-          (reduce conj left (mapv (fn [r] [intersection (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set r)]) relvars)))
 
         :union
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj left (mapv (fn [r] [union (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [union (require-set r)]) relvars)))
 
         :difference
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj left (mapv (fn [r] [difference (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [difference (require-set r)]) relvars)))
 
         :table
         (let [[_ table-key] stmt]
@@ -1530,19 +1531,25 @@
       (init graph relvar))))
 
 (defn- result [graph self left box]
-  {:deps [left]
-   :flow (flow left (fn [db inserted _ forward]
-                      (vswap! box
-                              (fn [existing]
-                                (cond
-                                  existing
-                                  (into (set existing) inserted)
+  (let [swap (fn [existing inserted deleted]
+               (let [deleted (when deleted (set deleted))
+                     inserted (if (seq deleted)
+                                (eduction (remove deleted) inserted)
+                                inserted)]
+                 (cond
+                   existing
+                   (let [e (transient (set existing))
+                         e (reduce disj! e deleted)
+                         e (reduce conj! e inserted)]
+                     (persistent! e))
 
-                                  (coll? inserted)
-                                  inserted
+                   (coll? inserted) inserted
 
-                                  :else (vec inserted))))
-                      db))})
+                   :else (vec inserted))))]
+    {:deps [left]
+     :flow (flow left (fn [db inserted deleted forward]
+                        (vswap! box swap inserted deleted)
+                        db))}))
 
 (defn gg [db] (::graph (meta db) {}))
 (defn- sg [db graph] (vary-meta db assoc ::graph graph))

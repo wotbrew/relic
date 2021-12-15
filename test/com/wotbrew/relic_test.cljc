@@ -688,5 +688,14 @@
     (is (= #{{:a 1}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2}]})))
     (is (= #{{:a 1} {:a 1, :b 2}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
 
+(deftest overwrite-binding-test
+  (let [db (rel/transact {} {:A [{:a 1}]})]
+    (is (= #{{:b 1}} (rel/q db [[:table :A] [:extend [:a 42] [:a nil] [:b 1]]])))))
+
+(deftest bind-all-test
+  (let [db (rel/transact {} {:A [{:a {:a nil, :b 2, :c 3}}]})]
+    (is (= #{{:b 2, :c 3}} (rel/q db [[:table :A] [:extend [::rel/* :a]]])))
+    (is (= #{{:b 2, :c 3}} (rel/q db [[:table :A] [:extend [:* :a]]])))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

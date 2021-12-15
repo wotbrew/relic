@@ -225,8 +225,8 @@
 
 (defn bind-fn [binding]
   (if (keyword? binding)
-    (if (= :com.wotbrew.relic/* binding)
-      overwrite-keys
+    (case binding
+      (:com.wotbrew.relic/* :*) overwrite-keys
       #(overwrite-key %1 binding %2))
     #(overwrite-keys %1 %2 binding)))
 

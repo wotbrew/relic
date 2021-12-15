@@ -12,7 +12,7 @@ where any kind of query at all is too slow.
 
 ```clojure 
 (rel/q db [[:table :Library]
-           [:where [contains? :lib/tags "relational"] [str/starts-with :lib/name "rel"]]
+           [:where [contains? :lib/tags "relational"] [str/starts-with? :lib/name "rel"]]
            [:join Author {:lib/author :author/id}]
            [:select
              :lib/name

@@ -2,15 +2,25 @@
 
 `STATUS: PRIMORDIAL TAR, ready soon...`
 
-`relic` is an in-memory database and data processing library, inspired by codd's relational algebra. It is immutable, functional and declarative.
+`relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra. It is immutable, functional and declarative.
 
-As well as use as database for answering ad-hoc queries, 
+As well as answering ad-hoc queries, 
 it supports change tracking and incremental materialization of arbitrary relations. This makes it a great fit for reactive programs that operate over large data domains, for example SPA's or mobile apps.
 
 `relic` aims to compete with or exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas
 where any kind of query at all is too slow.
 
-Embedded in and integrated with regular clojure functional programming, functional-relational-programming for Clojure/Script has arrived with `relic`.
+```clojure 
+(rel/q db [[:table :Library]
+           [:where [contains? :lib/tags "relational"] [str/starts-with :lib/name "rel"]]
+           [:join Author {:lib/author :author/id}]
+           [:select
+             :lib/name
+             :author/github
+             [:url [str "https://github.com/" :author/github "/" :lib/name]]]])
+;; =>
+#{{:lib/name "relic", :author/github "wotbrew", :url "https://github.com/wotbrew/relic"}}
+```
 
 ## Pitch 
 

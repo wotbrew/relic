@@ -477,7 +477,7 @@
 
 (defn provide
   "Generic provision node, e.g if your statement results only ever provides rows to insert,
-  never flowing - then use this. :const and :hash-lookup would be examples of provide."
+  never flowing - then use this. :const and :lookup would be examples of provide."
   [graph self _ f]
   {:deps []
    :provide f})
@@ -1139,13 +1139,13 @@
               left (reduce conj left joins)]
           left)))))
 
-(defn hash-lookup [graph self _ index path]
+(defn lookup [graph self _ index path]
   (let [path (vec path)
         [iget] (mem index)]
     (when-not (graph (id index))
-      (raise ":hash-lookup used but index is not materialized" {:index index}))
+      (raise ":lookup used but index is not materialized" {:index index}))
     (when-not (= (count path) (dec (count (head-stmt index))))
-      (raise ":hash-lookup path length must currently match indexed expressions"))
+      (raise ":lookup path length must currently match indexed expressions"))
     {:provide (fn [db]
                 (when-some [i (iget db)]
                   (get-in i path)))}))
@@ -1313,11 +1313,9 @@
         (let [[_ renames] stmt]
           (conj left [transform #(set/rename-keys % renames)]))
 
-        :hash-lookup
+        :lookup
         (let [[_ index & path] stmt]
-          ;; todo index might use expressions requiring implicit joins?
-          ;; need to figure out a better way of handling this
-          [[hash-lookup index path]])))))
+          [[lookup index path]])))))
 
 (defn to-dataflow [graph relvar]
   (let [ret (to-dataflow* graph relvar relvar)]

@@ -676,9 +676,17 @@
   (let [index [[:table :A]
                [:hash :a [inc :a]]]
         db (rel/materialize {} index)]
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:hash-lookup index "a" "b"]])))
-    (is (= #{{:a 1}} (rel/what-if db [[:hash-lookup index 1 2]] {:A [{:a 1} {:a 2}]})))
-    (is (= #{{:a 1} {:a 1, :b 2}} (rel/what-if db [[:hash-lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:lookup index "a" "b"]])))
+    (is (= #{{:a 1}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2}]})))
+    (is (= #{{:a 1} {:a 1, :b 2}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
+
+(deftest btree-lookup-test
+  (let [index [[:table :A]
+               [:btree :a [inc :a]]]
+        db (rel/materialize {} index)]
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:lookup index "a" "b"]])))
+    (is (= #{{:a 1}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2}]})))
+    (is (= #{{:a 1} {:a 1, :b 2}} (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

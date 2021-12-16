@@ -58,7 +58,6 @@
   ([msg map] (throw (ex-info msg map)))
   ([msg map cause] (throw (ex-info msg map cause))))
 
-(def Env [[:table ::Env]])
 (def ^:dynamic *env-deps* nil)
 (defn- track-env-dep [k]
   (if *env-deps*
@@ -131,6 +130,11 @@
   (when-some [j *implicit-joins*]
     (set! *implicit-joins* (conj j [relvar clause]))))
 
+(defn to-relvar [relvar-or-table]
+  (if (keyword? relvar-or-table)
+    [[:table relvar-or-table]]
+    relvar-or-table))
+
 (defn row-fn [expr]
   (cond
     (= [] expr) (constantly [])
@@ -170,14 +174,14 @@
         (:com.wotbrew.relic/join-coll :$)
         (let [[relvar clause] args
               k [relvar clause]]
-          (add-implicit-join relvar clause)
+          (add-implicit-join (to-relvar relvar) clause)
           (fn [row]
             (row k)))
 
         (:com.wotbrew.relic/join-first :$1)
         (let [[relvar clause] args
               k [relvar clause]]
-          (add-implicit-join relvar clause)
+          (add-implicit-join (to-relvar relvar) clause)
           (fn [row] (first (row k))))
 
         (:com.wotbrew.relic/nil-safe :?)
@@ -243,8 +247,8 @@
 (defn extend-form-cols [form]
   (let [[binding] form]
     (if (keyword? binding)
-      (if (= :com.wotbrew.relic/* binding)
-        (raise "Cannot use ::rel/* in select expressions yet, use :extend.")
+      (case binding
+        (:* :com.wotbrew.relic/*) (raise "Cannot use ::rel/* in select expressions yet, use :extend.")
         #{binding})
       (set binding))))
 
@@ -283,7 +287,8 @@
 
 (defn unwrap-from [relvar]
   (if (= :from (operator (head-stmt relvar)))
-    (let [[_ relvar] (head-stmt relvar)] (unwrap-from relvar))
+    (let [[_ relvar] (head-stmt relvar)]
+      (unwrap-from (to-relvar relvar)))
     relvar))
 
 (defn unwrap-table
@@ -803,7 +808,7 @@
           env-join
           (when (seq env-deps)
             [:left-join
-             (conj Env [:select [::env [select-keys ::env env-deps]]])
+             (conj [[:from ::Env]] [:select [::env [select-keys ::env env-deps]]])
              {}])
 
           without-cols
@@ -1169,7 +1174,11 @@
       (let [[op & args] stmt] (apply op graph self left args))
       (case operator
         :from
-        (let [[_ relvar] stmt] (conj relvar [pass]))
+        (let [[_ relvar] stmt
+              relvar (if (keyword? relvar)
+                       [[:table relvar]]
+                       relvar)]
+          (conj relvar [pass]))
 
         :where
         (let [[_ & exprs] stmt]
@@ -1184,7 +1193,8 @@
           (conj left [transform-unsafe (without-fn cols)]))
 
         :join-as-coll
-        (let [[_ right clause binding {:keys [unsafe]}] stmt]
+        (let [[_ right clause binding {:keys [unsafe]}] stmt
+              right (to-relvar right)]
           (add-implicit-joins
             (fn []
               (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
@@ -1197,11 +1207,11 @@
 
         :join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-join left right clause graph)) left (partition-all 2 joins)))
+          (reduce (fn [left [right clause]] (add-join left (to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :left-join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-left-join left right clause graph)) left (partition-all 2 joins)))
+          (reduce (fn [left [right clause]] (add-left-join left (to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :extend
         (let [[_ & extends] stmt]
@@ -1260,12 +1270,12 @@
         (let [[_ right clause opts] stmt]
           (add-implicit-joins
             (fn []
-              (let [references right
+              (let [references (to-relvar right)
                     origin left
                     _ (when (and (:cascade opts) (not (unwrap-table origin)))
                         (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
                     [left seekl] (find-hash-index graph left (keys clause) (vals clause))
-                    [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
+                    [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
 
         :unique
@@ -1282,17 +1292,17 @@
 
         :intersection
         (let [[_ & relvars] stmt]
-          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set (to-relvar r))]) relvars)))
 
         :union
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj (require-set left) (mapv (fn [r] [union (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [union (require-set (to-relvar r))]) relvars)))
 
         :difference
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj (require-set left) (mapv (fn [r] [difference (require-set r)]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [difference (require-set (to-relvar r))]) relvars)))
 
         :table
         (let [[_ table-key] stmt]

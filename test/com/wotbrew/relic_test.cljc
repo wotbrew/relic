@@ -697,5 +697,11 @@
     (is (= #{{:b 2, :c 3}} (rel/q db [[:table :A] [:extend [::rel/* :a]]])))
     (is (= #{{:b 2, :c 3}} (rel/q db [[:table :A] [:extend [:* :a]]])))))
 
+(deftest from-as-table-alias-test
+  (let [db (rel/transact {} {:A [{:a 1}]
+                             :B [{:a 1, :b 2}]})]
+    (is (= #{{:a 1}} (rel/q db [[:from :A]])))
+    (is (= #{{:a 1, :b 2}} (rel/q db [[:from :A] [:join :B {:a :a}]])))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

@@ -11,9 +11,9 @@ it supports incremental materialization, and constraints on arbitrary relations.
 where any kind of query at all is too slow.
 
 ```clojure 
-(rel/q db [[:table :Library]
+(rel/q db [[:from :Library]
            [:where [contains? :lib/tags "relational"] [str/starts-with? :lib/name "rel"]]
-           [:join Author {:lib/author :author/id}]
+           [:join :Author {:lib/author :author/id}]
            [:select
              :lib/name
              :author/github
@@ -57,23 +57,14 @@ I like to use `rel` as an alias.
 This is a _relvar_, Think SQL view/tables/queries all as one idea, a relational expression.
 
 ```clojure 
- [[:table :Customer]
+ [[:from :Customer]
   [:where [= :id 42]]]
  ```
-
-All `relic` systems that are worth anything will need at least one `:table`. Your `:table`s form your givens, information from the outside world, from users, from an external datasource.
-
-
-``` clojure
-[[:table :Customer]]
-```
-
-You can see the relvar itself doesn't contain the rows. A relvar is a description of data, not the data itself - _good design is just breaking things apart_.
 
 You can derive relvars from relvars by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:where [= :id 42]]
  [:extend [:fullname [str :firstname " " :lastname]]]
 ```
@@ -101,11 +92,11 @@ db
 Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database. You see how relvars and queries _are the same_.
 
 ```clojure 
-(rel/q db [[:table :Customer] [:where [= :id 42]]]) 
+(rel/q db [[:from :Customer] [:where [= :id 42]]]) 
 ;; => 
 #{{:id 42, :name "bob"}}
 
-(rel/q db [[:table :Customer] [:where [= :name "alice"]]])
+(rel/q db [[:from :Customer] [:where [= :name "alice"]]])
 ;; => 
 #{{:id 43, :name "alice"}}
 ```
@@ -116,7 +107,7 @@ Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like so
 `relic` knows when your data changes, and it knows how to modify dependent relations in a smart way.
 
 ```clojure 
-(rel/materialize db [[:table :Customer] [:where [= :id 42]]])
+(rel/materialize db [[:from :Customer] [:where [= :id 42]]])
 ;; => returns the database, its value will be the same (hint: metadata).
 {:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 ```
@@ -139,35 +130,39 @@ The are vectors of the form `[& statement]` where each statement is itself a vec
 e.g 
 
 ```clojure 
-[[:from Customer]
+[[:from :Customer]
  [:where [= :firstname "fred"]]
  [:extend [:fullname [str :firstname " " :lastname]]
- [:join Order {:customer-id :customer-id}]]
+ [:join :Order {:customer-id :customer-id}]]
 ```
 
 Each statement depends on the above statements, this forms a dataflow graph. Order matters e.g you cannot use a column that has not been defined in some preceding statement.
 
 
-### Name your state relations with `:table`
+### Start with `:from`
+
+Most relvars will begin with a `:from` statement, it takes a single argument - a table (keyword) or another relvar.
 
 Tables are your primary variable, their data is provided to relic rather than derived. The name provided to the table
 is used to determine where data will be stored in the database map, 
 
 e.g for the below the data will be stored under `:Customer`.
 
-```clojure 
-[[:table :Customer]]
-```
 
+```clojure 
+;; these are the same
+(rel/q db :Customer)
+(rel/q db [[:from :Customer]])
+```
 
 note: Unlike in SQL tables are sets of rows, not bags / multi-sets.
 
-spec: `[:table table-name opts]`
+spec: `[:from table-name opts]`
 
 ### Filtering with `:where`
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:where [= :age 42]]]
 ```
 
@@ -181,7 +176,7 @@ spec: `[:where & expr]`
 ### Adding new columns with `:extend`
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:extend [:fullname [str :firstname " " :lastname]]]]
 ```
 
@@ -193,71 +188,54 @@ spec: `[:extend & extensions]`
 
 - `[k expr]` bind result of expr to k
 - `[[& k] expr]` merge keys from the result of expr
-- `[::rel/* expr]` merge _all_ keys from the result of expr
+- `[:* expr]` merge _all_ keys from the result of expr
 
-You can use the special expressions `::rel/join-first` and `::rel/join-coll` in expression position for sub-selects.
+You can use the special expressions `::rel/join-first`/`:$1` and `::rel/join-coll`/`:$` in expression position for sub-selects.
 
 e.g 
 
 ```clojure
 (def TotalSpend
-  [[:from Order] 
+  [[:from :Order] 
    [:agg [:customer-id] [:total-spend [rel/sum :total]]]])
 
 ;; join-first to splice columns from another row, i.e an implicit left-join.
 (def CustomerStats 
-  [[:from Customer] 
-   [:extend [[:total-spend] [::rel/join-first TotalSpend {:customer-id :customer-id}]]]])
+  [[:from :Customer] 
+   [:extend [[:total-spend] [:$1 TotalSpend {:customer-id :customer-id}]]]])
 ;; would result in a relation something like:
 #{{:customer 42, :total-spend 340.0M}}
 
 ;; join coll to get a set of rows as a column
-(def Order 
-  [[:from Order]
-   [:extend [:items [::rel/join-coll OrderItem {:order-id :order-id}]]]])
+(def Order
+  [[:from :Order]
+   [:extend [:items [:$ OrderItem {:order-id :order-id}]]]])
 ;; would result in a relation something like:
 #{{:customer-id 42,
    :total 340.0M
    :items #{{:product-id 43, :quantity 1} ...}}
 ```
 
-### Embed a relvar as a statement with `:from` 
-
-```clojure 
-(def Customer [[:table :Customer]])
-
-[[:from Customer]
- [:where [= :age 42]]]
-```
-
-Allows you to splice relvars in to the leading statement position. Allows relvar re-use in literals without conj.
-
-spec: `[:from relvar]`
-
 ### SQL style join with `:join`
 
-```clojure 
-(def Customer [[:table :Customer]])
-(def Order [[:table :Order]])
-
-[[:from Customer]
- [:join Order {:id :customer-id}]]
+```clojure
+[[:from :Customer]
+ [:join :Order {:id :customer-id}]]
 ```
 
 Joins two relations together, returning the product of matching rows. The columns in the relation on the right will be preferred in a conflict.
 
 Like `set/join`, clause is a map of expressions on the left to expressions on the right.
 
+Accepts both tables (keywords) and other relvars.
+
 spec: `[:join relvar clause]`
 
 ### SQL style `:left-join`
 
 ```clojure 
-(def Customer [[:table :Customer]])
-(def Order [[:table :Order]])
-
-[[:from Order]
- [:left-join Customer {:customer-id :id}]]
+[[:from :Order]
+ [:left-join :Customer {:customer-id :id}]]
 ```
 
 spec: `[:left-join relvar clause]`
@@ -265,7 +243,7 @@ spec: `[:left-join relvar clause]`
 ### Selecting new columns with `:select`
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:select :firstname :lastname [:fullname [str :firstname " " :lastname]]]
 ```
 
@@ -278,7 +256,7 @@ spec: `[:select & col|binding]`
 ### Removing columns `:without` 
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:without :age :firstname :lastname]]
 ```
 
@@ -289,7 +267,7 @@ spec: `[:without & col]`
 ### Aggregation & grouping with `:agg`
 
 ```clojure 
-[[:table :Customer]
+[[:from :Customer]
  [:agg [:age] [:count count]]]
 ```
 
@@ -311,7 +289,7 @@ Lets you deal with nested data and flatten it into a form better suited to relat
 
 ;; =>
 (def OrderItem
-  [[:table :Order]
+  [[:from :Order]
    [:expand [[:product :quantity] :items]]
    [:without :items]])
    
@@ -607,7 +585,7 @@ e.g
 
 ```clojure 
 (def TestRelvar
- [[:table :A]
+ [[:from :A]
   ;; will quote = here to make relvar print prettier, its not necessary for this to work 
   [:where ['= :a 42]]])
   
@@ -616,7 +594,7 @@ e.g
 (track-transact db {:A [{:a 1} {:a 42}]})
 ;; =>
 {:db {:A #{{:a 1} {:a 42}}}, 
- :changes {[[:table :A] [:where [= :a 42]]] {:added [{:a 42}], :deleted []}}}
+ :changes {[[:from :A] [:where [= :a 42]]] {:added [{:a 42}], :deleted []}}}
  
 (get (:changes *1) TestRelvar)
 ;; =>

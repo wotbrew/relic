@@ -113,7 +113,7 @@ Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like so
 ```
 You can materialize any relvar such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
 
-`materialize` will return a new _database_ that looks and smells the same, but queries against materialized relvars will be instant, and as you change data in tables, those changes will flow to materialized relvars automatically.
+`materialize` will return a new _database_ that looks and smells the same, but queries against materialized relvars will be instant, and __as you change data in tables, those changes will flow to materialized relvars automatically.__
 
 relic attempts to deliver on the promise of separating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
 
@@ -143,19 +143,14 @@ Each statement depends on the above statements, this forms a dataflow graph. Ord
 
 Most relvars will begin with a `:from` statement, it takes a single argument - a table (keyword) or another relvar.
 
-Tables are your primary variable, their data is provided to relic rather than derived. The name provided to the table
-is used to determine where data will be stored in the database map, 
-
-e.g for the below the data will be stored under `:Customer`.
-
+Tables are your variable, their data is provided to relic rather than derived. The name is used to determine where data
+will be stored and found in the database map. 
 
 ```clojure 
 ;; these are the same
 (rel/q db :Customer)
 (rel/q db [[:from :Customer]])
 ```
-
-note: Unlike in SQL tables are sets of rows, not bags / multi-sets.
 
 spec: `[:from table-name opts]`
 

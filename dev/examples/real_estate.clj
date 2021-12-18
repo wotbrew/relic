@@ -3,26 +3,6 @@
   (:require [com.wotbrew.relic :as rel]
             [clojure.string :as str]))
 
-;; base relvars (essential state)
-
-(def Property
-  [[:table ::Property]])
-
-(def Offer
-  [[:table ::Offer]])
-
-(def Decision
-  [[:table ::Decision]])
-
-(def Room
-  [[:table ::Room]])
-
-(def Floor
-  [[:table ::Floor]])
-
-(def Commission
-  [[:table ::Commission]])
-
 ;; *functional* relational programming
 ;; just use clojure functions & predicates on rows
 
@@ -49,21 +29,21 @@
 ;; derived relvars
 
 (def RoomInfo
-  [[:from Room]
+  [[:from ::Room]
    [:extend [:room-size [* :width :breadth]]]])
 
 (def Acceptance
-  [[:from Decision]
+  [[:from ::Decision]
    [:where :accepted]
    [:without :accepted]])
 
 (def Rejection
-  [[:from Decision]
+  [[:from ::Decision]
    [:where [not :accepted]]
    [:without :accepted]])
 
 (def PropertyInfo
-  [[:from Property]
+  [[:from ::Property]
    [:extend
     [:price-band [price-band :price]]
     [:area-code [area-code :address]]
@@ -81,20 +61,20 @@
       {:address :address}]]]])
 
 (def CurrentOffer
-  [[:from Offer]
+  [[:from ::Offer]
    [:agg [:address :bidder-name :bidder-address]
     [:latest-date [rel/greatest :offer-date]]]
-   [:join Offer {:address :address
-                 :bidder-name :bidder-name
-                 :bidder-address :bidder-address
-                 :latest-date :offer-date}]])
+   [:join ::Offer {:address :address
+                   :bidder-name :bidder-name
+                   :bidder-address :bidder-address
+                   :latest-date :offer-date}]])
 
 (def RawSales
   [[:from Acceptance]
    [:join CurrentOffer {:address :address
                         :bidder-name :bidder-name
                         :bidder-address :bidder-address}]
-   [:join Property {:address :address}]
+   [:join ::Property {:address :address}]
    [:without :offer-date :bidder-name :bidder-address]])
 
 (def SoldProperty
@@ -102,7 +82,7 @@
    [:select :address]])
 
 (def UnsoldProperty
-  [[:from Property]
+  [[:from ::Property]
    [:select :address]
    [:difference SoldProperty]])
 
@@ -117,9 +97,9 @@
 
 (def SalesCommissions
   [[:from SalesInfo]
-   [:join Commission {:agent :agent
-                      :sale-speed :sale-speed
-                      :price-band :price-band}]
+   [:join ::Commission {:agent :agent
+                        :sale-speed :sale-speed
+                        :price-band :price-band}]
    [:select :address :agent :commission]])
 
 ;; external
@@ -128,7 +108,7 @@
   [[:from CurrentOffer]
    [:join [[:from CurrentOffer]
            [:without :offer-price :latest-date]
-           [:difference [[:from Decision]
+           [:difference [[:from ::Decision]
                          [:without :accepted :decision-date]]]]
     {:bidder-name :bidder-name
      :bidder-address :bidder-address
@@ -148,58 +128,58 @@
 ;; constraints
 
 (def PropertyKey
-  [[:from Property]
+  [[:from ::Property]
    [:unique :address]])
 
 (def OfferKey
-  [[:from Offer]
+  [[:from ::Offer]
    [:unique :address :offer-date :bidder-name :bidder-address]])
 
 (def DecisionKey
-  [[:from Decision]
+  [[:from ::Decision]
    [:unique :address :offer-date :bidder-name :bidder-address]])
 
 (def RoomKey
-  [[:from Room]
+  [[:from ::Room]
    [:unique :address :room-name]])
 
 (def FloorKey
-  [[:from Floor]
+  [[:from ::Floor]
    [:unique :address :room-name]])
 
 (def CommissionKey
-  [[:from Commission]
+  [[:from ::Commission]
    [:unique :price-band :area-code :sale-speed]])
 
 (def OfferToProperty
-  [[:from Offer]
-   [:fk Property {:address :address}]])
+  [[:from ::Offer]
+   [:fk ::Property {:address :address}]])
 
 (def DecisionToOffer
-  [[:from Decision]
-   [:fk Offer {:address :address
-               :offer-date :offer-date
-               :bidder-name :bidder-name
-               :bidder-address :bidder-address}]])
+  [[:from ::Decision]
+   [:fk ::Offer {:address :address
+                 :offer-date :offer-date
+                 :bidder-name :bidder-name
+                 :bidder-address :bidder-address}]])
 
 (def RoomToProperty
-  [[:from Room]
-   [:fk Property {:address :address}]])
+  [[:from ::Room]
+   [:fk ::Property {:address :address}]])
 
 (def FloorToProperty
-  [[:from Floor]
-   [:fk Property {:address :address}]])
+  [[:from ::Floor]
+   [:fk ::Property {:address :address}]])
 
 (def PropertyHasToHaveAtLeastOneRoom
   [[:from PropertyInfo]
    [:check [:? <= 1 :number-of-rooms]]])
 
 (def CannotBidOnOwnProperty
-  [[:from Offer]
+  [[:from ::Offer]
    [:check [not= :address :bidder-address]]])
 
 (def CannotSubmitOfferOnceSaleAgreed
-  [[:from Offer]
+  [[:from ::Offer]
    [:join [[:from Acceptance] [:select :address :decision-date]] {:address :address}]
    [:check {:pred [:? <= [compare :offer-date :decision-date] 0]
             :error "Offer cannot be submitted after acceptance."}]])
@@ -211,7 +191,7 @@
             :error "At most 50 properties can be advertised on the website."}]])
 
 (def NoSingleBidderCanSubmitMoreThan10OffersOnAProperty
-  [[:from Offer]
+  [[:from ::Offer]
    [:agg [:address :bidder-address :bidder-name] [:number-of-offers count]]
    [:check {:pred [<= :number-of-offers 10]
             :error "No single bidder can submit more than 10 offers on a property."}]])
@@ -245,52 +225,52 @@
 (def data
   (let [address1 "abc def 55"
         alice-address "wonderland 42"]
-    {Property [{:address address1
-                :price 344000M
-                :photo "foo.jpg"
-                :agent "bob"
-                :date-registered #inst "2021-10-26"}
-               {:address alice-address
-                :price 1690000M
-                :photo "foo.jpg"
-                :agent "bob"
-                :date-registered #inst "2021-10-27"}]
-     Offer [{:address address1
-             :offer-date #inst "2021-10-27"
-             :offer-price 343000M
-             :bidder-name "alice"
-             :bidder-address alice-address}
-            {:address address1
-             :offer-date #inst "2021-10-26"
-             :offer-price 150000M
-             :bidder-name "alice"
-             :bidder-address alice-address}]
-     Decision [{:address address1
-                :offer-date #inst "2021-10-27"
-                :bidder-name "alice"
-                :bidder-address alice-address
-                :decision-date #inst "2021-10-28"
-                :accepted true}]
-     Room [{:address address1
-            :room-name "Room 1"
-            :width 10.0M
-            :breadth 10.0M
-            :type :living-room}
-           {:address alice-address
-            :room-name "Room 1"
-            :width 12.0M
-            :breadth 14.5M
-            :type :living-room}
-           {:address alice-address
-            :room-name "Kitchen"
-            :width 13.0M
-            :breadth 8.0M
-            :type :kitchen}]
-     Floor [{:address address1
-             :room-name "Room 1"
-             :floor 0}]
-     Commission [{:agent "bob"
-                  :price-band :med
-                  :area-code "55"
-                  :sale-speed :very-fast
-                  :commission 2000.0M}]}))
+    {::Property [{:address address1
+                  :price 344000M
+                  :photo "foo.jpg"
+                  :agent "bob"
+                  :date-registered #inst "2021-10-26"}
+                 {:address alice-address
+                  :price 1690000M
+                  :photo "foo.jpg"
+                  :agent "bob"
+                  :date-registered #inst "2021-10-27"}]
+     ::Offer [{:address address1
+               :offer-date #inst "2021-10-27"
+               :offer-price 343000M
+               :bidder-name "alice"
+               :bidder-address alice-address}
+              {:address address1
+               :offer-date #inst "2021-10-26"
+               :offer-price 150000M
+               :bidder-name "alice"
+               :bidder-address alice-address}]
+     ::Decision [{:address address1
+                  :offer-date #inst "2021-10-27"
+                  :bidder-name "alice"
+                  :bidder-address alice-address
+                  :decision-date #inst "2021-10-28"
+                  :accepted true}]
+     ::Room [{:address address1
+              :room-name "Room 1"
+              :width 10.0M
+              :breadth 10.0M
+              :type :living-room}
+             {:address alice-address
+              :room-name "Room 1"
+              :width 12.0M
+              :breadth 14.5M
+              :type :living-room}
+             {:address alice-address
+              :room-name "Kitchen"
+              :width 13.0M
+              :breadth 8.0M
+              :type :kitchen}]
+     ::Floor [{:address address1
+               :room-name "Room 1"
+               :floor 0}]
+     ::Commission [{:agent "bob"
+                    :price-band :med
+                    :area-code "55"
+                    :sale-speed :very-fast
+                    :commission 2000.0M}]}))

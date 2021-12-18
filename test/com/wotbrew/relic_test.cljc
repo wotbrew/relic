@@ -703,5 +703,45 @@
     (is (= #{{:a 1}} (rel/q db [[:from :A]])))
     (is (= #{{:a 1, :b 2}} (rel/q db [[:from :A] [:join :B {:a :a}]])))))
 
+(deftest sum-test
+  (let [coll (shuffle (map #(array-map :a %) (range 1000)))
+        db (rel/transact {} {:A coll})]
+    (is (= [{:n 499500}] (rel/q db [[:from :A] [:agg [] [:n [rel/sum :a]]]])))
+    (is (= [{:n 999000}] (rel/q db [[:from :A] [:agg [] [:n [rel/sum [* 2 :a]]]]])))))
+
+(deftest self-join-test
+  (let [db (rel/transact {} {:A [{:a 1, :b 1}]
+                             :B [{:b 1, :c 1}]})
+        Q [[:from :A]
+           [:join [[:from :A] [:join :B {:b :b}]] {:b :b}]]]
+
+    (is (= #{{:a 1, :b 1, :c 1}} (rel/q db Q)))))
+
+(deftest multi-join-test2
+  (let [db (rel/transact {} {:A [{:a 1, :b 1}]
+                             :B [{:b 1, :c 1}]
+                             :C [{:c 1, :d 1}]})
+        Q [[:from :A]
+           [:join :B {:b :b}]
+           [:join [[:from :A] [:join :B {:b :b}] [:join :C {:c :c}]] {:c :c}]
+           [:join [[:from :A]] {[inc :a] [+ 1 :a]}]]]
+
+    (is (= #{{:a 1, :b 1, :c 1, :d 1}} (rel/q db Q)))))
+
+(deftest agg-implicit-collision-test
+  (let [db (rel/transact {} {:A [{:a 1, :b 2, :c 3, :d 1}
+                                 {:a 1, :b 2, :c 3, :d 2}]})
+        badq [[:from :A]
+              [:agg [:b :c]
+               [:c count]
+               [:b [rel/sum [inc :b]]]]]
+        goodq [[:from :A]
+               [:agg [:b :c]
+                [:d count]
+                [:d2 [count true]]
+                [:e [rel/sum [inc :b]]]]]]
+    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q db badq)))
+    (is (= #{{:b 2, :c 3, :d 2, :d2 2, :e 6}} (rel/q db goodq)))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

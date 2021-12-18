@@ -1094,7 +1094,8 @@
         complete (or complete identity)
         merge-fn (or merger merge)
         empty-idx (gai/index key-fn reducer combiner complete merge-fn 32)
-        [mget mset] (mem self)]
+        [mget mset] (mem self)
+        get-row (fn [idx k] (when-some [{:keys [indexed-row]} (idx k)] @indexed-row))]
     {:deps [left]
      :flow (flow
              left
@@ -1130,8 +1131,12 @@
 (defn agg [graph self left cols aggs]
   (if (empty? aggs)
     (conj left [transform (project-fn (vec (set cols)))])
-    (let [cols (vec (set cols))
+    (let [col-set (set cols)
+          cols (vec col-set)
           join-clause (zipmap cols cols)
+          _ (run! (fn [[binding]]
+                    (when (contains? col-set binding)
+                      (raise "Cannot bind aggregate to a grouping key"))) aggs)
           [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
       (case (count custom-nodes)
         0 (conj left [generic-agg cols standard-aggs])
@@ -1540,20 +1545,16 @@
 
 (defn- result [graph self left box]
   (let [swap (fn [existing inserted deleted]
-               (let [deleted (when deleted (set deleted))
-                     inserted (if (seq deleted)
-                                (eduction (remove deleted) inserted)
-                                inserted)]
-                 (cond
-                   existing
-                   (let [e (transient (set existing))
-                         e (reduce disj! e deleted)
-                         e (reduce conj! e inserted)]
-                     (persistent! e))
+               (cond
+                 existing
+                 (let [e (transient (set existing))
+                       e (reduce disj! e deleted)
+                       e (reduce conj! e inserted)]
+                   (persistent! e))
 
-                   (coll? inserted) inserted
+                 (coll? inserted) inserted
 
-                   :else (vec inserted))))]
+                 :else (vec inserted)))]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (vswap! box swap inserted deleted)

@@ -1483,7 +1483,8 @@
 ;; we need to recur remove the generation on deps until we hit a :provide node
 
 (defn init [graph relvar]
-  (let [new-generation (::generation graph)]
+  (let [new-generation (::generation graph)
+        provided (volatile! #{})]
     (letfn [(id [relvar] (get-id graph relvar))
             (sort-dependents [dependents]
               (sort-by (comp :score graph) > dependents))
@@ -1528,15 +1529,22 @@
                             generation
                             provide
                             results]} (graph (id relvar))
-                    rs (or results (when (and provide
-                                              (or (not= generation new-generation)
-                                                  (empty? deps)))
-                                     (provide graph)))]
+
+                    already-fired (contains? @provided (id relvar))
+
+                    rs (when-not already-fired
+                         (or results (when (and provide
+                                                (or (not= generation new-generation)
+                                                    (empty? deps)))
+                                       (provide graph))))]
 
                 (cond
+                   already-fired graph
+
                   rs
                   (let [graph (link-uninitialised graph (id relvar))
                         f (:init-forward (graph (id relvar)))]
+                    (vswap! provided conj (id relvar))
                     (f graph rs nil))
 
                   :else

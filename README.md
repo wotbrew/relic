@@ -359,9 +359,9 @@ Ergonomic relic programming kind of wants your keys to be keywords but if you wa
 
 Use `::rel/get` as a shorthand for a `get` call. e.g `[::rel/get "firstname"]` would result in `(get row "firstname")`
 
-### Getting a reference to the row with `::rel/%`
+### Getting a reference to the row with `:%`
 
-If you want the whole map you can reference it with `::rel/%` so you could for example call `[pos? [count ::rel/%]]` would be a valid relic expression.
+If you want the whole map you can reference it with `:%` so you could for example call `[pos? [count ::rel/%]]` would be a valid relic expression.
 
 ### Sampling the environment with `::rel/env`
 
@@ -386,17 +386,17 @@ Count is easy, just use normal `count`! The library function from clojure itself
 
 e.g `[:agg [] [:n count]]` 
 
-### Find rows with the smallest/highest of something with `greatest-by` / `least-by` 
+### Find rows with the smallest/highest of something with `max-by` / `min-by` 
 
-e.g `[:agg [] [:min-row-by-a [rel/least-by :a]]]` would bind the row with the lowest :a.
+e.g `[:agg [] [:min-row-by-a [rel/min-by :a]]]` would bind the row with the lowest `:a`.
 
 Good for find-first, find-last type use cases where you want to preserve the row.
 
-spec: `[greatest-by|least-by expr]`
+spec: `[max-by|min-by expr]`
 
-### Find the smallest or highest result of an expression with `greatest` / `least` 
+### Find the smallest or highest result of an expression with `max` / `min` 
 
-e.g `[:agg [] [:min-a [rel/least :a]]]` would bind the lowest `:a`.
+e.g `[:agg [] [:min-a [min :a]]]` would bind the lowest `:a`.
 
 ### Sum numbers with `sum`
 

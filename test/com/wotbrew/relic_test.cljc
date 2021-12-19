@@ -743,5 +743,10 @@
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q db badq)))
     (is (= #{{:b 2, :c 3, :d 2, :d2 2, :e 6}} (rel/q db goodq)))))
 
+(deftest min-max-test
+  (let [db (rel/transact {} {:A [{:a 1} {:a 2} {:a 3}]})]
+    (is (= [{:mina 1}] (rel/q db [[:from :A] [:agg [] [:mina [min :a]]]])))
+    (is (= [{:maxa 3}] (rel/q db [[:from :A] [:agg [] [:maxa [max :a]]]])))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

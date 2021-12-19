@@ -1035,6 +1035,51 @@
                            [group cols f]
                            [transform-unsafe (bind-group binding count)]))})))
 
+(defn max-by [expr]
+  (let [f (row-fn expr)
+        rf (fn
+             ([] nil)
+             ([a] a)
+             ([a b]
+              (cond
+                (nil? a) b
+                (nil? b) a
+                :else
+                (let [n (compare (f a) (f b))]
+                  (if (< n 0)
+                    b
+                    a)))))]
+    {:combiner rf
+     :reducer (fn [rows] (reduce rf rows))}))
+
+(defn min-by [expr]
+  (let [f (row-fn expr)
+        rf (fn
+             ([] nil)
+             ([a] a)
+             ([a b]
+              (cond
+                (nil? a) b
+                (nil? b) a
+                :else
+                (let [n (compare (f a) (f b))]
+                  (if (< n 0)
+                    a
+                    b)))))]
+    {:combiner rf
+     :reducer (fn [rows] (reduce rf rows))}))
+
+(defn- comp-complete [aggregate-map f]
+  (if-some [f2 (:complete aggregate-map)]
+    (assoc aggregate-map :complete (comp f f2))
+    (assoc aggregate-map :complete f)))
+
+(defn max-agg [expr]
+  (comp-complete (max-by expr) (row-fn expr)))
+
+(defn min-agg [expr]
+  (comp-complete (min-by expr) (row-fn expr)))
+
 ;; --
 ;; agg expressions e.g [rel/sum :foo]
 
@@ -1048,9 +1093,11 @@
 
     (vector? expr)
     (let [[f & args] expr]
-      (if (#{count 'count `count} f)
-        (apply row-count args)
-        (apply f args)))
+      (cond
+        (#{count 'count `count} f) (apply row-count args)
+        (#{min 'min `min} f) (apply min-agg args)
+        (#{max 'max `max} f) (apply max-agg args)
+        :else (apply f args)))
 
     :else (throw (ex-info "Not a valid agg form, expected a agg function or vector" {:expr expr}))))
 

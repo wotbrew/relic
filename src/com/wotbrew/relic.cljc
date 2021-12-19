@@ -298,60 +298,27 @@
   (analyze/columns relvar))
 
 ;; --
-;; greatest / least
+;; min/max
 
-(defn greatest-by
+(defn max-by
   "A relic agg function that returns the greatest row by some function. e.g [rel/greatest-by :a] will return the row for which :a is biggest."
   [expr]
-  (let [f (dataflow/row-fn expr)
-        rf (fn
-             ([] nil)
-             ([a] a)
-             ([a b]
-              (cond
-                (nil? a) b
-                (nil? b) a
-                :else
-                (let [n (compare (f a) (f b))]
-                  (if (< n 0)
-                    b
-                    a)))))]
-    {:combiner rf
-     :reducer (fn [rows] (reduce rf rows))}))
+  (dataflow/max-by expr))
 
-(defn least-by
+(defn min-by
   "A relic agg function that returns the smallest row by some function. e.g [rel/least-by :a] will return the row for which :a is smallest."
   [expr]
-  (let [f (dataflow/row-fn expr)
-        rf (fn
-             ([] nil)
-             ([a] a)
-             ([a b]
-              (cond
-                (nil? a) b
-                (nil? b) a
-                :else
-                (let [n (compare (f a) (f b))]
-                  (if (< n 0)
-                    a
-                    b)))))]
-    {:combiner rf
-     :reducer (fn [rows] (reduce rf rows))}))
+  (dataflow/min-by expr))
 
-(defn- comp-complete [aggregate-map f]
-  (if-some [f2 (:complete aggregate-map)]
-    (assoc aggregate-map :complete (comp f f2))
-    (assoc aggregate-map :complete f)))
-
-(defn greatest
+(defn maximum
   "A relic agg function that returns the greatest value for the expression as applied to each row."
   [expr]
-  (comp-complete (greatest-by expr) (dataflow/row-fn expr)))
+  (dataflow/max-agg expr))
 
-(defn least
+(defn minimum
   "A relic agg function that returns the smallest value for the expression as applied to each row."
   [expr]
-  (comp-complete (least-by expr) (dataflow/row-fn expr)))
+  (dataflow/min-agg expr))
 
 ;; --
 ;; sum

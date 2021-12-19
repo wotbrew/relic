@@ -63,7 +63,7 @@
 (def CurrentOffer
   [[:from ::Offer]
    [:agg [:address :bidder-name :bidder-address]
-    [:latest-date [rel/greatest :offer-date]]]
+    [:latest-date [max :offer-date]]]
    [:join ::Offer {:address :address
                    :bidder-name :bidder-name
                    :bidder-address :bidder-address

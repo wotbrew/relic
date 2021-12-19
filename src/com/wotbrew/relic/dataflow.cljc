@@ -1618,7 +1618,9 @@
 (defn gg [db] (::graph (meta db) {}))
 (defn- sg [db graph] (vary-meta db assoc ::graph graph))
 
-(defn q [db query]
+(defn qraw
+  "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
+  [db query]
   (if (keyword? query)
     (query db)
     (let [graph (gg db)]
@@ -1629,6 +1631,10 @@
                 graph (add-to-graph graph query)
                 _ (init graph query)]
             @rbox)))))
+
+(defn q
+  [db query]
+  (seq (qraw db query)))
 
 (defn- mat [graph self left]
   (let [left-id (id left)]

@@ -141,7 +141,7 @@
   (reduce dataflow/dematerialize db relvars))
 
 (defn q
-  "Queries relic for a collection of unique rows (relation).
+  "Queries the db, returns a seq of rows by default.
 
   Takes a relvar, or a map form [1].
 
@@ -202,9 +202,7 @@
   [1] map forms can be used to issue multiple queries at once, this allows relic to share indexes and intermediate structures
   and can be more efficient.
 
-    {key relvar|{:q relvar, :rsort ...}}
-
-  Note: Expect only that the result is seqable/reducable, custom Relation type might follow in a later release"
+    {key relvar|{:q relvar, :rsort ...}}"
   ([db relvar-or-binds]
    (if (map? relvar-or-binds)
      (let [relvars (keep (fn [q] (if (map? q) (:q q) q)) (vals relvar-or-binds))
@@ -227,7 +225,7 @@
          sort* (or sort rsort)
          sort-exprs (if (keyword? sort*) [sort*] sort*)
          sort-fns (mapv dataflow/row-fn sort-exprs)
-         rs (dataflow/q db relvar)
+         rs (dataflow/qraw db relvar)
          sort-fn (when (seq sort-fns)
                    (if (= 1 (count sort-fns))
                      (first sort-fns)
@@ -241,7 +239,7 @@
          rs (cond
               into-coll (if xf (into into-coll xf rs) (into into-coll rs))
               xf (sequence xf rs)
-              :else rs)]
+              :else (seq rs))]
      rs)))
 
 (defn what-if

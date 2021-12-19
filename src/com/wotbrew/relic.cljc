@@ -13,7 +13,8 @@
 
   I like to alias :as rel. @wotbrew"
   (:require [com.wotbrew.relic.analyze :as analyze]
-            [com.wotbrew.relic.dataflow :as dataflow]))
+            [com.wotbrew.relic.dataflow :as dataflow])
+  (:refer-clojure :exclude [min max]))
 
 (defn transact
   "Return a new relic database, with the transaction applied.
@@ -310,12 +311,12 @@
   [expr]
   (dataflow/min-by expr))
 
-(defn maximum
+(defn max
   "A relic agg function that returns the greatest value for the expression as applied to each row."
   [expr]
   (dataflow/max-agg expr))
 
-(defn minimum
+(defn min
   "A relic agg function that returns the smallest value for the expression as applied to each row."
   [expr]
   (dataflow/min-agg expr))

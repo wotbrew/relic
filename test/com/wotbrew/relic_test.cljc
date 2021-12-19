@@ -744,9 +744,13 @@
     (is (= #{{:b 2, :c 3, :d 2, :d2 2, :e 6}} (rel/q db goodq)))))
 
 (deftest min-max-test
-  (let [db (rel/transact {} {:A [{:a 1} {:a 2} {:a 3}]})]
-    (is (= [{:mina 1}] (rel/q db [[:from :A] [:agg [] [:mina [min :a]]]])))
-    (is (= [{:maxa 3}] (rel/q db [[:from :A] [:agg [] [:maxa [max :a]]]])))))
+  (let [db (rel/transact {} {:A (for [n (range 1000)] {:a n})})]
+    (is (= [{:mina 0}] (rel/q db [[:from :A] [:agg [] [:mina [min :a]]]])))
+    (is (= [{:mina 0}] (rel/q db [[:from :A] [:agg [] [:mina [rel/min :a]]]])))
+    (is (= [{:mina {:a 0}}] (rel/q db [[:from :A] [:agg [] [:mina [rel/min-by :a]]]])))
+    (is (= [{:maxa 999}] (rel/q db [[:from :A] [:agg [] [:maxa [max :a]]]])))
+    (is (= [{:maxa 999}] (rel/q db [[:from :A] [:agg [] [:maxa [rel/max :a]]]])))
+    (is (= [{:maxa {:a 999}}] (rel/q db [[:from :A] [:agg [] [:maxa [rel/max-by :a]]]])))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

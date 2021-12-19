@@ -1600,16 +1600,12 @@
 
 (defn- result [graph self left box]
   (let [swap (fn [existing inserted deleted]
-               (cond
-                 existing
+               (if existing
                  (let [e (transient (set existing))
                        e (reduce disj! e deleted)
                        e (reduce conj! e inserted)]
                    (persistent! e))
-
-                 (coll? inserted) inserted
-
-                 :else (vec inserted)))]
+                 inserted))]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (vswap! box swap inserted deleted)

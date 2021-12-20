@@ -300,12 +300,12 @@
 ;; min/max
 
 (defn max-by
-  "A relic agg function that returns the greatest row by some function. e.g [rel/greatest-by :a] will return the row for which :a is biggest."
+  "A relic agg function that returns the greatest row by some function. e.g [rel/max-by :a] will return the row for which :a is biggest."
   [expr]
   (dataflow/max-by expr))
 
 (defn min-by
-  "A relic agg function that returns the smallest row by some function. e.g [rel/least-by :a] will return the row for which :a is smallest."
+  "A relic agg function that returns the smallest row by some function. e.g [rel/min-by :a] will return the row for which :a is smallest."
   [expr]
   (dataflow/min-by expr))
 

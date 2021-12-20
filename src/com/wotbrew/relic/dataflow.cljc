@@ -1187,14 +1187,15 @@
           [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
       (case (count custom-nodes)
         0 (conj left [generic-agg cols standard-aggs])
-        1 (first custom-nodes)
-        (let [joins (concat (for [node custom-nodes]
-                              [:join node join-clause])
-                            (when (seq standard-aggs)
-                              [[:join (conj left [generic-agg cols standard-aggs]) join-clause]]))
-              left (conj left (into [:select] cols))
-              left (reduce conj left joins)]
-          left)))))
+        (if (empty? standard-aggs)
+          (first custom-nodes)
+          (let [joins (concat (for [node custom-nodes]
+                                [:join node join-clause])
+                              (when (seq standard-aggs)
+                                [[:join (conj left [generic-agg cols standard-aggs]) join-clause]]))
+                left (conj left (into [:select] cols))
+                left (reduce conj left joins)]
+            left))))))
 
 (defn lookup [graph self _ index path]
   (let [path (vec path)

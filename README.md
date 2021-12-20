@@ -42,7 +42,6 @@ Are you spending too much time writing mechanical wiring and glue? That has *not
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance.
 - __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](#constraint-reference).
-- absolutely jam packed with vectors, because [] is [clearly better](https://github.com/videlalvaro/clochure) than (), you _don't even need to hold shift_.
 
 Definitely not at all like the other in-memory databases in clojure. this time its different, really.
 
@@ -347,11 +346,11 @@ Conditional special forms are available due to inability to use clojure macros i
  - `[:or & expr]`
  - `[:if then else]`
 
-### Escaping keywords `::rel/esc`
+### Escaping keywords `:_`
 
 Because normally keywords are substituted with a lookup, an expression like `[= :a :b]` will be evaluated as `(= (:a row) (:b row))`
 
-If you do not want this behaviour you can escape with the `::rel/esc` special form. e.g `[= :a [::rel/esc :b]]` would result in `(= (:a row) :b)`
+If you do not want this behaviour you can escape with the `:_` / `::rel/esc` special form. e.g `[= :a [:_ :b]]` would result in `(= (:a row) :b)`
 
 ### Using non-keyword keys with `::rel/get`
 
@@ -361,7 +360,7 @@ Use `::rel/get` as a shorthand for a `get` call. e.g `[::rel/get "firstname"]` w
 
 ### Getting a reference to the row with `:%`
 
-If you want the whole map you can reference it with `:%` so you could for example call `[pos? [count ::rel/%]]` would be a valid relic expression.
+If you want the whole map you can reference it with `:%` so you could for example call `[pos? [count :%]]` would be a valid relic expression.
 
 ### Sampling the environment with `::rel/env`
 
@@ -376,11 +375,11 @@ See [env](#use-the-environment-in-relvars-with-relenv)
 
 The [`:agg`](#aggregation--grouping-with-agg) relational operator takes [extension](#adding-new-columns-with-extend) like bindings to compute aggregate expressions over grouped rows.
 
-They look like relic [expressions](#expression-reference) but do in fact follow different rules. 
+They look like relic [expressions](#expression-reference) but the first arg must be an 'aggregation' 
 
 The simplest thing to do is to use the built-in aggregations in relic.
 
-### Count grouped rows with `clojure.core/count`
+### Count grouped rows with `/count`
 
 Count is easy, just use normal `count`! The library function from clojure itself is a valid aggregate.
 
@@ -422,15 +421,21 @@ spec: `[any/not-any expr]`
 
 ### Find lowest/greatest rows by some expression with `top-by` / `bottom-by`
 
-e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of 5 rows with the highest values for `:a`
+e.g `[:agg [] [:top [rel/top-by 5 :a]]]` would bind a vector of 5 rows with the highest values for `:a`
 
 spec: `[top-by/bottom-by n expr]`
 
 ### Find lowest/greatest values of some expression with `top` / `bottom`
 
-e.g `[:agg [] [rel/top-by 5 :a]]` would bind a vector of the 5 highest values of` :a`
+e.g `[:agg [] [:top [rel/top 5 :a]]]` would bind a vector of the 5 highest values of` :a`
 
 spec: `[top/bottom n expr]`
+
+### Find an average with `avg`
+
+e.g `[:agg [] [rel/avg :a]]`
+
+spec: `[avg expr]`
 
 ## Query reference
 

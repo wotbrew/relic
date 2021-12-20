@@ -756,5 +756,24 @@
   (is (= [{:a 1} {:a 2}] (rel/q {} [[:const [{:a 2}]]] {:into [{:a 1}]})))
   (is (= #{{:a 1} {:a 2}} (rel/q {} [[:const [{:a 2}]]] {:into #{{:a 1}}}))))
 
+(deftest avg-test
+  (is (= [{:avg 0}] (rel/q {} [[:const [{:b 0}]]
+                               [:agg [] [:avg [rel/avg :a]]]])))
+
+  (is (= [{:avg 2}] (rel/q {} [[:const [{:a 2}]]
+                               [:agg [] [:avg [rel/avg :a]]]])))
+
+  (is (= [{:avg 2}] (rel/q {} [[:const [{:a 1} {:a 3}]]
+                               [:agg [] [:avg [rel/avg :a]]]])))
+
+  (is (= [{:avg 3/2}] (rel/q {} [[:const [{:a 0} {:a 3}]]
+                                 [:agg [] [:avg [rel/avg :a]]]])))
+
+  (is (= [{:avg 3/2}] (rel/q {} [[:const [{:b 0} {:a 3}]]
+                                 [:agg [] [:avg [rel/avg :a]]]])))
+
+  (is (= [{:avg 1.5M}] (rel/q {} [[:const [{:b 0} {:a 3.0M}]]
+                                  [:agg [] [:avg [rel/avg :a]]]]))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

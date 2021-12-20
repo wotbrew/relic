@@ -364,6 +364,21 @@
                           [dataflow/group cols f]
                           [dataflow/transform-unsafe (dataflow/bind-group binding count)]))}))
 
+
+;; --
+;; avg
+
+(defn avg
+  "An aggregation that returns the statistical average, uses `/` so return type depends on operands,
+
+  You might get a Ratio, like clojure."
+  [expr]
+  {:custom-node
+   (fn [left cols [binding]]
+     (conj left
+           [:agg cols [:s [sum expr]] [:n count]]
+           (into [:select-unsafe [binding [/ :s [:if [pos? :n] :n 1]]]] cols)))})
+
 ;; --
 ;; any, like some but this one is called any.
 

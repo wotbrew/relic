@@ -36,8 +36,8 @@ With few exceptions (direct index lookup) you can materialize any relvar with `r
 
 In the tar pit paper, the language used to express relvars was a traditional expression tree (e.g `union(a, b)`).
 
-I decided I wanted a data-first clojure dsl that met two goals, like all good clojure dsl's I wanted to  compose new relvars using regular clojure,
-and I wanted it them to be easy to write and read as literals. Tall order!
+I wanted a data-first clojure dsl that met two goals, like any good data dsl I wanted to compose new relvars using regular clojure functions,
+and I wanted them to be easy to write and read as literals without ide support.
 
 The vector form I think is close to SQL, with a nice top-to-bottom reading flow. Each statement is self contained in its own
 delimited form, and so you can create new relvars with `conj`, split them with `split-at` and so on.

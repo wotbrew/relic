@@ -1189,17 +1189,11 @@
                      db (mset db nidx)
                      old-rows
                      (eduction
-                       (keep
-                         (fn [k]
-                           (when-some [{:keys [indexed-row]} (idx k)]
-                             @indexed-row)))
+                       (keep (partial get-row idx))
                        ks)
                      new-rows
                      (eduction
-                       (keep
-                         (fn [k]
-                           (when-some [{:keys [indexed-row]} (nidx k)]
-                             @indexed-row)))
+                       (keep (partial get-row nidx))
                        ks)]
                  (forward db new-rows old-rows))))}))
 

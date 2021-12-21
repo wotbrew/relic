@@ -26,7 +26,7 @@ where any kind of query at all is too slow.
 
 - you want declarative query of your data, but are more familiar with SQL than datalog
 - you want spreadsheet style incremental computation over large (or small!) amounts of data
-- you work with result sets from SQL databases, and want to compute on it in memory without leaving the relational information model
+- you work with result sets from SQL databases, and want to compute further in memory without leaving the relational information model
 - you work with other tabular data, sequences of map records, csv files etc
 - your data fits in memory (for now!)
 

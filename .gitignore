@@ -13,3 +13,4 @@ pom.xml.asc
 *.iml
 hs_err*
 .shadow-cljs
+node_modules

@@ -7,8 +7,12 @@
   :repl-options {:init-ns com.wotbrew.relic}
   :profiles {:dev {:source-paths ["dev"]
                    :dependencies [[com.clojure-goes-fast/clj-async-profiler "0.5.1"]
+                                  [criterium "0.4.6"]
                                   [org.clojure/data.csv "1.0.0"]
-                                  [thheller/shadow-cljs "2.15.13"]]
+                                  [thheller/shadow-cljs "2.15.13"]
+                                  [datascript "1.2.10"]
+                                  [reagent "1.1.0"]
+                                  [io.airlift.tpch/tpch "0.10"]]
                    :repl-options {:nrepl-middleware [shadow.cljs.devtools.server.nrepl/middleware]}
                    :injections [(try
                                   (println "Loading dev.clj")

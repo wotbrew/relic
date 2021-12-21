@@ -1,7 +1,8 @@
 (ns dev
   (:require [clj-async-profiler.core :as clj-async-profiler]
             [shadow.cljs.devtools.api :as s.api]
-            [shadow.cljs.devtools.server :as s.server]))
+            [shadow.cljs.devtools.server :as s.server]
+            [criterium.core :as criterium]))
 
 (def profiler-port 5001)
 
@@ -45,3 +46,6 @@
   (s.server/start!)
   (s.api/watch :browser)
   (s.api/repl :browser))
+
+(defmacro bench [expr]
+  `(criterium/quick-bench ~expr))

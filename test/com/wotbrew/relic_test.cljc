@@ -10,7 +10,10 @@
                              b #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
     (are [x ret]
 
-      (and (= (set ret) (set (rel/q db x))))
+      (and (= (set ret)
+              (set (rel/q db x))
+              (set (rel/q (rel/materialize db x) x))
+              (set (rel/q (rel/dematerialize (rel/materialize db x) x) x))))
 
       a
       ;; =>

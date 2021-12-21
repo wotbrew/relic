@@ -4,10 +4,10 @@
             [com.wotbrew.relic.dataflow :as dataflow]))
 
 (deftest basics-test
-  (let [a [[:table :A]]
-        b [[:table :B]]
-        db (rel/transact {} {a #{{:a 42}, {:a 43}, {:a 45}}
-                             b #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
+  (let [a [[:from :A]]
+        b [[:from :B]]
+        db (rel/transact {} {:A #{{:a 42}, {:a 43}, {:a 45}}
+                             :B #{{:a 42, :b 42}, {:a 42, :b 43}, {:a 43, :b 44}}})]
     (are [x ret]
 
       (and (= (set ret)
@@ -134,7 +134,7 @@
     (is (not (dataflow/table-relvar? (conj A [:where [= 1 1]]))))))
 
 (deftest state-statement-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         db {}
         a0 {:a 42}
         a1 {:a 43}
@@ -152,7 +152,7 @@
     (is (= [a2] (rel/what-if db A {A [a0 a1]} {A [a2]} [:delete-exact A a0 a1])))))
 
 (deftest from-statement-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         F [[:from A]]
         a0 {:a 42}
         a1 {:a 43}
@@ -169,8 +169,8 @@
 (deftest where-expr-test
   (are [result row expr]
     (if result
-      (= #{row} (set (rel/what-if {} [[:table :A] [:where expr]] {[[:table :A]] [row]})))
-      (empty? (rel/what-if {} [[:table :A] [:where expr]] {[[:table :A]] [row]})))
+      (= #{row} (set (rel/what-if {} [[:from :A] [:where expr]] {[[:from :A]] [row]})))
+      (empty? (rel/what-if {} [[:from :A] [:where expr]] {[[:from :A]] [row]})))
 
     true {} (constantly true)
     true {} [= 1 1]
@@ -189,7 +189,7 @@
     true {:a 43, :b 42} [= [inc :a] [+ :b 2]]))
 
 (deftest agg-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         R [[:from A] [:agg [] [:n [rel/sum :b]]]]
         aid (volatile! 0)
         a (fn [b] {:a (vswap! aid inc), :b b})
@@ -207,8 +207,8 @@
     (is (= [{:n 2}] (rel/what-if db R {A [a1, a2]} [:delete-exact A a1] [:insert A a1])))))
 
 (deftest join-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         R [[:from A] [:join B {:a :a}]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})
@@ -239,8 +239,8 @@
     (is (= [ab0] (rel/what-if db R {A [a0] B [b0]} [:delete B b0] [:insert B b0])))))
 
 (deftest join-product-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         R [[:from A] [:join B]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})
@@ -272,8 +272,8 @@
     (is (= #{(merge a0, b0), (merge a0 b1), (merge a1, b0), (merge a1 b1)} (set (rel/what-if db R {A [a0, a1] B [b0, b1]}))))))
 
 (deftest left-join-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         R [[:from A] [:left-join B {:a :a}]]
         aid (volatile! -1)
         a (fn [x] {:a (vswap! aid inc), :x x})
@@ -307,10 +307,10 @@
 
 (deftest migrate-table-state-test
   (let [db {}
-        A [[:table :A {:req [:a]}]]
-        A2 [[:table :A {:req [:a, :b]}]]
-        B [[:table :A {:req [:a]}] [:select :b]]
-        B2 [[:table :A {:req [:a :b]}] [:select :b]]
+        A [[:from :A {:req [:a]}]]
+        A2 [[:from :A {:req [:a, :b]}]]
+        B [[:from :A {:req [:a]}] [:select :b]]
+        B2 [[:from :A {:req [:a :b]}] [:select :b]]
         db (rel/transact db {A [{:a 1, :b 1}]})
         db (rel/transact db {A2 [{:a 2, :b 2}]})]
 
@@ -323,7 +323,7 @@
     (is (= #{{:b 1} {:b 2}} (set (rel/q db B2))))))
 
 (deftest where-lookup-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         db {}]
     (is (= [{:a 42}] (rel/what-if db [[:from A] [:where [= :a 42]]] {A [{:a 42}, {:a 43}]})))
     (is (= #{{:a 43}} (-> (rel/materialize db [[:from A] [:where [= :a 43]]])
@@ -337,8 +337,8 @@
     (is (= nil (rel/what-if db [[:from A] [:where [:or {:a 42} {:a 43}]]])))))
 
 (deftest dematerialize-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A1)]
     (is (= #{{:a 42}} (-> db (dataflow/gg) (dataflow/get-node A1) :results)))
@@ -346,9 +346,9 @@
     (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg :A)))))
 
 (deftest dematerialize-deletes-orphaned-transitives-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
-        A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
+        A2 [[:from :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2)]
     (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
@@ -356,9 +356,9 @@
     (is (= #{{:a 42}} (-> db (rel/dematerialize A2) dataflow/gg :A)))))
 
 (deftest dematerialize-keeps-materialized-transitives-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
-        A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
+        A2 [[:from :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2 A1)]
    (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) :results)))
@@ -368,7 +368,7 @@
    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
 
 (deftest watch-table-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/watch db A)
         {db2 :db, :keys [changes]} (rel/track-transact db {A [{:a 43}]})]
@@ -378,8 +378,8 @@
     (is (= {A {:added [{:a 43}], :deleted [{:a 42}]}} (:changes (rel/track-transact db [:delete A {:a 42}] {A [{:a 43}]}))))))
 
 (deftest watch-view-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:extend [:a [inc :a]]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/watch db A1)
         {db2 :db, :keys [changes]} (rel/track-transact db {A [{:a 43}]})]
@@ -389,17 +389,17 @@
     (is (= {A1 {:added [{:a 44}], :deleted [{:a 43}]}} (:changes (rel/track-transact db [:delete A {:a 42}] {A [{:a 43}]}))))))
 
 (deftest unwatch-removes-mat-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/watch db A1)
         db (rel/unwatch db A1)]
     (is (nil? (-> db dataflow/gg (dataflow/get-node A1))))))
 
 (deftest unwatch-keeps-explicitly-mat-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
-        A2 [[:table :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
+        A2 [[:from :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2)
         db (rel/watch db A2)
@@ -410,11 +410,11 @@
 
 (deftest track-transients-are-removed-test
   (is (= {:db {:A #{}}
-          :changes {[[:table :A]] {:added [], :deleted []}}}
-         (rel/track-transact (rel/watch {} [[:table :A]]) {:A [{:a 1}]} [:delete :A]))))
+          :changes {[[:from :A]] {:added [], :deleted []}}}
+         (rel/track-transact (rel/watch {} [[:from :A]]) {:A [{:a 1}]} [:delete :A]))))
 
 (deftest update-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]
     (is (= #{{:a 43}, {:a 45}} (set (rel/what-if db A [:update A {:a [inc :a]}]))))
     (is (= #{{:a 43}, {:a 44}} (set (rel/what-if db A [:update A {:a [inc :a]} [= :a 42]]))))
@@ -423,14 +423,14 @@
     (is (= #{{:a 43}, {:a 44}} (set (rel/what-if db A [:update A #(assoc % :a 43) [= :a 42]]))))))
 
 (deftest delete-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]
     (is (= nil (rel/what-if db A [:delete A])))
     (is (= [{:a 42}] (rel/what-if db A [:delete A [= :a 44]])))
     (is (= [{:a 42}] (rel/what-if db A [:delete A [< 43 :a] [:or [= 1 2] [= 1 1]]])))))
 
 (deftest env-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:extend [:b [str [::rel/env :b]]]]
             [:where [any? [::rel/env :b]]]
@@ -469,7 +469,7 @@
                (rel/q A2))))))
 
 (deftest top-by-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/top-by 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
@@ -480,7 +480,7 @@
     (is (= [{:top (vec (take 5 (reverse (rows 100))))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest bottom-by-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/bottom-by 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
@@ -491,7 +491,7 @@
     (is (= [{:top (vec (take 5 (rows 100)))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest top-by-collision-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/top-by 10 :a]]]
             [:extend [:top [set :top]]]]
@@ -502,7 +502,7 @@
     (is (= [{:top (set (take 10 (reverse (rows 100))))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest bottom-by-collision-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/bottom-by 10 :a]]]
             [:extend [:top [set :top]]]]
@@ -513,7 +513,7 @@
     (is (= [{:top (set (take 10 (rows 100)))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest top-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/top 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
@@ -524,7 +524,7 @@
     (is (= [{:top (vec (take 5 (reverse (range 100))))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest bottom-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         A2 [[:from A]
             [:agg [] [:top [rel/bottom 5 :a]]]]
         rows (fn [n] (vec (for [i (range n)] {:a i})))]
@@ -534,8 +534,8 @@
     (is (= [{:top (vec (take 5 (range 100)))}] (rel/what-if {} A2 {A (rows 100)})))))
 
 (deftest strip-meta-test
-  (let [A [[:table :A]]
-        A1 [[:table :A] [:where [= :a 42]]]
+  (let [A [[:from :A]]
+        A1 [[:from :A] [:where [= :a 42]]]
         db (rel/transact (rel/materialize {} A1) {A [{:a 42}, {:a 43}]})
         db (rel/watch db A1)]
     (is (= {:A #{{:a 42}, {:a 43}}} (rel/strip-meta db)))
@@ -544,36 +544,36 @@
 
 (deftest unique-violation-test
   (let [db (rel/transact {} {:A [{:a 42}]})
-        db (rel/materialize db [[:table :A] [:unique :a]])]
+        db (rel/materialize db [[:from :A] [:unique :a]])]
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A [:insert :A {:a 42, :b 1}])))
     (is (= [{:a 42}] (rel/what-if db :A [:insert :A {:a 42}])))))
 
 (deftest upsert-test
   (let [db (rel/transact {} [:upsert :A {:a 42}])
-        db (rel/materialize db [[:table :A] [:unique :a]])
+        db (rel/materialize db [[:from :A] [:unique :a]])
         db (rel/transact db [:upsert :A {:a 42, :b 42} {:a 42, :b 43}])]
     (is (= [{:a 42, :b 43}] (rel/q db :A)))
     (is (= #{{:a 42}, {:a 43}} (set (rel/what-if db :A [:upsert :A {:a 42}] [:upsert :A {:a 43}] [:upsert :A {:a 42}]))))
     (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (set (rel/what-if db :A [:upsert :A {:a 43, :b 43}]))))))
 
 (deftest delayed-fk-check-test
-  (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a}]])]
+  (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a}]])]
     (is (= [{:a 1}] (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]})))
     (is (= [{:a 1}] (rel/what-if db :A {:B [{:a 1}]} {:A [{:a 1}]})))
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]})))
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))
 
 (deftest cascading-delete-test
-  (let [db (rel/materialize {} [[:table :A] [:fk [[:table :B]] {:a :a} {:cascade true}]])]
+  (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a} {:cascade true}]])]
     (is (= nil (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))
 
 (deftest false-req-col-is-allowed-test
-  (let [A [[:table :A {:req [:a]}]]
+  (let [A [[:from :A {:req [:a]}]]
         db (rel/materialize {} A)]
     (is (= {:A #{{:a false}}} (rel/transact db {A [{:a false}]})))))
 
 (deftest self-join-glitch-bug-test1
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A]
            [:agg
             []
@@ -586,7 +586,7 @@
     (is (= [{:a 2}] (rel/what-if db B [:delete-exact :A {:a 1}] {:A [{:a 1}]})))))
 
 (deftest self-join-glitch-bug-test2
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A]
            [:agg
             []
@@ -600,21 +600,21 @@
     (is (= [{:a 2, :b 4}] (rel/what-if db B [:delete-exact :A {:a 1}] {:A [{:a 1}]})))))
 
 (deftest narrowing-delete-extend-glitch-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A] [:extend [:a 1]]]
         db (rel/transact (rel/materialize {} B) {:A [{:a 42} {:a 43}]})]
     (is (= [{:a 1}] (rel/q db B)))
     (is (= [{:a 1}] (rel/what-if db B [:delete-exact :A {:a 42}])))))
 
 (deftest narrowing-delete-select-glitch-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A] [:select [:a 1]]]
         db (rel/transact (rel/materialize {} B) {:A [{:a 42} {:a 43}]})]
     (is (= [{:a 1}] (rel/q db B)))
     (is (= [{:a 1}] (rel/what-if db B [:delete-exact :A {:a 42}])))))
 
 (deftest narrowing-expand-glitch-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A] [:expand [[:b] :b]]]
         db (rel/transact
              (rel/materialize {} B)
@@ -624,8 +624,8 @@
     (is (= [{:b 1}] (rel/what-if db B [:delete-exact A {:b [{:b 1}, {:b 2}]}])))))
 
 (deftest narrowing-join-glitch-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         J [[:from A] [:join B {:a :a}]]
         db (rel/transact
              (rel/materialize {} J)
@@ -636,8 +636,8 @@
     (is (= [{:a 1 :b 2}] (rel/what-if db J [:delete-exact A {:a 1, :b 2}])))))
 
 (deftest narrowing-left-join-glitch-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         J [[:from A] [:left-join B {:a :a}]]
         db (rel/transact
              (rel/materialize {} J)
@@ -647,7 +647,7 @@
     (is (= [{:a 1 :b 2}] (rel/what-if db J [:delete-exact A {:a 1, :b 2}])))))
 
 (deftest delayed-check-test
-  (let [A [[:table :A]]
+  (let [A [[:from :A]]
         B [[:from A] [:check [= :a 1]]]
         db (rel/materialize {} B)]
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact db  {:A [{:a 2}]})))
@@ -655,8 +655,8 @@
     (is (= {:A #{}} (rel/transact db  {:A [{:a 2}]} [:delete :A])))))
 
 (deftest delayed-check-cascade-test
-  (let [A [[:table :A]]
-        B [[:table :B]]
+  (let [A [[:from :A]]
+        B [[:from :B]]
         C [[:from A] [:fk B {:a :a} {:cascade true}]]
         D [[:from A] [:check [= :a 1]]]
         db (rel/materialize {} C D)]
@@ -676,7 +676,7 @@
                                         [:update :B {:a 1}])))))
 
 (deftest hash-lookup-test
-  (let [index [[:table :A]
+  (let [index [[:from :A]
                [:hash :a [inc :a]]]
         db (rel/materialize {} index)]
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:lookup index "a" "b"]])))
@@ -684,7 +684,7 @@
     (is (= [{:a 1} {:a 1, :b 2}] (rel/what-if db [[:lookup index 1 2]] {:A [{:a 1} {:a 2} {:a 1, :b 2}]})))))
 
 (deftest btree-lookup-test
-  (let [index [[:table :A]
+  (let [index [[:from :A]
                [:btree :a [inc :a]]]
         db (rel/materialize {} index)]
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/q {} [[:lookup index "a" "b"]])))
@@ -693,12 +693,12 @@
 
 (deftest overwrite-binding-test
   (let [db (rel/transact {} {:A [{:a 1}]})]
-    (is (= [{:b 1}] (rel/q db [[:table :A] [:extend [:a 42] [:a nil] [:b 1]]])))))
+    (is (= [{:b 1}] (rel/q db [[:from :A] [:extend [:a 42] [:a nil] [:b 1]]])))))
 
 (deftest bind-all-test
   (let [db (rel/transact {} {:A [{:a {:a nil, :b 2, :c 3}}]})]
-    (is (= [{:b 2, :c 3}] (rel/q db [[:table :A] [:extend [::rel/* :a]]])))
-    (is (= [{:b 2, :c 3}] (rel/q db [[:table :A] [:extend [:* :a]]])))))
+    (is (= [{:b 2, :c 3}] (rel/q db [[:from :A] [:extend [::rel/* :a]]])))
+    (is (= [{:b 2, :c 3}] (rel/q db [[:from :A] [:extend [:* :a]]])))))
 
 (deftest from-as-table-alias-test
   (let [db (rel/transact {} {:A [{:a 1}]

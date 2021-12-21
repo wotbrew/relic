@@ -2,7 +2,8 @@
   "Core dataflow implementation - the 'innards'. All functions in this namespace
   should be considered private."
   (:require [com.wotbrew.relic.generic-agg-index :as gai]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [clojure.string :as str]))
 
 (defn- dissoc-in
   "Recursive dissoc, like assoc-in.
@@ -116,6 +117,37 @@
             (when arg-buf
               (apply f (iterable-mut-list arg-buf)))))))))
 
+(defn- demunge [expr]
+  (let [expr-str (str expr)
+        [ns f] (str/split expr-str #"\$")
+        show-ns (if (= "clojure.core" ns) false true)
+        [f] (str/split (str f) #"\@")]
+    #?(:clj  (clojure.lang.Compiler/demunge (if show-ns (str ns "/" f) f))
+       :cljs (str expr))))
+
+(defn- safe-print-expr [expr]
+  (cond
+    (fn? expr) (demunge expr)
+
+    (keyword? expr) expr
+
+    (vector? expr) (with-out-str (print (mapv safe-print-expr expr)))
+
+    :else (str "(" (type expr) ")")))
+
+(defn- add-expr-ex-handler
+  "Adds default exception handling to relic function calls, `f` is a function of a row."
+  [f expr]
+  (fn with-ex-handler [row]
+    (try
+      (f row)
+      #?(:clj
+         (catch NullPointerException e
+           (raise (str "Null pointer exception thrown by relic expression, consider using " (safe-print-expr (into [:?] expr)))
+                  {:expr expr} e)))
+      (catch #?(:clj Throwable :cljs js/Error) e
+        (raise (str "Exception thrown by relic expression " (safe-print-expr expr)) {:expr expr} e)))))
+
 (defn- to-function [f]
   (cond
     (fn? f) f
@@ -186,13 +218,13 @@
 
         (:com.wotbrew.relic/nil-safe :?)
         (let [[f & args] args]
-          (nil-safe-row-fn-call (to-function f) args))
+          (add-expr-ex-handler (nil-safe-row-fn-call (to-function f) args) expr))
 
         (:com.wotbrew.relic/unsafe :!)
         (let [[f & args] args]
           (unsafe-row-fn-call (to-function f) args))
 
-        (unsafe-row-fn-call (to-function f) args)))
+        (add-expr-ex-handler (unsafe-row-fn-call (to-function f) args) expr)))
 
     (keyword? expr) expr
 

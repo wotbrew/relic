@@ -22,6 +22,22 @@ where any kind of query at all is too slow.
 #{{:lib/name "relic", :author/github "wotbrew", :url "https://github.com/wotbrew/relic"}}
 ```
 
+## Who is it for?
+
+- you want declarative query of your data, but are more familiar with SQL than datalog
+- you want spreadsheet style incremental computation over large (or small!) amounts of data
+- you work with result sets from SQL databases, and want to compute on it in memory without leaving the relational information model
+- you work with other tabular data, sequences of map records, csv files etc
+- your data fits in memory (for now!)
+
+## How does it work?
+
+- relvars are transformed into a directed-acyclic-graph of data flow nodes, sharing structure with other relvars (e.g indexes), to avoid redundant computation.
+- data flows from realised nodes to unrealised nodes, initialising them.
+- as you change data in tables, nodes in the DAG receive new inserted/deleted signals, and data flows along the graph.
+- the difference between a query and materialized view is just whether the graph nodes are saved or thrown away.
+- unlike some other reactive signal graphs, the relic dataflow graph uses indexes and set-based flow, so only the rows that have changed are flowed, not the entire result
+
 ## Pitch 
 
 Do you suffer from _map fatigue_? [[1]](http://timothypratley.blogspot.com/2019/01/meander-answer-to-map-fatigue.html)
@@ -151,7 +167,7 @@ will be stored and found in the database map.
 (rel/q db [[:from :Customer]])
 ```
 
-spec: `[:from table-name opts]`
+spec: `[:from table-name]`
 
 ### Filtering with `:where`
 

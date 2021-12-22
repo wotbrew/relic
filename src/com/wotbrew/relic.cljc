@@ -63,7 +63,7 @@
 ;; it might be useful for library users to have raw index access.
 
 (defn index
-  "Returns the raw index storing rows for relvar.
+  "Returns the raw index storing rows for relvar. ONLY RETURNS IF THE RELVAR IS MATERIALIZED.
 
   Normally a set, but if the last statement in the relvar is an index statement, you will get a specialised
   data structure, this can form the basis of using materialized relic indexes in other high-performance work on your data.

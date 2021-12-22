@@ -28,8 +28,8 @@
   Insert with :insert vectors
   [:insert table row1, row2 ..]
 
-  Upsert (insert or on :unique collision update by deleting colliding rows).
-  [:upsert table row1, row2 ..]
+  Insert or replace (insert or on :unique conflict update by deleting colliding rows and inserting the new oneß).
+  [:insert-or-replace table row1, row2 ..]
 
   Delete rows (exact match) (faster)
   [:delete-exact table rows]
@@ -121,7 +121,7 @@
 
      e.g [:unique :id] would make sure only one row exists for a given :id value.
 
-     Allows the use of :upsert in transact calls.
+     Allows the use of :insert-or-replace in transact calls.
 
    [:constrain & constraint-statements]
 

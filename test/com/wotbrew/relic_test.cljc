@@ -548,14 +548,6 @@
     (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A [:insert :A {:a 42, :b 1}])))
     (is (= [{:a 42}] (rel/what-if db :A [:insert :A {:a 42}])))))
 
-(deftest upsert-test
-  (let [db (rel/transact {} [:upsert :A {:a 42}])
-        db (rel/materialize db [[:from :A] [:unique :a]])
-        db (rel/transact db [:upsert :A {:a 42, :b 42} {:a 42, :b 43}])]
-    (is (= [{:a 42, :b 43}] (rel/q db :A)))
-    (is (= #{{:a 42}, {:a 43}} (set (rel/what-if db :A [:upsert :A {:a 42}] [:upsert :A {:a 43}] [:upsert :A {:a 42}]))))
-    (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (set (rel/what-if db :A [:upsert :A {:a 43, :b 43}]))))))
-
 (deftest delayed-fk-check-test
   (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a}]])]
     (is (= [{:a 1}] (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]})))
@@ -777,6 +769,27 @@
 
   (is (= [{:avg 1.5M}] (rel/q {} [[:const [{:b 0} {:a 3.0M}]]
                                   [:agg [] [:avg [rel/avg :a]]]]))))
+
+;; current behaviour
+
+(deftest insert-or-replace-basic-example
+  (let [db (rel/transact {} [:insert-or-replace :A {:a 42}])
+        db (rel/materialize db [[:from :A] [:unique :a]])
+        db (rel/transact db [:insert-or-replace :A {:a 42, :b 42} {:a 42, :b 43}])]
+    (is (= [{:a 42, :b 43}] (rel/q db :A)))
+    (is (= #{{:a 42}, {:a 43}} (set (rel/what-if db :A [:insert-or-replace :A {:a 42} {:a 43}] [:insert-or-replace :A {:a 42}]))))
+    (is (= #{{:a 42, :b 43}, {:a 43, :b 43}} (set (rel/what-if db :A [:insert-or-replace :A {:a 43, :b 43}]))))))
+
+(deftest insert-or-replace-removes-old-row-test
+  (let [db (rel/materialize {} [[:from :A] [:unique :a]])]
+    (is (= {:A #{{:a 1, :c 3}}} (rel/transact db {:A [{:a 1, :b 2}]} [:insert-or-replace :A {:a 1, :c 3}])))))
+
+(deftest insert-or-replace-multiple-conflicts-test
+  (let [db (rel/materialize {} [[:from :A] [:unique :a]] [[:from :A] [:unique :b]])]
+    (is (= {:A #{{:a 1, :b 2}}}
+           (rel/transact db
+                         {:A [{:a 1, :b 1} {:a 2, :b 2}]}
+                         [:insert-or-replace :A {:a 1, :b 2}])))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

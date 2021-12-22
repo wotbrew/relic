@@ -756,20 +756,20 @@
     (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
       (eduction comp xf (vals m)))))
 
-(def ^:private ^:dynamic *upsert-collisions* nil)
+(def ^:private ^:dynamic *unique-violations* nil)
 
 (defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
         raise-violation (fn [old-row new-row] (raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
-        upsert-collision
+        enable-conflict-behaviour
         (if-some [[_ table-key] (some-> (unwrap-table left) head-stmt)]
           (fn [old-row new-row]
-            (set! *upsert-collisions* (update *upsert-collisions* table-key set-conj old-row))
+            (set! *unique-violations* (update *unique-violations* table-key set-conj old-row))
             new-row)
           raise-violation)
         on-collision (fn on-collision [old-row new-row]
-                       (if *upsert-collisions*
-                         (upsert-collision old-row new-row)
+                       (if *unique-violations*
+                         (enable-conflict-behaviour old-row new-row)
                          (raise-violation old-row new-row)))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
@@ -1618,7 +1618,7 @@
                                        (provide graph))))]
 
                 (cond
-                   already-fired graph
+                  already-fired graph
 
                   rs
                   (let [graph (link-uninitialised graph (id relvar))
@@ -1782,13 +1782,14 @@
         :delete-exact (change-table db table-key nil args)
         :delete (delete-where db table-key args)
         :update (let [[f-or-set-map & exprs] args] (update-where db table-key f-or-set-map exprs))
-        :upsert (binding [*upsert-collisions* {}]
-                  (let [db2 (change-table db table-key args nil)
-                        db-new (reduce-kv (fn [db table-key rows]
-                                            (change-table db table-key nil rows)) db *upsert-collisions*)]
-                    (if (identical? db-new db2)
-                      db2
-                      (change-table db-new table-key (remove (*upsert-collisions* table-key #{}) args) nil))))
+        :insert-or-replace
+        (binding [*unique-violations* {}]
+          (let [db2 (change-table db table-key args nil)
+                db-new (reduce-kv (fn [db table-key rows]
+                                    (change-table db table-key nil rows)) db *unique-violations*)]
+            (if (identical? db-new db2)
+              db2
+              (change-table db-new table-key (remove (*unique-violations* table-key #{}) args) nil))))
         :replace-all (change-table db table-key args (q db table-key))
         (transact-error tx)))))
 

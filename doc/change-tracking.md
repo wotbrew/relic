@@ -17,7 +17,7 @@ Any relvar can be watched so that you can ask what rows were added or deleted by
 
 ;; enable change tracking for our relvar with watch
 ;; this returns a new relic database, don't worry its totally pure!
-(def db (rel/watch db relvar))   
+(def db (rel/watch db ViewModel))   
   
 ;; now we have a watched relvar, we can track-transact and receive changes to it.
 (rel/track-transact db [:update :User {:selected true} [= :user "bob"]])
@@ -29,16 +29,16 @@ Any relvar can be watched so that you can ask what rows were added or deleted by
  :changes
   {
    ;; our watched ViewModel relvar from earlier
-   [[:from :User}]
+   [[:from :User]
     [:where :selected]] 
     
    ;; added rows and deleted rows are returned.
    {:added [{:user "bob", :selected true}],
-    :deleted []}
+    :deleted []}}}
     
     
 ;; you can unwatch
-(def db (rel/unwatch db relvar))
+(def db (rel/unwatch db ViewModel))
 ```
 
 You can `watch` any [relvar](relvar.md), table or derived view. 

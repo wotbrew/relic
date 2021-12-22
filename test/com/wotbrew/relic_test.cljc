@@ -791,6 +791,8 @@
 
 ;; making sure doc examples work
 
+;; agg.md
+
 (deftest agg-doc-example-test
   (let [relvar
         [[:from :Order]
@@ -814,6 +816,8 @@
 
     (is (= expected (rel/what-if {} relvar state)))))
 
+;; any.md
+
 (deftest any-doc-example-test
   (let [relvar
         [[:from :Order]
@@ -832,6 +836,8 @@
 
     (is (= (set expected) (set (rel/what-if {} relvar state))))))
 
+;; avg.md
+
 (deftest avg-doc-example-test
   (let [relvar
         [[:from :Order]
@@ -843,6 +849,8 @@
 
         expected [{:aov 17.5M}]]
     (is (= expected (rel/what-if {} relvar state)))))
+
+;; bottom.md
 
 (deftest bottom-example-test
   (let [relvar
@@ -866,6 +874,8 @@
                           4242]}]]
 
     (is (= expected (rel/what-if {} relvar state)))))
+
+;; bottom-by.md
 
 (deftest bottom-by-example-test
   (let [relvar
@@ -895,6 +905,8 @@
                                     {:score 4242, :name "george"}]}]]
     (is (= expected (rel/what-if {} relvar state)))))
 
+;; btree.md
+
 (deftest btree-example1-test
   (let [relvar [[:from :Player] [:btree :score :name]]
         db (rel/transact {} {:Player [{:score 1
@@ -922,6 +934,46 @@
     (is (= {0 #{{:ts 0, :msg "hello"}}
             1 #{{:ts 1, :msg ", world"}}
             2 #{{:ts 2, :msg "!"}}} idx))))
+
+;; change-tracking.md
+
+(deftest change-tracking-example-test
+  (let [;; given a relvar we are interested in watching
+        ViewModel
+        [[:from :User]
+         [:where :selected]]
+
+        ;; lets assume the state looks like this:
+        st {:User [{:user "alice", :selected false}
+                   {:user "bob", :selected false}]}
+
+        db (rel/transact {} st)
+
+        ;; enable change tracking for our relvar with watch
+        ;; this returns a new relic database, don't worry its totally pure!
+        db (rel/watch db ViewModel)
+
+        ;; now we have a watched relvar, we can track-transact and receive changes to it.
+        result (rel/track-transact db [:update :User {:selected true} [= :user "bob"]])
+        ;; =>
+        expected
+        {
+         ;; the first key is just the :db as with the transactions applied
+         :db {:User #{{:user "alice", :selected false}, {:user "bob", :selected true}}},
+         ;; you also get a :changes key, which is the map of {relvar changes} for all watched relvars
+         :changes
+         {
+          ;; our watched ViewModel relvar from earlier
+          [[:from :User]
+           [:where :selected]]
+
+          ;; added rows and deleted rows are returned.
+          {:added [{:user "bob", :selected true}],
+           :deleted []}}}
+
+        ;; you can unwatch
+        _ (rel/unwatch db ViewModel)]
+    (is (= expected result))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

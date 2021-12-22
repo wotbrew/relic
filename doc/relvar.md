@@ -4,7 +4,7 @@ The data primitive in relic is the relvar, think of it like a SQL view, a descri
 tables, applying conditions, and computing columns and aggregates.
 
 - A relvar is always a vector
-- Relvars are made up of statements, themselves vectors.
+- relvars are made up of statements, themselves vectors of the form `[operator & args]`.
 
 ```clojure 
 ;; example relvar from the tcp-h benchmark suite
@@ -23,12 +23,12 @@ tables, applying conditions, and computing columns and aggregates.
  [:count_order count]]]
 ```
 
-Relvars compose by adding to the vector, this is in contrast to other approaches where query optimisers take care of the overall ordering.
+relvars compose by adding to the vector, this is in contrast to other approaches where query optimisers take care of the overall ordering.
 
 In relic, data always flows top-to-bottom.
 
 Although a relvar looks much like a query, you can also think of it as a view - and its super power is that relic allows you to materialize the relvar. This will convert the relvar into a
-DAG to support incremental recomputation as data in tables changes.
+DAG to support incremental re-computation as data in tables changes.
 
 With few exceptions (direct index lookup) you can materialize any relvar with `rel/materialize`.
 
@@ -39,7 +39,7 @@ In the tar pit paper, the language used to express relvars was a traditional exp
 I wanted a data-first clojure dsl that met two goals, like any good data dsl I wanted to compose new relvars using regular clojure functions,
 and I wanted them to be easy to write and read as literals without ide support.
 
-The vector form I think is close to SQL, with a nice top-to-bottom reading flow. Each statement is self contained in its own
+The vector form I think is close to SQL, with a nice top-to-bottom reading flow. Each statement is self-contained in its own
 delimited form, and so you can create new relvars with `conj`, split them with `split-at` and so on.
 
 ## Query statements
@@ -65,8 +65,8 @@ delimited form, and so you can create new relvars with `conj`, split them with `
 - [`:check`](check.md) ensure certain predicates hold 
 - [`:req`](req.md) ensure cols exist
 - [`:fk`](fk.md) ensure a referenced row exists in some other relvar
-- [`:constrain`](constrain.md) combine multiple constraints on a relvar
 - [`:unique`](unique.md) unsure only one row exists for some set of [expressions](expr.md)
+- [`:constrain`](constrain.md) combine multiple constraints on a relvar
 
 ## Indexes and direct index access
 

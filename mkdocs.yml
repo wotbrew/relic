@@ -1,0 +1,59 @@
+site_name: relic
+docs_dir: doc
+nav:
+  - Query:
+    - Relvars: relvar.md
+    - Issuing queries: query.md
+    - Expressions: expr.md
+    - Query statements:
+      - :agg: agg.md
+      - :const: const.md
+      - :from: from.md
+      - :difference: difference.md
+      - :expand: expand.md
+      - :extend: extend.md
+      - :from: from.md
+      - :intersection: intersection.md
+      - :join: join.md
+      - :left-join: left-join.md
+      - :qualify: qualify.md
+      - :rename: rename.md
+      - :select: select.md
+      - :union: union.md
+    - Index statements:
+      - :btree: btree.md
+      - :hash: hash.md
+      - :lookup: lookup.md
+    - Constraint statements:
+      - :check: check.md
+      - :fk: fk.md
+      - :req: req.md
+      - :unique: unique.md
+    - Aggregates: aggregates.md
+    - Aggregate functions:
+      - Stats:
+         - max: max.md
+         - max-by: max-by.md
+         - min: min.md
+         - min-by: min-by.md
+         - avg: avg.md
+      - Counts:
+         - count: count.md
+         - count-distinct: count-distinct.md
+      - "Top/Bottom N":
+         - top: top.md
+         - top-by: top-by.md
+         - bottom: bottom.md
+         - bottom-by: bottom-by.md
+      - Other:
+         - any: any.md
+         - not-any: not-any.md
+
+theme:
+  name: material
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences

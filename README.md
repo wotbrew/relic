@@ -67,8 +67,6 @@ Definitely not at all like the other in-memory databases in clojure. this time i
 
 ## Brief tour
 
-See [docs](docs)
-
 I like to use `rel` as an alias.
 
 ```clojure

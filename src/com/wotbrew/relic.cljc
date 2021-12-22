@@ -291,11 +291,6 @@
   [relvar]
   (analyze/dependencies relvar))
 
-(defn columns
-  "Returns the (known) columns on the relvar, e.g what it might return."
-  [relvar]
-  (analyze/columns relvar))
-
 ;; --
 ;; min/max
 

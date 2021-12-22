@@ -49,3 +49,6 @@
 
 (defmacro bench [expr]
   `(criterium/quick-bench ~expr))
+
+(defn stop-shadow []
+  (s.server/stop!))

@@ -1,5 +1,5 @@
-(ns com.wotbrew.relic.analyze
-  (:require [com.wotbrew.relic.dataflow :as dataflow]))
+(ns ^:no-doc com.wotbrew.relic.impl.analyze
+  (:require [com.wotbrew.relic.impl.dataflow :as dataflow]))
 
 (defmulti columns* (fn [_ stmt] (dataflow/operator stmt)))
 

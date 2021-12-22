@@ -1,4 +1,4 @@
-(ns com.wotbrew.relic.generic-agg-index)
+(ns ^:no-doc com.wotbrew.relic.impl.generic-agg-index)
 
 (defrecord AggIndexNode [size rm cache a b reduced combined results])
 

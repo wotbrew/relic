@@ -1,7 +1,7 @@
-(ns com.wotbrew.relic.dataflow
+(ns ^:no-doc com.wotbrew.relic.impl.dataflow
   "Core dataflow implementation - the 'innards'. All functions in this namespace
   should be considered private."
-  (:require [com.wotbrew.relic.generic-agg-index :as gai]
+  (:require [com.wotbrew.relic.impl.generic-agg-index :as gai]
             [clojure.set :as set]
             [clojure.string :as str]))
 

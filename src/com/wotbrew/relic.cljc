@@ -12,8 +12,8 @@
   - track changes with `track-transact`, `watch` and `unwatch`.
 
   I like to alias :as rel. @wotbrew"
-  (:require [com.wotbrew.relic.analyze :as analyze]
-            [com.wotbrew.relic.dataflow :as dataflow])
+  (:require [com.wotbrew.relic.impl.analyze :as analyze]
+            [com.wotbrew.relic.impl.dataflow :as dataflow])
   (:refer-clojure :exclude [min max]))
 
 (defn transact

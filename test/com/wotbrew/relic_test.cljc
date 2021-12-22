@@ -1,7 +1,7 @@
 (ns com.wotbrew.relic-test
   (:require [clojure.test :refer [deftest is are]]
             [com.wotbrew.relic :as rel]
-            [com.wotbrew.relic.dataflow :as dataflow]))
+            [com.wotbrew.relic.impl.dataflow :as dataflow]))
 
 (deftest basics-test
   (let [a [[:from :A]]

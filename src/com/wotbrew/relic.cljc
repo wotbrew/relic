@@ -155,12 +155,11 @@
 
   Each statement is also a vector, a complete relvar would look like:
 
-  [[:table :Customer]
+  [[:from :Customer]
    [:where [= :name \"alice\"]]]
 
   Operators quick guide:
 
-  [:table name]
   [:where & expr]
   [:extend & [col|[& col] expr]]
   [:expand & [col expr]]

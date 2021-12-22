@@ -40,10 +40,10 @@ nav:
          - top-by: top-by.md
          - bottom: bottom.md
          - bottom-by: bottom-by.md
-      - Other:
-         - any: any.md
-         - not-any: not-any.md
-         - set-concat: set-concat.md
+      - sum: sum.md
+      - any: any.md
+      - not-any: not-any.md
+      - set-concat: set-concat.md
     - Sub queries: sub-queries.md
     - Unsafe transforms: unsafe-transform.md
   - Transactions:

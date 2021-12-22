@@ -23,4 +23,6 @@ Counts
 
 Other
 
-- [`rel/any`](any.md) / [`rel/not-any`](not-any.md) check if any row meets a [predicate](expr.md) (or not)
+- [`rel/any`](any.md) / [`rel/not-any`](not-any.md) check if any row meets a [predicate](expr.md) (or not).
+- [`rel/sum`](sum.md) sum over some [expr](expr.md).
+- [`rel/set-concat`](set-concat.md) build sets by some [expr](expr.md) over grouped rows.

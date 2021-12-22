@@ -1819,9 +1819,11 @@
                     id (get-id graph relvar)
                     idx (if-some [tk (unwrap-table-key relvar)]
                           (graph tk #{})
-                          (:mem (graph id) #{}))]]
-        (when-some [violating (seq (filter idx rows))]
-          (raise "Check violation" {:relvar relvar, :check check, :rows violating})))
+                          (:mem (graph id) #{}))
+                    rows (seq (filter idx rows))]]
+        (when-some [row (first rows)]
+          (let [error (row-fn (:error check "Check violation"))]
+            (raise (error row) {:relvar relvar, :check check, :rows rows}))))
 
       db)))
 

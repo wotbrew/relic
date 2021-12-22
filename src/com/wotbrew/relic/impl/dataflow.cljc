@@ -790,7 +790,7 @@
 (def ^:dynamic *foreign-key-cascades* nil)
 
 (defn- bad-fk [left right clause row cascade]
-  (when (and cascade *foreign-key-cascades*)
+  (when (and (= cascade :delete) *foreign-key-cascades*)
     (set! *foreign-key-cascades* (update *foreign-key-cascades* [left right clause] set-conj (dissoc row ::fk))))
   (if *foreign-key-violations*
     (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] set-conj (dissoc row ::fk)))
@@ -800,7 +800,7 @@
                                     :row (dissoc row ::fk)})))
 
 (defn- good-fk [left right clause row cascade]
-  (when (and cascade *foreign-key-cascades*)
+  (when (and (= cascade :delete) *foreign-key-cascades*)
     (set! *foreign-key-cascades* (disjoc *foreign-key-cascades* [left right clause] (dissoc row ::fk))))
   (when *foreign-key-violations*
     (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left right clause] (dissoc row ::fk)))))

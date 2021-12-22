@@ -552,12 +552,16 @@
   (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a}]])]
     (is (= [{:a 1}] (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]})))
     (is (= [{:a 1}] (rel/what-if db :A {:B [{:a 1}]} {:A [{:a 1}]})))
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]})))
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))
+    (is (thrown? #?(:clj Throwable :cljs js/Error) #"Foreign key violation" (rel/what-if db :A {:A [{:a 1}]})))
+    (is (thrown? #?(:clj Throwable :cljs js/Error) #"Foreign key violation" (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))
 
 (deftest cascading-delete-test
-  (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a} {:cascade true}]])]
+  (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a} {:cascade :delete}]])]
     (is (= nil (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))
+
+(deftest cascading-delete-really-requires-:delete-test
+  (let [db (rel/materialize {} [[:from :A] [:fk [[:from :B]] {:a :a} {:cascade true}]])]
+    (is (thrown-with-msg? #?(:clj Throwable :cljs js/Error) #"Foreign key violation" (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]} [:delete :B])))))
 
 (deftest false-req-col-is-allowed-test
   (let [A [[:from :A {:req [:a]}]]

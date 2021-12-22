@@ -113,7 +113,7 @@
 
      e.g [:fk Customer {:id :id} {:cascade true}]
 
-     Can use the option :cascade to specify cascading deletes.
+     Can use the option :cascade to specify cascading deletes, e.g {:cascade :delete}.
 
    [:unique & exprs]
 

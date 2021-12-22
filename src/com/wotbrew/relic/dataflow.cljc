@@ -1239,14 +1239,17 @@
 
   Returns a (potentially new) relvar that ensures mget will return a set of rows at all times."
   [relvar]
-  (case (operator (head-stmt relvar))
-    :set relvar
-    (if (unwrap-table-key relvar)
-      relvar
-      (conj relvar [:set]))))
+  (if (empty? relvar)
+    relvar
+    (case (operator (head-stmt relvar))
+      :set relvar
+      (if (unwrap-table-key relvar)
+        relvar
+        (conj relvar [:set])))))
 
 (defn to-dataflow* [graph relvar self]
-  (let [left (left-relvar relvar)
+  (let [relvar (to-relvar relvar)
+        left (left-relvar relvar)
         stmt (head-stmt relvar)
         operator (operator stmt)]
     (if (fn? operator)
@@ -1444,7 +1447,7 @@
 
 (defn- add-to-graph* [graph relvar]
   (cond
-    (= [] relvar) graph
+    (empty? relvar) graph
     (contains? graph (*ids* relvar)) graph
     :else
     (let [{:keys [deps table] :as node} (to-dataflow graph relvar)

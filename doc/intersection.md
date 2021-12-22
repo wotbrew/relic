@@ -1,4 +1,4 @@
-# `:intersection`
+# :intersection
 
 Set intersection
 

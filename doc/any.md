@@ -1,4 +1,4 @@
-# `rel/any`
+# any
 
 An aggregate function that tests if for any row in the group (pred row) returns truthy, accepts a [expr](expr.md) as an arg.
 

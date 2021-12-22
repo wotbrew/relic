@@ -1,1 +1,1 @@
-# `rel/sum`
+# sum

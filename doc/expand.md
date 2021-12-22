@@ -1,4 +1,4 @@
-# `:expand`
+# :expand
 
 Provides a means of flattening trees.
 

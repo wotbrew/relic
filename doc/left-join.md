@@ -1,4 +1,4 @@
-# `:left-join`
+# :left-join
 
 Like [join](join.md) but returns rows even if there are no matches in the right relation.
 

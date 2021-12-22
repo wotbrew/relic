@@ -1,4 +1,4 @@
-# Relvar 
+# Relvars
 
 The data primitive in relic is the relvar, think of it like a SQL view, a description of some data made by combining 
 tables, applying conditions, and computing columns and aggregates.

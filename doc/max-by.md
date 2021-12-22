@@ -1,1 +1,1 @@
-# `rel/max-by`
+# max-by

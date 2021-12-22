@@ -1,4 +1,4 @@
-# `:extend`
+# :extend
 
 Computes new columns by binding the results of [expressions](expr.md).
 

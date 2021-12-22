@@ -1,4 +1,4 @@
-# `:agg`
+# :agg
 
 Relic provides a means to group rows and run aggregations on them. This analogous to SQL `GROUP BY`.
 
@@ -11,7 +11,7 @@ binding = [new-col agg-expr]
 agg-expr = agg-fn|[agg-fn & args]
 ```
 
-## Example
+## Examples
 
 ```clojure 
 [[:from :A]

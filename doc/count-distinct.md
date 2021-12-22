@@ -1,1 +1,1 @@
-# `rel/count-distinct`
+# count-distinct

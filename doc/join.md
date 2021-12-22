@@ -1,6 +1,6 @@
-# `:join`
+# :join
 
-Joins two relations together, returning the product of matching rows. The columns in the relation on the right will be preferred in a conflict.
+Joins relations together, returning the product of matching rows. The columns in the relation on the right will be preferred in a conflict.
 
 Like `set/join`, clause is a map of expressions on the left to expressions on the right.
 

@@ -1,4 +1,4 @@
-# `rel/avg`
+# avg
 
 An aggregate function that computes the average for all sampled values by some [expr](expr.md)
 

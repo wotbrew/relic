@@ -1,4 +1,4 @@
-# `:difference`
+# :difference
 
 Set difference
 

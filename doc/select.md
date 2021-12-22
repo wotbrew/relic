@@ -1,4 +1,4 @@
-# `:select`
+# :select
 
 The projection statement, takes columns & [extension](extend.md) style bindings and returns only them.
 

@@ -1,4 +1,4 @@
-# `:const`
+# :const
 
 Provides a constant collection as a relation.
 

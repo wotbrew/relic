@@ -1,4 +1,4 @@
-# `rel/bottom-by`
+# bottom-by
 
 An [aggregate](aggregates.md) function that returns the lowest `n` rows by some [expr](expr.md).
 

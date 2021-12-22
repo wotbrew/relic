@@ -1,4 +1,4 @@
-# `rel/not-any`
+# not-any
 
 An aggregate that tests for all row in the group (pred row) returns falsey, accepts an [expr](expr.md) as an arg.
 

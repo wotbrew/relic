@@ -1,4 +1,4 @@
-# `rel/bottom`
+# bottom
 
 An [aggregate](aggregates.md) functions that returns the lowest `n` values for some [expr](expr.md) across the group.
 

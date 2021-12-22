@@ -1,1 +1,1 @@
-# `rel/min-by`
+# min-by

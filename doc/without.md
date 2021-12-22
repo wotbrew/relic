@@ -1,4 +1,4 @@
-# `:without`
+# :without
 
 Removes columns, e.g like `dissoc`.
 

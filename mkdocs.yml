@@ -1,6 +1,7 @@
 site_name: relic
 docs_dir: doc
 nav:
+  - Intro: index.md
   - Query:
     - Relvars: relvar.md
     - Issuing queries: query.md
@@ -20,7 +21,10 @@ nav:
       - :rename: rename.md
       - :select: select.md
       - :union: union.md
-    - Index statements:
+      - :where: where.md
+      - :without: without.md
+    - Indexes:
+      - Overview: indexes.md
       - :btree: btree.md
       - :hash: hash.md
       - :lookup: lookup.md

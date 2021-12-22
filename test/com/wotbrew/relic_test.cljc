@@ -770,8 +770,6 @@
   (is (= [{:avg 1.5M}] (rel/q {} [[:const [{:b 0} {:a 3.0M}]]
                                   [:agg [] [:avg [rel/avg :a]]]]))))
 
-;; current behaviour
-
 (deftest insert-or-replace-basic-example
   (let [db (rel/transact {} [:insert-or-replace :A {:a 42}])
         db (rel/materialize db [[:from :A] [:unique :a]])
@@ -790,6 +788,112 @@
            (rel/transact db
                          {:A [{:a 1, :b 1} {:a 2, :b 2}]}
                          [:insert-or-replace :A {:a 1, :b 2}])))))
+
+;; making sure doc examples work
+
+(deftest agg-doc-example-test
+  (let [relvar
+        [[:from :Order]
+         [:agg
+          ;; the first arg to :agg is the grouping vector
+          ;; the columns to group by (can be empty for all rows)
+          [:customer-id]
+
+          ;; the rest of the args are aggregate extensions to the grouped
+          ;; columns
+          [:total-spend [rel/sum :total]]
+          [:average-spend [rel/avg :total]]
+          [:order-count count]]]
+
+        state
+        {:Order [{:customer-id 42, :total 12.0M}
+                 {:customer-id 42, :total 25.0M}]}
+
+        expected
+        [{:customer-id 42, :average-spend 18.5M, :order-count 2, :total-spend 37.0M}]]
+
+    (is (= expected (rel/what-if {} relvar state)))))
+
+(deftest any-doc-example-test
+  (let [relvar
+        [[:from :Order]
+         [:agg
+          [:customer-id]
+          [:has-high-valued-order [rel/any [<= 35.0M :total]]]]]
+
+        state
+        {:Order [{:customer-id 42, :total 10.0M}
+                 {:customer-id 42, :total 12.0M}
+                 {:customer-id 43, :total 50.0M}]}
+
+        expected
+        [{:customer-id 42, :has-high-valued-order false}
+         {:customer-id 43, :has-high-valued-order true}]]
+
+    (is (= (set expected) (set (rel/what-if {} relvar state))))))
+
+(deftest avg-doc-example-test
+  (let [relvar
+        [[:from :Order]
+         [:agg [] [:aov [rel/avg :total]]]]
+
+        state
+        {:Order [{:total 10.0M}
+                 {:total 25.0M}]}
+
+        expected [{:aov 17.5M}]]
+    (is (= expected (rel/what-if {} relvar state)))))
+
+(deftest bottom-example-test
+  (let [relvar
+        [[:from :Player]
+         [:agg [] [:lowest-scores [rel/bottom 5 :score]]]]
+
+        state
+        {:Player [{:score 1}
+                  {:score 200}
+                  {:score 4323}
+                  {:score 5555}
+                  {:score 4242}
+                  {:score -123}
+                  {:score 330}]}
+
+        expected
+        [{:lowest-scores [-123
+                          1
+                          200
+                          330
+                          4242]}]]
+
+    (is (= expected (rel/what-if {} relvar state)))))
+
+(deftest bottom-by-example-test
+  (let [relvar
+        [[:from :Player]
+         [:agg [] [:lowest-scoring [rel/bottom-by 5 :score]]]]
+
+        state
+        {:Player [{:score 1
+                   :name "alice"}
+                  {:score 200
+                   :name "bob"}
+                  {:score 4323
+                   :name "fred"}
+                  {:score 5555
+                   :name "hannah"}
+                  {:score 4242
+                   :name "george"}
+                  {:score -123
+                   :name "isabel"}
+                  {:score 330
+                   :name "dave"}]}
+
+        expected [{:lowest-scoring [{:score -123, :name "isabel"}
+                                    {:score 1, :name "alice"}
+                                    {:score 200, :name "bob"}
+                                    {:score 330, :name "dave"}
+                                    {:score 4242, :name "george"}]}]]
+    (is (= expected (rel/what-if {} relvar state)))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

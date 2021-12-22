@@ -376,13 +376,17 @@
 ;; --
 ;; any, like some but this one is called any.
 
-(defn any [expr]
+(defn any
+  "An aggregate function that binds true if any row has a truthy value of expr, false if not."
+  [expr]
   (let [f (dataflow/row-fn expr)]
     {:reducer #(some f %)
      :combiner #(and %1 %2)
      :complete boolean}))
 
-(defn not-any [expr]
+(defn not-any
+  "An aggregate function that binds false if any row has a truthy value of expr, true if not."
+  [expr]
   (let [f (dataflow/row-fn expr)]
     {:reducer #(not-any? f %)
      :combiner #(and %1 %2)
@@ -391,7 +395,11 @@
 ;; --
 ;; top / bottom
 
-(defn top-by [n expr]
+(defn top-by
+  "An aggregate function that binds the n rows with the highest values for expr across the group.
+
+  Materialization can be slow if the n parameter is large, use for small summaries."
+  [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
   (let [f (dataflow/row-fn expr)]
     {:custom-node
@@ -401,7 +409,11 @@
              [dataflow/transform-unsafe
               (dataflow/bind-group binding #(into [] (comp (mapcat val) (take n)) (rseq %)))]))}))
 
-(defn bottom-by [n expr]
+(defn bottom-by
+  "An aggregate function that binds the n rows with the lowest values for expr across the group.
+
+  Materialization can be slow if the n parameter is large, use for small summaries."
+  [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
   (let [f (dataflow/row-fn expr)]
     {:custom-node
@@ -411,7 +423,11 @@
              [dataflow/transform-unsafe
               (dataflow/bind-group binding #(into [] (comp (mapcat val) (take n)) (seq %)))]))}))
 
-(defn top [n expr]
+(defn top
+  "An aggregate function that binds the highest n values for the expr across the group.
+
+  Materialization can be slow if the n parameter is large, use for small summaries."
+  [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
   (let [f (dataflow/row-fn expr)]
     {:custom-node
@@ -421,7 +437,11 @@
              [dataflow/transform-unsafe
               (dataflow/bind-group binding #(into [] (comp (map key) (take n)) (rseq %)))]))}))
 
-(defn bottom [n expr]
+(defn bottom
+  "An aggregate function that binds the lowest n values for the expr across the group.
+
+  Materialization can be slow if the n parameter is large, use for small summaries."
+  [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
   (let [f (dataflow/row-fn expr)]
     {:custom-node

@@ -117,7 +117,7 @@
             (when arg-buf
               (apply f (iterable-mut-list arg-buf)))))))))
 
-(defn- demunge [expr]
+(defn- demunge-expr [expr]
   (let [expr-str (str expr)
         [ns f] (str/split expr-str #"\$")
         show-ns (if (= "clojure.core" ns) false true)
@@ -127,7 +127,7 @@
 
 (defn- safe-print-expr [expr]
   (cond
-    (fn? expr) (demunge expr)
+    (fn? expr) (demunge-expr expr)
 
     (keyword? expr) expr
 
@@ -205,15 +205,17 @@
 
         (:com.wotbrew.relic/join-coll :$)
         (let [[relvar clause] args
+              relvar (to-relvar relvar)
               k [relvar clause]]
-          (add-implicit-join (to-relvar relvar) clause)
+          (add-implicit-join relvar clause)
           (fn [row]
             (row k)))
 
         (:com.wotbrew.relic/join-first :$1)
         (let [[relvar clause] args
+              relvar (to-relvar relvar)
               k [relvar clause]]
-          (add-implicit-join (to-relvar relvar) clause)
+          (add-implicit-join relvar clause)
           (fn [row] (first (row k))))
 
         (:com.wotbrew.relic/nil-safe :?)
@@ -1771,6 +1773,7 @@
   (cond
     (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
     (seq? tx) (reduce transact* db tx)
+    (nil? tx) db
     :else
     (let [[op table & args] tx
           table-key (to-table-key table)]

@@ -895,5 +895,21 @@
                                     {:score 4242, :name "george"}]}]]
     (is (= expected (rel/what-if {} relvar state)))))
 
+(deftest btree-example-test
+  (let [relvar [[:from :Player] [:btree :score :name]]
+        db (rel/transact {} {:Player [{:score 1
+                                       :name "alice"}
+                                      {:score 1
+                                       :name "harry"}
+                                      {:score 200
+                                       :name "bob"}]})
+        db (rel/materialize db relvar)
+        idx (rel/index db relvar)]
+    (is (sorted? idx))
+    (is (sorted? (get idx 200)))
+    (is (= {1 {"alice" #{{:score 1, :name "alice"}}
+               "harry" #{{:score 1, :name "harry"}}}
+            200 {"bob" #{{:score 200, :name "bob"}}}} idx))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

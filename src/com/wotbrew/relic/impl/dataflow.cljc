@@ -740,7 +740,7 @@
         [mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
-                        (let [m (mget db {})
+                        (let [m (mget db sm)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]

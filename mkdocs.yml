@@ -24,11 +24,6 @@ nav:
       - :btree: btree.md
       - :hash: hash.md
       - :lookup: lookup.md
-    - Constraint statements:
-      - :check: check.md
-      - :fk: fk.md
-      - :req: req.md
-      - :unique: unique.md
     - Aggregates: aggregates.md
     - Aggregate functions:
       - Stats:
@@ -48,12 +43,36 @@ nav:
       - Other:
          - any: any.md
          - not-any: not-any.md
-
+         - set-concat: set-concat.md
+    - Sub queries: sub-queries.md
+    - Unsafe transforms: unsafe-transform.md
+  - Transactions:
+    - transact: transact.md
+    - :insert: insert.md
+    - :delete: delete.md
+    - :delete-exact: delete-exact.md
+    - :update: update.md
+    - :upsert: upsert.md
+    - Terse Inserts: terse-insert.md
+  - Materialization: materialization.md
+  - Change tracking: change-tracking.md
+  - Environment: env.md
+  - Constraints:
+    - Overview: constraints.md
+    - :check: check.md
+    - :fk: fk.md
+    - :req: req.md
+    - :unique: unique.md
+    - :constrain: constrain.md
 theme:
   name: material
+  icon:
+    repo: fontawesome/brands/github
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
+repo_url: https://github.com/wotbrew/relic
+edit_uri: edit/master/doc/

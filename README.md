@@ -61,7 +61,7 @@ Are you spending too much time writing mechanical wiring and glue? That has *not
 - munge with joy via the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance.
-- __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](https://wotbrew.github.io/relic/constraints.md).
+- __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](https://wotbrew.github.io/relic/constraints).
 
 Definitely not at all like the other in-memory databases in clojure. this time its different, really.
 

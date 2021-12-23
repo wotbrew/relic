@@ -1010,5 +1010,16 @@
         [{:customer-id 42, :number-of-orders 2, :number-of-refunded-orders 1}]]
     (is (= expected (rel/what-if {} relvar state)))))
 
+;; count-distinct.md
+(deftest count-distinct-example-test
+  (let [relvar
+        [[:from :Order]
+         [:agg [] [:n-customers [rel/count-distinct :customer-id]]]]
+        state
+        {:Order [{:customer-id 42, :order-id 0}, {:customer-id 42, :order-id 1}, {:customer-id 43, :order-id 2}]}
+        expected
+        [{:n-customers 2}]]
+    (is (= expected (rel/what-if {} relvar state)))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

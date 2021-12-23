@@ -1021,5 +1021,21 @@
         [{:n-customers 2}]]
     (is (= expected (rel/what-if {} relvar state)))))
 
+
+;; delete.md
+(deftest delete-example1-test
+  (let [tx [:delete :Person [= :name "Tom"]]
+        st {:Person [{:name "Tom"}
+                     {:name "Alice"}]}]
+    (is (= {:Person #{{:name "Alice"}}} (rel/transact {} st tx)))))
+
+(deftest delete-example2-test
+  (let [tx [:delete :Event [= :type "insert"] [< :ts 2]]
+        st {:Event [{:type "insert", :ts 0}
+                    {:type "delete" :ts 1}
+                    {:type "insert" :ts 2}]}]
+    (is (= {:Event #{{:type "delete" :ts 1}
+                     {:type "insert" :ts 2}}} (rel/transact {} st tx)))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

@@ -337,40 +337,9 @@
         
       
       
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          :const
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
       <a href="./" class="md-nav__link md-nav__link--active">
         :const
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    Examples
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
       
     </li>
   
@@ -1374,21 +1343,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    Examples
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -1405,9 +1359,12 @@
 
 
 <h1 id="const">:const</h1>
-<p>Provides a constant collection as a relation.</p>
-<h2 id="examples">Examples</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:const</span> <span class="p">[{</span><span class="ss">:a</span> <span class="mi">1</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">2</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">3</span><span class="p">}]]]</span>
+<p>Provides a constant collection as a relation. Probably the most boring statement, of questionable utility.</p>
+<p>Use if you want to do relic processing on known-ahead-of-time sequences of maps, and don't want to use tables for $reasons.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:const</span> <span class="p">[{</span><span class="ss">:a</span> <span class="mi">1</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">2</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">3</span><span class="p">}]]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nv">even?</span> <span class="ss">:a</span><span class="p">]]]</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="c1">;; =&gt;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="p">[{</span><span class="ss">:a</span> <span class="mi">2</span><span class="p">}]</span>
 </code></pre></div>
 
               

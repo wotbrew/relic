@@ -1357,6 +1357,28 @@
 
 
 <h1 id="check">:check</h1>
+<p>The check <a href="../constraints/">constraint</a> can be used for predicative assertions on rows.</p>
+<p>You could use it as a hook for spec or malli, or some inline validation.</p>
+<p>You can either use relic <a href="../expr/">expressions</a> as a check, or a map to override error messages.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Person</span><span class="p">]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">[</span><span class="nb">string? </span><span class="ss">:name</span><span class="p">]]]</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="c1">;; or a map if you want a cleaner error</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Person</span><span class="p">]</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">{</span><span class="ss">:pred</span> <span class="p">[</span><span class="nb">string? </span><span class="ss">:name</span><span class="p">]</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7"></a>          <span class="ss">:error</span> <span class="s">&quot;All people must have a string :name&quot;</span><span class="p">}]]</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="c1">;; you can mix and match multiple check constraints</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10"></a><span class="c1">;; (they run left to right)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Person</span><span class="p">]</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">[</span><span class="nb">string? </span><span class="ss">:name</span><span class="p">]</span> <span class="p">[</span><span class="nv">nat-int?</span> <span class="ss">:age</span><span class="p">]]]</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="c1">;; the :error key actually takes a relic expression (or function like always!)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="c1">;; so you can get really fancy, (think malli / expound errors!)</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Person</span><span class="p">]</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">{</span><span class="ss">:pred</span> <span class="p">[</span><span class="nb">string? </span><span class="ss">:name</span><span class="p">]</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18"></a>          <span class="ss">:error</span> <span class="p">[</span><span class="nb">str </span><span class="s">&quot;Expected a string :name, got &quot;</span> <span class="p">[</span><span class="nv">type</span> <span class="ss">:name</span><span class="p">]]}]]</span>
+</code></pre></div>
 
               
             </article>

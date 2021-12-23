@@ -1363,13 +1363,15 @@
 <h1 id="count-distinct">count-distinct</h1>
 <p>The count distinct <a href="../aggregates/">aggregate</a> function can be used to count the number of unique values for some <a href="../expr/">expression</a> over a group.</p>
 <p>The below example counts the number of unique customers in the <code>:Order</code> table.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; RELVAR </span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nv">_</span><span class="c1">;; RELVAR </span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:agg</span> <span class="p">[]</span> <span class="p">[</span><span class="ss">:n-customers</span> <span class="p">[</span><span class="nv">rel/count-distinct</span> <span class="ss">:customer-id</span><span class="p">]]]]</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="c1">;; STATE </span>
-<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="p">{</span><span class="ss">:Order</span> <span class="p">[{</span><span class="ss">:customer-id</span> <span class="mi">42</span>, <span class="ss">:order-id</span> <span class="mi">0</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:customer-id</span> <span class="mi">42</span>, <span class="ss">:order-id</span> <span class="mi">1</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:customer-id</span> <span class="mi">43</span>, <span class="ss">:order-id</span> <span class="mi">2</span><span class="p">}]}</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="c1">;; RESULT</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="p">[{</span><span class="ss">:n-customers</span> <span class="mi">2</span><span class="p">}]</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="c1">;; STATE </span>
+<a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="p">{</span><span class="ss">:Order</span> <span class="p">[{</span><span class="ss">:customer-id</span> <span class="mi">42</span>, <span class="ss">:order-id</span> <span class="mi">0</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:customer-id</span> <span class="mi">42</span>, <span class="ss">:order-id</span> <span class="mi">1</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:customer-id</span> <span class="mi">43</span>, <span class="ss">:order-id</span> <span class="mi">2</span><span class="p">}]}</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8"></a><span class="c1">;; RESULT</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="p">[{</span><span class="ss">:n-customers</span> <span class="mi">2</span><span class="p">}]</span><span class="nv">_</span>
 </code></pre></div>
 
               

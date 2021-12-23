@@ -5,11 +5,13 @@ The count distinct [aggregate](aggregates.md) function can be used to count the 
 The below example counts the number of unique customers in the `:Order` table.
 
 ```clojure 
-;; RELVAR 
+_;; RELVAR 
 [[:from :Order]
  [:agg [] [:n-customers [rel/count-distinct :customer-id]]]]
+
 ;; STATE 
 {:Order [{:customer-id 42, :order-id 0}, {:customer-id 42, :order-id 1}, {:customer-id 43, :order-id 2}]}
+
 ;; RESULT
-[{:n-customers 2}]
+[{:n-customers 2}]_
 ```

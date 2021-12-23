@@ -567,16 +567,23 @@
                  (fn [db inserted deleted forward]
                    (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
+(defn- index-seek-from-exprs [exprs]
+  (let [fns (mapv row-fn exprs)
+        path (if (empty? fns) (constantly []) (apply juxt fns))]
+    (if (seq fns)
+      (fn [idx row] (get-in idx (path row)))
+      (fn [idx _] (when idx (idx nil))))))
+
+(defn- index-seek-fn [index]
+  (let [[& exprs] (head-stmt index)]
+    (index-seek-from-exprs exprs)))
+
 (defn find-hash-index
   "Looks up an index that allows seeking on the exprs, returns a tuple [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
   ([graph left exprs] (find-hash-index graph left exprs exprs))
   ([graph left exprs row-exprs]
-   (let [fns (mapv row-fn row-exprs)
-         path (if (empty? fns) (constantly []) (apply juxt fns))]
-     [(conj left (into [:hash] exprs))
-      (if (seq fns)
-        (fn [idx row] (get-in idx (path row)))
-        (fn [idx _] (when idx (idx nil))))])))
+   (let [hash (conj left (into [:hash] exprs))]
+     [hash (index-seek-from-exprs row-exprs)])))
 
 (defn join
   "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).

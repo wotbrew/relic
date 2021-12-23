@@ -419,6 +419,8 @@
       (recur (assoc ret (id relvar) f) tail)
       ret)))
 
+(defn- same-size? [coll1 coll2] (= (count coll1) (count coll2)))
+
 (defn transform
   "Returns a transform node, applying (f) to each row. As (f) may narrow rows such that n input rows
   = 1 output row, a deduping index is used that keeps track of all inputs, a row is only deletable if all
@@ -437,7 +439,7 @@
                                                    s (idx new-row #{})
                                                    ns (disj s row)]
                                                (cond
-                                                 (identical? s ns) idx
+                                                 (same-size? s ns) idx
                                                  (empty? ns) (do (add-to-mutable-set dels new-row)
                                                                  (dissoc idx new-row))
                                                  :else (assoc idx new-row ns)))) idx deleted)
@@ -445,7 +447,7 @@
                                              (let [new-row (f row)
                                                    s (idx new-row #{})
                                                    ns (conj s row)]
-                                               (if (identical? s ns)
+                                               (if (same-size? s ns)
                                                  idx
                                                  (let [idx (assoc idx new-row ns)]
                                                    (add-to-mutable-set adds new-row)
@@ -894,7 +896,7 @@
                   (let [group (group-fn row)
                         eset (idx group #{})
                         nset (conj eset row)]
-                    (if (identical? eset nset)
+                    (if (same-size? eset nset)
                       idx
                       (do (add-to-mutable-set changed group)
                           (assoc idx group nset)))))
@@ -903,7 +905,7 @@
                         [rows eset] (idx group)
                         nrows (set-conj rows row)
                         nset (if-some [v (elfn row)] (set-conj eset v) eset)]
-                    (if (identical? nrows rows)
+                    (if (same-size? nrows rows)
                       idx
                       (do (when-not (identical? nset eset)
                             (add-to-mutable-set changed group))
@@ -913,7 +915,7 @@
                     (let [group (group-fn row)
                           eset (idx group #{})
                           nset (disj eset row)]
-                      (if (identical? eset nset)
+                      (if (same-size? eset nset)
                         idx
                         (do (add-to-mutable-set changed group)
                             (if (empty? nset)
@@ -924,9 +926,9 @@
                           [rows eset] (idx group)
                           nrows (disj rows row)
                           nset (if-some [v (elfn row)] (disj eset v) eset)]
-                      (if (identical? nrows rows)
+                      (if (same-size? nrows rows)
                         idx
-                        (do (when-not (identical? nset eset)
+                        (do (when-not (same-size? nset eset)
                               (add-to-mutable-set changed group))
                             (if (empty? nrows)
                               (dissoc idx group)
@@ -976,6 +978,7 @@
   (let [cols (vec (set cols))
         group-fn (if (empty? cols) (constantly []) (apply juxt cols))
         group->row #(zipmap cols %)
+
         add-row (fn [coll row]
                   (if coll
                     (update coll (elfn row) set-conj row)

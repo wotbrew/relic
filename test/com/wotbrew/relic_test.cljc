@@ -653,7 +653,7 @@
 (deftest delayed-check-cascade-test
   (let [A [[:from :A]]
         B [[:from :B]]
-        C [[:from A] [:fk B {:a :a} {:cascade true}]]
+        C [[:from A] [:fk B {:a :a} {:cascade :delete}]]
         D [[:from A] [:check [= :a 1]]]
         db (rel/materialize {} C D)]
 
@@ -978,6 +978,37 @@
         ;; you can unwatch
         _ (rel/unwatch db ViewModel)]
     (is (= expected result))))
+
+;; check.md
+;; todo ?!
+
+;; const.md
+
+(deftest const-example-test
+  (let [relvar
+        [[:const [{:a 1} {:a 2} {:a 3}]]
+         [:where [even? :a]]]
+        expected
+        [{:a 2}]]
+    (is (= expected (rel/q {} relvar)))))
+
+;; constrain.md
+;; todo ?!
+
+;; count.md
+(deftest count-example-test
+  (let [relvar
+        [[:from :Order]
+         [:agg [:customer-id]
+          [:number-of-orders count]
+          [:number-of-refunded-orders [count :refunded]]]]
+
+        state
+        {:Order [{:customer-id 42, :order-id 0}, {:customer-id 42, :order-id 1, :refunded true}]}
+
+        expected
+        [{:customer-id 42, :number-of-orders 2, :number-of-refunded-orders 1}]]
+    (is (= expected (rel/what-if {} relvar state)))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

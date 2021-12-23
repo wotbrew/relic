@@ -788,10 +788,11 @@
 
 (deftest insert-or-replace-multiple-conflicts-test
   (let [db (rel/materialize {} [[:from :A] [:unique :a]] [[:from :A] [:unique :b]])]
-    (is (= {:A #{{:a 1, :b 2}}}
-           (rel/transact db
-                         {:A [{:a 1, :b 1} {:a 2, :b 2}]}
-                         [:insert-or-replace :A {:a 1, :b 2}])))))
+    (is (=
+          {:A #{{:a 1, :b 2}}}
+          (rel/transact db
+                        {:A [{:a 1, :b 1} {:a 2, :b 2}]}
+                        [:insert-or-replace :A {:a 1, :b 2}])))))
 
 ;; making sure doc examples work
 

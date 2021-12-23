@@ -28,7 +28,7 @@
   Insert with :insert vectors
   [:insert table row1, row2 ..]
 
-  Insert or replace (insert or on :unique conflict update by deleting colliding rows and inserting the new oneß).
+  Insert or replace (insert or on :unique conflict update by deleting colliding rows and inserting the new ones).
   [:insert-or-replace table row1, row2 ..]
 
   Delete rows (exact match) (faster)
@@ -76,10 +76,7 @@
   :unique will give you an index where the keys map to exactly one row, so [:unique :a :b :c]
   will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
   [db relvar]
-  (let [graph (dataflow/gg db)
-        id (dataflow/get-id graph relvar)
-        {:keys [mem]} (graph id)]
-    mem))
+  (dataflow/index db relvar))
 
 (defn materialize
   "Causes relic to maintain the given relvars incrementally as the database changes.

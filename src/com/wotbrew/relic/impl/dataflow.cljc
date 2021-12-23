@@ -756,21 +756,10 @@
     (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
       (eduction comp xf (vals m)))))
 
-(def ^:private ^:dynamic *unique-violations* nil)
-
 (defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
         raise-violation (fn [old-row new-row] (raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
-        enable-conflict-behaviour
-        (if-some [[_ table-key] (some-> (unwrap-table left) head-stmt)]
-          (fn [old-row new-row]
-            (set! *unique-violations* (update *unique-violations* table-key set-conj old-row))
-            new-row)
-          raise-violation)
-        on-collision (fn on-collision [old-row new-row]
-                       (if *unique-violations*
-                         (enable-conflict-behaviour old-row new-row)
-                         (raise-violation old-row new-row)))
+        on-collision (fn on-collision [old-row new-row] (raise-violation old-row new-row))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
                                            :else (on-collision old-row row)))
@@ -1705,9 +1694,10 @@
     (if linked
       (let [data (graph table-key)
             drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
-            nrows (if data (into [] (remove data) inserts) (set inserts))
-            ndata (if data (into data nrows) nrows)
-            ndata (if drows (reduce disj ndata drows) ndata)
+            ndata (if drows (reduce disj data drows) data)
+            nrows (if ndata (into [] (remove ndata) inserts) (set inserts))
+            ndata (if ndata (into ndata nrows) nrows)
+
 
             graph (assoc graph table-key ndata)
             db (assoc db table-key ndata)
@@ -1766,8 +1756,86 @@
 (defn materialized? [db relvar]
   (contains? (::materialized (gg db)) relvar))
 
+(defn- head-operator [relvar]
+  (when (vector? relvar)
+    (some-> relvar head-stmt operator)))
+
+(defn index? [relvar] (#{:hash :btree :unique} (head-operator relvar)))
+(defn unique? [relvar] (= :unique (head-operator relvar)))
+(defn hash? [relvar] (= :hash (head-operator relvar)))
+(defn btree? [relvar] (= :btree (head-operator relvar)))
+(defn from? [relvar] (= :from (head-operator relvar)))
+
+(defn find-indexes
+  ([db relvar] (find-indexes db identity relvar))
+  ([db pred relvar]
+   (let [graph (gg db)
+         relvar (unwrap-from (to-relvar relvar))
+         id (get-id graph relvar)
+         {:keys [dependents]} (graph id)]
+     (iterable-mut-list
+       (reduce
+         (fn !
+           [lst child-id]
+           (let [child-node (graph child-id)
+                 relvar (:relvar child-node)]
+             (cond
+               (and (index? relvar) (pred relvar)) (add-to-mutable-list lst relvar)
+               (from? relvar) (reduce ! lst (:dependents child-node))
+               :else lst)))
+         (mutable-list)
+         dependents)))))
+
+(defn index [db relvar]
+  (let [graph (gg db)
+        id (get-id graph relvar)
+        {:keys [mem]} (graph id)]
+    mem))
+
 (defn transact-error [tx]
   (raise "Unrecognized transact form" {:tx tx}))
+
+(defn- insert-or-replace [db table-key rows]
+  (let [unique-indexes (find-indexes db unique? table-key)
+
+        path-fns
+        (reduce
+          (fn [m unique]
+            (let [[_ & exprs] (head-stmt unique)
+                  path (if (seq exprs) (apply juxt (map row-fn exprs)) (constantly [nil]))]
+              (assoc m unique path)))
+          {}
+          unique-indexes)
+
+        drop-self (volatile! #{})
+        drop-old (volatile! #{})
+
+        _ (run!
+            (fn [unique]
+              (let [path (path-fns unique)
+                    idx (index db unique)
+                    m2 {}
+                    seek #(get-in idx %)]
+                (reduce
+                  (fn [m2 row]
+                    (let [pth (path row)
+                          self-collision (m2 pth)
+                          old-row (seek pth)]
+                      (when (and self-collision (not= self-collision row))
+                        (vswap! drop-self conj self-collision))
+                      (cond
+                        (nil? old-row) nil
+                        :else (vswap! drop-old conj old-row))
+                      (assoc m2 pth row)))
+                  m2
+                  rows)))
+            unique-indexes)
+
+        add-rows (eduction (comp (distinct) (remove @drop-self)) rows)
+        del-rows @drop-old
+
+        db (change-table db table-key add-rows del-rows)]
+    db))
 
 (defn- transact* [db tx]
   (cond
@@ -1782,14 +1850,7 @@
         :delete-exact (change-table db table-key nil args)
         :delete (delete-where db table-key args)
         :update (let [[f-or-set-map & exprs] args] (update-where db table-key f-or-set-map exprs))
-        :insert-or-replace
-        (binding [*unique-violations* {}]
-          (let [db2 (change-table db table-key args nil)
-                db-new (reduce-kv (fn [db table-key rows]
-                                    (change-table db table-key nil rows)) db *unique-violations*)]
-            (if (identical? db-new db2)
-              db2
-              (change-table db-new table-key (remove (*unique-violations* table-key #{}) args) nil))))
+        :insert-or-replace (insert-or-replace db table-key args)
         :replace-all (change-table db table-key args (q db table-key))
         (transact-error tx)))))
 

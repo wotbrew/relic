@@ -1,6 +1,6 @@
 # Constraints
 
-Constraints are just relvars ending in one of the constraint statements [`:unique`](unique.md),
+Constraints are just relvars ending in one of the constraint statements likr [`:unique`](unique.md),
 [`:fk`](fk.md) and [`:check`](check.md). These operators throw typically exceptions when the constraints are not met.
 
 To constrain a database, you [`materialize`](materialization.md) constraint relvars (and they can be removed with `dematerialize`).

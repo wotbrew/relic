@@ -4,10 +4,9 @@ Selects a subset of rows by applying [predicate](expr.md) conditions to them bef
 
 Just like SQL `WHERE`.
 
-## Form 
-
 ```clojure 
-[:where & expr]
+[[:from :Customer]
+ [:where [< :age 42] [= :name "bob"]]]
 ```
 
 See [expression reference](expr.md) for information on expressions.

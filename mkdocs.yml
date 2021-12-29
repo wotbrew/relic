@@ -48,7 +48,6 @@ nav:
       - not-any: not-any.md
       - set-concat: set-concat.md
     - Sub queries: sub-queries.md
-    - Unsafe transforms: unsafe-transform.md
   - Transactions:
     - transact: transact.md
     - :insert: insert.md

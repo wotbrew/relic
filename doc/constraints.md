@@ -1,9 +1,9 @@
 # Constraints
 
-Constraints are just queries ending in one of the constraint statements likr [`:unique`](unique.md),
+Constraints are just queries ending in one of the constraint statements like [`:unique`](unique.md),
 [`:fk`](fk.md) and [`:check`](check.md). These operators throw typically exceptions when the constraints are not met.
 
-To constrain a database, you [`materialize`](materialization.md) constraint queries (and they can be removed with `dematerialize`).
+To constrain a database such that you get errors when putting the db into invalid states, you [`materialize`](materialization.md) constraint queries (and they can be removed with `dematerialize`).
 
 Constraints can apply to _any_ query, so you can apply constraints to aggregates and joins, here
 is the obligatory `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint.

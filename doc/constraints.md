@@ -1,7 +1,9 @@
 # Constraints
 
 Constraints are just queries ending in one of the constraint statements like [`:unique`](unique.md),
-[`:fk`](fk.md) and [`:check`](check.md). These operators throw typically exceptions when the constraints are not met.
+[`:fk`](fk.md) and [`:check`](check.md). These operators throw exceptions when the constraints are not met.
+
+You can use constraints to get confidence that databases are always in valid states, and you didn't accidentally screw something up (perhaps at dev time).
 
 To constrain a database such that you get errors when putting the db into invalid states, you [`materialize`](materialization.md) constraint queries (and they can be removed with `dematerialize`).
 

@@ -52,7 +52,7 @@ I like to use `rel` as an alias.
 (require '[com.wotbrew.relic :as rel])
 ```
 
-This is a query, that will return customers where `(= 42 (:id customer))`.
+This is a query, lets find some bob's.
 
 ```clojure 
  [[:from :Customer]

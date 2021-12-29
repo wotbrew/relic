@@ -4,7 +4,7 @@
 
 `relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra.
 
-It differs from other solutions in this space with its incremental materialized views, change tracking, constraints and SQL-like `RelicQL` data DSL.
+It differs from other solutions in this space with its incremental materialized views, change tracking, constraints and SQL-like query DSL.
 
 ```clojure 
 (rel/q db [[:from :Library]

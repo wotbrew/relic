@@ -1446,7 +1446,8 @@
 
 <h1 id="constraints">Constraints</h1>
 <p>Constraints are just queries ending in one of the constraint statements like <a href="../unique/"><code>:unique</code></a>,
-<a href="../fk/"><code>:fk</code></a> and <a href="../check/"><code>:check</code></a>. These operators throw typically exceptions when the constraints are not met.</p>
+<a href="../fk/"><code>:fk</code></a> and <a href="../check/"><code>:check</code></a>. These operators throw exceptions when the constraints are not met.</p>
+<p>You can use constraints to get confidence that databases are always in valid states, and you didn't accidentally screw something up (perhaps at dev time).</p>
 <p>To constrain a database such that you get errors when putting the db into invalid states, you <a href="../materialization/"><code>materialize</code></a> constraint queries (and they can be removed with <code>dematerialize</code>).</p>
 <p>Constraints can apply to <em>any</em> query, so you can apply constraints to aggregates and joins, here
 is the obligatory <code>order can have at most 10 items if its associated customer is called bob and its tuesday</code> constraint.</p>

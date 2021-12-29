@@ -69,12 +69,12 @@
 (defn- mutable-set [] (volatile! (transient #{})))
 (defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
 (defn- del-from-mutable-set [mset v] (vswap! mset disj! v) mset)
-(defn- iterable-mut-set [mset] (persistent! @mset))
+(defn- iterable-mut-set [mset] (when mset (persistent! @mset)))
 
 ;; cross platform mutable list
 (defn- mutable-list [] (volatile! (transient [])))
 (defn- add-to-mutable-list [mlist v] (vswap! mlist conj! v) mlist)
-(defn- iterable-mut-list [mlist] (persistent! @mlist))
+(defn- iterable-mut-list [mlist] (when mlist (persistent! @mlist)))
 
 (declare row-fn)
 
@@ -456,7 +456,7 @@
                               adds (iterable-mut-set adds)
                               dels (iterable-mut-set dels)]
                           (forward db adds dels))))
-     :provide (fn [db] (some-> (mget db) keys))}))
+     :provide (fn [db] (some-> (mget db) not-empty keys))}))
 
 (defn transform-unsafe
   "Like transform but with no narrowing protection, faster but only use if you guarantee that inputs rows do not converge
@@ -1224,6 +1224,8 @@
               left (reduce conj left joins)]
           left)))))
 
+(declare full-dependencies)
+
 (defn lookup [graph self _ index path]
   (let [path (vec path)
         [iget] (mem index)]
@@ -1417,6 +1419,25 @@
          (! (to-dataflow* graph ret relvar))
          ret)) ret)))
 
+(defn full-dependencies [relvar]
+  ((fn rf [s relvar]
+     (if (empty? relvar)
+       s
+       (if-some [table (unwrap-table relvar)]
+         (conj s table)
+         (let [stmt (head-stmt relvar)
+               op (operator stmt)]
+           (case op
+             :lookup (let [[_ i] stmt] (full-dependencies i))
+             (let [{:keys [deps]} (to-dataflow {} relvar)]
+               (reduce rf s deps)))))))
+   #{} relvar))
+
+(defn dependencies
+  "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
+  [relvar]
+  (distinct (map #(nth (first %) 1 nil) (full-dependencies relvar))))
+
 (defn- tag-generation [graph node-id generation]
   (let [{e-gen :generation
          :keys [provide
@@ -1432,8 +1453,7 @@
          :or {dependents #{}}
          :as node} (graph dep)
         dependents (conj dependents dependent)
-        node (-> (assoc node :dependents dependents,)
-                 (dissoc :linked))
+        node (assoc node :dependents dependents)
         graph (assoc graph dep node)]
     graph))
 
@@ -1442,9 +1462,15 @@
          :or {dependents #{}}
          :as node} (graph dep)
         dependents (disj dependents dependent)
-        node (-> (assoc node :dependents dependents)
-                 (dissoc :linked))]
+        node (assoc node :dependents dependents)]
     (assoc graph dep node)))
+
+(defn- unlink [graph table-key]
+  (let [tables (::tables graph {})
+        id (tables table-key)]
+    (if id
+      (update graph id dissoc :linked)
+      graph)))
 
 (defn- add-to-graph* [graph relvar]
   (cond
@@ -1457,7 +1483,8 @@
           graph (if table (update graph ::tables assoc table nid) graph)
           graph (reduce add-to-graph* graph deps)
           graph (reduce #(depend %1 (id %2) nid) graph deps)
-          graph (tag-generation graph nid (::generation graph 0))]
+          graph (tag-generation graph nid (::generation graph 0))
+          graph (reduce unlink graph (dependencies relvar))]
       graph)))
 
 (defn add-to-graph [graph relvar]
@@ -1478,13 +1505,14 @@
                   deps
                   table]} (graph (id relvar))]
       (if (seq dependents)
-        (update graph ::unlinked set-conj (id relvar))
+        graph
         (let [nid (id relvar)
               graph (dissoc graph nid)
               graph (if table (update graph ::tables dissoc table) graph)
               graph (reduce #(undepend %1 (id %2) nid) graph deps)
               graph (reduce del-from-graph* graph deps)
-              _ (set! *ids* (dissoc *ids* relvar))]
+              _ (set! *ids* (dissoc *ids* relvar))
+              graph (reduce unlink graph (dependencies relvar))]
           graph)))))
 
 (defn del-from-graph [graph relvar]
@@ -1513,7 +1541,7 @@
     (f db inserted deleted)))
 
 (defn link
-  [graph edge relvar]
+  [graph table-key]
   (letfn [(sort-dependents [dependents]
             (sort-by (comp :score graph) > dependents))
           (forward-fn [graph dependents]
@@ -1527,26 +1555,19 @@
                     (fn flow-step [db f] (f db inserted deleted))
                     db
                     fns)))))
-          (build [graph edge id]
+          (build-fn [graph edge id]
             (let [{:keys [dependents
                           flow]
                    :as node} (graph id)
                   dependents (sort-dependents dependents)
                   flow-fn (get flow edge flow-noop)
-                  graph (reduce #(build %1 id %2) graph dependents)
+                  graph (reduce #(build-fn %1 id %2) graph dependents)
                   forward (tracked-flow id (forward-fn graph dependents))
                   linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
               (assoc graph id (assoc node :linked linked))))]
-    (build graph edge ((::ids graph {}) relvar relvar))))
-
-(defn relink
-  [graph]
-  (-> (reduce (fn [graph relvar]
-                (reduce (fn [graph dep]
-                          (link graph dep relvar))
-                        graph
-                        (:deps (graph (get-id graph relvar))))) graph (::unlinked graph))
-      (dissoc ::unlinked)))
+    (if-some [table-id (-> graph ::tables (get table-key))]
+      (build-fn graph nil table-id)
+      graph)))
 
 ;; d1, d2* d3
 ;;  |  |   |
@@ -1684,7 +1705,6 @@
            graph (if (:ephemeral opts) graph (update graph ::materialized set-conj relvar))
            relvar (conj relvar [mat])
            graph (add-to-graph graph relvar)
-           graph (relink graph)
            graph (init graph relvar)]
        (sg db graph)))))
 
@@ -1692,8 +1712,7 @@
   (let [graph (gg db)
         graph (update graph ::materialized disj relvar)
         relvar (conj relvar [mat])
-        graph (del-from-graph graph relvar)
-        graph (relink graph)]
+        graph (del-from-graph graph relvar)]
     (sg db graph)))
 
 (defn change-table [db table-key inserts deletes]
@@ -1714,7 +1733,7 @@
             graph (linked graph nrows drows)]
         (sg db graph))
       (if relvar
-        (let [graph (link graph nil relvar)]
+        (let [graph (link graph table-key)]
           (change-table (sg db graph) table-key inserts deletes))
         (let [data (graph table-key)
               drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
@@ -1725,13 +1744,15 @@
           (sg db graph))))))
 
 (defn watch [db relvar]
-  (let [db (materialize db relvar {:ephemeral true})
+  (let [relvar (to-relvar relvar)
+        db (materialize db relvar {:ephemeral true})
         graph (gg db)
         graph (update graph ::watched set-conj (get-id graph relvar))]
     (sg db graph)))
 
 (defn unwatch [db relvar]
-  (let [graph (gg db)
+  (let [relvar (to-relvar relvar)
+        graph (gg db)
         graph (update graph ::watched disj (get-id graph relvar))
         db (sg db graph)
         db (if (contains? (::materialized graph) relvar)

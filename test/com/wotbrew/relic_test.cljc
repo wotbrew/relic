@@ -765,11 +765,11 @@
   (is (= [{:avg 2}] (rel/q {} [[:const [{:a 1} {:a 3}]]
                                [:agg [] [:avg [rel/avg :a]]]])))
 
-  (is (= [{:avg 3/2}] (rel/q {} [[:const [{:a 0} {:a 3}]]
-                                 [:agg [] [:avg [rel/avg :a]]]])))
+  (is (= [{:avg #?(:clj 3/2 :cljs 1.5)}] (rel/q {} [[:const [{:a 0} {:a 3}]]
+                                                    [:agg [] [:avg [rel/avg :a]]]])))
 
-  (is (= [{:avg 3/2}] (rel/q {} [[:const [{:b 0} {:a 3}]]
-                                 [:agg [] [:avg [rel/avg :a]]]])))
+  (is (= [{:avg #?(:clj 3/2 :cljs 1.5)}] (rel/q {} [[:const [{:b 0} {:a 3}]]
+                                                    [:agg [] [:avg [rel/avg :a]]]])))
 
   (is (= [{:avg 1.5M}] (rel/q {} [[:const [{:b 0} {:a 3.0M}]]
                                   [:agg [] [:avg [rel/avg :a]]]]))))
@@ -793,6 +793,15 @@
           (rel/transact db
                         {:A [{:a 1, :b 1} {:a 2, :b 2}]}
                         [:insert-or-replace :A {:a 1, :b 2}])))))
+
+(deftest relink-bug-test
+  (let [db (rel/materialize {} [[:from :A]
+                                [:where [= :a 42]]])
+        db (rel/transact db {:A [{:a 42}]})
+        db (rel/materialize db [[:from :A] [:select :a]])
+        db (rel/transact db {:A [{:a 43}]})]
+    (def d (dataflow/gg db))
+    (is (= [{:a 42}, {:a 43}] (rel/q db [[:from :A] [:select :a]] {:sort :a})))))
 
 ;; making sure doc examples work
 

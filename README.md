@@ -52,14 +52,14 @@ I like to use `rel` as an alias.
 (require '[com.wotbrew.relic :as rel])
 ```
 
-This is a _view_, In relic, views and queries are the same - and they are 'just data'.
+This is a query, that will return customers where `(= 42 (:id customer))`.
 
 ```clojure 
  [[:from :Customer]
   [:where [= :id 42]]]
  ```
 
-You can derive views by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
+You can refine queries by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
 
 ```clojure 
 [[:from :Customer]
@@ -67,7 +67,7 @@ You can derive views by just adding elements to the vector.  All your favorites 
  [:extend [:fullname [str :firstname " " :lastname]]]
 ```
 
-Because views are just vectors, they just sort of lounge around being values. To put them to work we have to feed some data into relic.
+Because queries are just vectors, they just sort of lounge around being values. To put them to work we have to feed some data into relic.
 
 `relic` databases are boring clojure maps. Prepare yourself:
 
@@ -109,9 +109,9 @@ Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like so
 ;; => returns the database, its value will be the same (hint: metadata).
 {:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 ```
-You can materialize any view such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
+You can materialize any query such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
 
-`materialize` will return a new _database_, on which queries against materialized views will be instant, and __as you change data in tables, those changes will flow to materialized views automatically.__
+`materialize` will return a new _database_, against which materialized queries will be instant, and __as you change data in tables, those changes will flow to materialized queries automatically.__
 
 You can do more than query and materialize with relic, you can [react to changes](https://wotbrew.github.io/relic/change-tracking), use [constraints](https://wotbrew.github.io/relic/constraints) and [more](https://wotbrew.github.io/relic).
 

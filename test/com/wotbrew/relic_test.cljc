@@ -819,6 +819,10 @@
     (def d (dataflow/gg db))
     (is (= [{:a 42}, {:a 43}] (rel/q db [[:from :A] [:select :a]] {:sort :a})))))
 
+(deftest select-dual-test
+  (is (= [{}] (rel/q {} [[:select]])))
+  (is (= [{:a 42}] (rel/q {} [[:select [:a 42]]]))))
+
 ;; making sure doc examples work
 
 ;; agg.md

@@ -1,6 +1,6 @@
 # Query
 
-Relic query language, or RQL. In relic queries are your primitive for describing the data in a domain, and views on it.
+Relic query language, or RelicQL. In relic queries are your primitive for describing the data in a domain, and views on it.
 
 - A query is always a vector
 - queries are made up of operations, themselves vectors of the form `[operator & args]`.

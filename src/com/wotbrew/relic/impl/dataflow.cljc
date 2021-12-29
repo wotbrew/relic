@@ -1889,6 +1889,10 @@
 (defn- insert-or-merge [db table-key binding rows]
   (upsert-base db table-key (bind-fn binding) rows))
 
+(defn- insert-ignore [db table-key rows]
+  ;; we can tune this further, but this works.
+  (insert-or-update db table-key identity rows))
+
 (defn- transact* [db tx]
   (cond
     (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
@@ -1905,6 +1909,7 @@
         :insert-or-replace (insert-or-replace db table-key args)
         :insert-or-update (let [[f-or-set-map & rows] args] (insert-or-update db table-key f-or-set-map rows))
         :insert-or-merge (let [[binding & rows] args] (insert-or-merge db table-key binding rows))
+        :insert-ignore (insert-ignore db table-key args)
         :replace-all (change-table db table-key args (q db table-key))
         (transact-error tx)))))
 

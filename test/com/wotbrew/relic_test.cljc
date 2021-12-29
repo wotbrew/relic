@@ -801,6 +801,13 @@
     (is (= {:A #{{:a 42}}} db))
     (is (= {:A #{{:a 42, :b 43} {:a 43}}} db2))))
 
+(deftest insert-ignore-test
+  (let [db (rel/transact {} [:insert-ignore :A {:a 42}])
+        db (rel/materialize db [[:from :A] [:unique :a]])
+        db2 (rel/transact db [:insert-ignore :A {:a 42, :b 45} {:a 43}])]
+    (is (= {:A #{{:a 42}}} db))
+    (is (= {:A #{{:a 42} {:a 43}}} db2))))
+
 (deftest insert-or-merge-test
   (let [db (rel/transact {} [:insert-or-merge :A :* {:a 42}])
         db (rel/materialize db [[:from :A] [:unique :a]])

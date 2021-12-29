@@ -4,7 +4,6 @@ nav:
   - Intro: index.md
   - Query:
     - Overview: query.md
-    - Issuing queries: query.md
     - Expressions: expr.md
     - Query statements:
       - :agg: agg.md
@@ -59,6 +58,7 @@ nav:
     - :insert-or-replace: insert-or-replace.md
     - :insert-or-merge: insert-or-merge.md
     - :insert-or-update: insert-or-update.md
+    - :insert-ignore: insert-ignore.md
     - :replace-all: replace-all.md
     - Terse Inserts: terse-insert.md
   - Materialization: materialization.md

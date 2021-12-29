@@ -11,7 +11,7 @@ Here is an example of indexing customers by name.
 ;; you index expressions, here I am going to use a single expression,
 ;; but I could use multiple and get a nested map, e.g [:unique :a, :b, :c]
 [[:from :Customer] 
- [:hash :name]]
+ [:unique :name]]
  
 ;; STATE
 {:Customer [{:name "bob", :age 42}

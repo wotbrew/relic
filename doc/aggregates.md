@@ -1,6 +1,6 @@
 # Aggregates 
 
-The [`:agg`](agg.md) statement permits the use of aggregate functions, such as count, sum and so on. See below for a listing of what you can do.
+The [`:agg`](agg.md) operator permits the use of aggregate functions, such as count, sum and so on. See below for a listing of what you can do.
 
 Stats
 

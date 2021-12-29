@@ -5,7 +5,7 @@ An [aggregate](aggregates.md) function that returns the lowest `n` rows by some 
 In the below example, we bind the bottom 5 lowest scoring players.
 
 ```clojure 
-;; RELVAR
+;; QUERY
 [[:from :Player]
  [:agg [] [:lowest-scoring [rel/bottom-by 5 :score]]]]
 

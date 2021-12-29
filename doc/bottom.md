@@ -5,7 +5,7 @@ An [aggregate](aggregates.md) functions that returns the lowest `n` values for s
 In the below example we use bottom to find the lowest 5 scores for a table of Player data.
 
 ```clojure 
-;; RELVAR
+;; QUERY
 [[:from :Player]
  [:agg [] [:lowest-scores [rel/bottom 5 :score]]]]
 

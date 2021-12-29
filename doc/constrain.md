@@ -1,8 +1,8 @@
 # :constrain
 
-The `:constrain` operator allows you to compose multiple constraints in one statement for DRY.
+The `:constrain` operator allows you to compose multiple constraints in one operation for concision.
 
-This is unique among relvars only because constraints run for their side effects, so fan-out and check-away results is a valid approach.
+This is unique among queries only because constraints run for their side effects, so fan-out and check results is a valid approach.
 
 ```clojure 
 [[:from :Person]

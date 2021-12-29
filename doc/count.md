@@ -5,7 +5,7 @@ You can use `clojure.core/count` as an aggregate function! It does pretty much w
 Has an optional [expr](expr.md) argument if you want to count rows only where some predicate holds (handy!).
 
 ```clojure 
-;; RELVAR
+;; QUERY
 [[:from :Order]
  [:agg [:customer-id] 
   [:number-of-orders count]

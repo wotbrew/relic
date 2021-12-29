@@ -4,7 +4,7 @@ Joins relations together, returning the product of matching rows. The columns in
 
 Like `set/join`, clause is a map of expressions on the left to expressions on the right.
 
-Accepts both tables (keywords) and other relvars.
+Accepts both tables (keywords) and other queries.
 
 Similar to an `INNER JOIN` in SQL.
 
@@ -12,7 +12,7 @@ Similar to an `INNER JOIN` in SQL.
 
 ```clojure 
 join = [:join right clause & more]
-right = relvar | table
+right = query | table
 clause = {left-expr right-expr, ...}
 ```
 

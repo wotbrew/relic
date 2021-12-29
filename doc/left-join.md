@@ -8,7 +8,7 @@ Like SQL `LEFT JOIN`.
 
 ```clojure 
 left-join = [:left-join right clause & more]
-right = relvar | table
+right = query | table
 clause = {left-expr right-expr, ...}
 ```
 

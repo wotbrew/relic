@@ -1,11 +1,11 @@
 # Constraints
 
-Constraints are just relvars ending in one of the constraint statements likr [`:unique`](unique.md),
+Constraints are just queries ending in one of the constraint statements likr [`:unique`](unique.md),
 [`:fk`](fk.md) and [`:check`](check.md). These operators throw typically exceptions when the constraints are not met.
 
-To constrain a database, you [`materialize`](materialization.md) constraint relvars (and they can be removed with `dematerialize`).
+To constrain a database, you [`materialize`](materialization.md) constraint queries (and they can be removed with `dematerialize`).
 
-Constraints can apply to _any_ relvar, so you can apply constraints to derived relvars and joins, here
+Constraints can apply to _any_ query, so you can apply constraints to aggregates and joins, here
 is the obligatory `order can have at most 10 items if its associated customer is called bob and its tuesday` constraint.
 
 ```clojure 
@@ -16,8 +16,8 @@ is the obligatory `order can have at most 10 items if its associated customer is
           :error [str "order can have at most 10 items if its associated customer is called bob and its tuesday, found: " [count :items]]}]]
 ```
 
-As it is convenient to specify multiple constraints on a relvar in one form, a special
-`:constrain` statement is provided.
+As it is convenient to specify multiple constraints on a query in one form, a special
+`:constrain` operator is provided.
 
 e.g
 
@@ -33,6 +33,6 @@ e.g
 
 - [`:check`](check.md) ensure certain predicates hold
 - [`:req`](req.md) ensure cols exist
-- [`:fk`](fk.md) ensure a referenced row exists in some other relvar
-- [`:constrain`](constrain.md) combine multiple constraints on a relvar
+- [`:fk`](fk.md) ensure a referenced row exists in some other query/table
+- [`:constrain`](constrain.md) combine multiple constraints on a query/table
 - [`:unique`](unique.md) unsure only one row exists for some set of [expressions](expr.md)

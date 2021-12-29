@@ -5,7 +5,7 @@ An aggregate function that computes the average for all sampled values by some [
 In the below example, we use `avg` to compute the average-order-value (aov) over a group of orders.
 
 ```clojure 
-;; RELVAR
+;; QUERY
 [[:from :Order]
  [:agg [] [:aov [rel/avg :total]]]]
 

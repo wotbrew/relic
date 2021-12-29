@@ -1,6 +1,6 @@
 # Expressions
 
-As relic supports conditions and computation via various [relvar](relvar.md) statements, it needs to support a form of computation expression.
+As relic supports conditions and computation via various [query](query.md) operations, it needs to support a form of computation expression.
 
 Your options are:
 

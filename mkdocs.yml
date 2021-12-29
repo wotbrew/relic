@@ -3,7 +3,7 @@ docs_dir: doc
 nav:
   - Intro: index.md
   - Query:
-    - Relvars: relvar.md
+    - Overview: query.md
     - Issuing queries: query.md
     - Expressions: expr.md
     - Query statements:

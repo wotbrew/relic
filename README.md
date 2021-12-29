@@ -2,13 +2,9 @@
 
 `STATUS: PRIMORDIAL TAR, ready soon...`
 
-`relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra. It is immutable, functional and declarative.
+`relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra.
 
-As well as answering ad-hoc queries with a range of relational operators, 
-it supports incremental materialization, and constraints on arbitrary views.
-
-`relic` aims to compete with or exceed the performance of other traditional clojure in-memory databases, and materialization extends its reach to areas
-where any kind of query at all is too slow.
+It differs from other solutions in this space with its incremental materialized views, change tracking, constraints and SQL-like `RQL` data DSL.
 
 ```clojure 
 (rel/q db [[:from :Library]
@@ -26,22 +22,6 @@ where any kind of query at all is too slow.
 
 See [documentation](https://wotbrew.github.io/relic) for a detailed reference.
 
-## Who is it for?
-
-- you want declarative query of your data, but are more familiar with SQL than datalog
-- you want spreadsheet style incremental computation over large (or small!) amounts of data
-- you work with result sets from SQL databases, and want to compute further in memory without leaving the relational information model
-- you work with other tabular data, sequences of map records, csv files etc
-- your data fits in memory (for now!)
-
-## How does it work?
-
-- relvars are transformed into a directed-acyclic-graph of data flow nodes, sharing structure with other relvars (e.g indexes), to avoid redundant computation.
-- data flows from realised nodes to unrealised nodes, initialising them.
-- as you change data in tables, nodes in the DAG receive new inserted/deleted signals, and data flows along the graph.
-- the difference between a query and materialized view is just whether the graph nodes are saved or thrown away.
-- unlike some other reactive signal graphs, the relic dataflow graph uses indexes and set-based flow, so only the rows that have changed are flowed, not the entire result
-
 ## Pitch 
 
 Do you suffer from _map fatigue_? [[1]](http://timothypratley.blogspot.com/2019/01/meander-answer-to-map-fatigue.html)
@@ -56,8 +36,7 @@ Are you spending too much time writing mechanical wiring and glue? That has *not
 
 `relic` might help, but it's not a medical professional. It's a functional relational programming library.
 
-- allows you to focus on the essential (minimal state, relationship expression) rather than incidental (accidental data, mechanisms, and ad-hoc structure).
-- like SQL for clojure data, but _actually composes_.
+- like SQL for clojure data.
 - munge with joy via the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance.
@@ -73,14 +52,14 @@ I like to use `rel` as an alias.
 (require '[com.wotbrew.relic :as rel])
 ```
 
-This is a _relvar_, Think SQL view/tables/queries all as one idea, a relational expression.
+This is a _view_, In relic, views and queries are the same - and they are 'just data'.
 
 ```clojure 
  [[:from :Customer]
   [:where [= :id 42]]]
  ```
 
-You can derive relvars from relvars by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
+You can derive views by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
 
 ```clojure 
 [[:from :Customer]
@@ -88,7 +67,7 @@ You can derive relvars from relvars by just adding elements to the vector.  All 
  [:extend [:fullname [str :firstname " " :lastname]]]
 ```
 
-Because relvars are just vectors, they just sort of lounge around being values. To put them to work to get a _relation_ we have to feed some data into our tables.
+Because views are just vectors, they just sort of lounge around being values. To put them to work we have to feed some data into relic.
 
 `relic` databases are boring clojure maps. Prepare yourself:
 
@@ -98,7 +77,7 @@ Because relvars are just vectors, they just sort of lounge around being values. 
 
 See, boring.
 
-You manipulate data in tables with the [`transact`](#transact-reference) function. This just returns a new database. Plain old functional programming, no surprises.
+You manipulate your database with the [`transact`](#transact-reference) function. This just returns a new database. Plain old functional programming, no surprises.
 ```clojure 
 (def db (rel/transact {} [:insert :Customer {:id 42, :name "bob"} {:id 43, :name "alice"}])
 
@@ -108,7 +87,7 @@ db
 
 ```
 
-Now we have our state, we can ask questions of relic to find _relations_, as you would a SQL database. You see how relvars and queries _are the same_.
+Now we have some state, we can ask questions of relic, as you would a SQL database.
 
 ```clojure 
 (rel/q db [[:from :Customer] [:where [= :id 42]]]) 
@@ -130,11 +109,9 @@ Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like so
 ;; => returns the database, its value will be the same (hint: metadata).
 {:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
 ```
-You can materialize any relvar such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
+You can materialize any view such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
 
-`materialize` will return a new _database_ that looks and smells the same, but queries against materialized relvars will be instant, and __as you change data in tables, those changes will flow to materialized relvars automatically.__
-
-relic attempts to deliver on the promise of separating out essential data and essential computation from accidental. One way it does this is the materialization, the data flow graph is not part of the value domain. It sits in metadata where it belongs. Your databases value is just your state - no machinery.
+`materialize` will return a new _database_, on which queries against materialized views will be instant, and __as you change data in tables, those changes will flow to materialized views automatically.__
 
 You can do more than query and materialize with relic, you can [react to changes](https://wotbrew.github.io/relic/change-tracking), use [constraints](https://wotbrew.github.io/relic/constraints) and [more](https://wotbrew.github.io/relic).
 

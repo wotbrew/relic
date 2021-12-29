@@ -75,9 +75,9 @@
 ;; it might be useful for library users to have raw index access.
 
 (defn index
-  "Returns the raw index storing rows for relvar. ONLY RETURNS IF THE RELVAR IS MATERIALIZED.
+  "Returns the raw index storing rows for the query. ONLY RETURNS IF THE QUERY IS MATERIALIZED.
 
-  Normally a set, but if the last statement in the relvar is an index statement, you will get a specialised
+  Normally a set, but if the last operation in the query is an index operation, you will get a specialised
   data structure, this can form the basis of using materialized relic indexes in other high-performance work on your data.
 
   :hash will yield nested maps (path being the expressions in the hash e.g [:hash :a :b :c])
@@ -87,15 +87,15 @@
 
   :unique will give you an index where the keys map to exactly one row, so [:unique :a :b :c]
   will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
-  [db relvar]
-  (dataflow/index db relvar))
+  [db query]
+  (dataflow/index db query))
 
 (defn materialize
-  "Causes relic to maintain the given relvars incrementally as the database changes.
+  "Causes relic to maintain the given queries incrementally as the database changes.
 
-  This will make queries against that relvar effectively free at the cost of decreased write performance.
+  This will make queries effectively free at the cost of decreased write performance.
 
-  Additionally, useful to start maintaining constraints by using relvars that throw if invariants are broken.
+  Additionally, useful to start maintaining constraints by using queries that throw if invariants are broken.
 
   e.g (materialize db [[:from Customer] [:unique :email]])
 
@@ -116,9 +116,9 @@
      The same predicate with a custom error:
      [:check {:pred [< :age 32], :error [str \"invalid age, got\" :age ]}]
 
-   [:fk relvar clause opts]
+   [:fk query|table clause opts]
 
-     Foreign key, e.g ensure a row exists in the target table given a join clause.
+     Foreign key, e.g ensure a row exists in the target relation given a join clause.
 
      e.g [:fk Customer {:id :id} {:cascade true}]
 
@@ -132,37 +132,35 @@
 
      Allows the use of :insert-or-replace in transact calls.
 
-   [:constrain & constraint-statements]
+   [:constrain & constraint-operations]
 
-    Lets you combine multiple constraints in one statement.
+    Lets you combine multiple constraints in one operation.
 
     e.g [[:from Customer] [:constrain [:req :id :firstname] [:unique :id]]"
-  [db & relvars]
-  (reduce dataflow/materialize db relvars))
+  [db & queries]
+  (reduce dataflow/materialize db queries))
 
 (defn dematerialize
-  "Dematerializes the relvar, increasing write performance at the cost of reduced query performance.
+  "Dematerializes the query, increasing write performance at the cost of reduced query performance.
 
-  Can also be used to remove constraints (e.g relvars that throw).
+  Can also be used to remove constraints (e.g queries that throw).
 
-  Note: relvars that are being watched with (watch) will continue to be materialized until (unwatch) is called."
-  [db & relvars]
-  (reduce dataflow/dematerialize db relvars))
+  Note: queries that are being watched with (watch) will continue to be materialized until (unwatch) is called."
+  [db & queries]
+  (reduce dataflow/dematerialize db queries))
 
 (defn q
   "Queries the db, returns a seq of rows by default.
 
-  Takes a relvar, or a map form [1].
+  Takes a RQL query vector, or a map form [1].
 
-  Relvars are relational expressions, they describe some data that you might want.
+  Queries are relational expressions, they describe some data that you might want.
 
-  Think SQL table, View & Query rolled up into one idea.
+  RQL queries are represented as vectors of operations.
 
-  They are modelled as vectors of statements.
+   e.g [op1, op2, op3]
 
-   e.g [stmt1, stmt2, stmt3]
-
-  Each statement is also a vector, a complete relvar would look like:
+  Each operation is also a vector, a complete query would look like:
 
   [[:from :Customer]
    [:where [= :name \"alice\"]]]
@@ -173,14 +171,14 @@
   [:extend & [col|[& col] expr]]
   [:expand & [col expr]]
   [:agg [& group-col] & [col agg-expr]]
-  [:join relvar {left-col right-col, ...}]
-  [:left-join relvar {left-col right-col, ...}]
-  [:from relvar]
+  [:join query {left-col right-col, ...}]
+  [:left-join query {left-col right-col, ...}]
+  [:from query]
   [:without & col]
   [:select & col|[col|[& col] expr]]
-  [:difference relvar]
-  [:union relvar]
-  [:intersection relvar]
+  [:difference query]
+  [:union query]
+  [:intersection query]
   [:qualify namespace-string]
   [:rename {existing-col new-col, ...}]
   [:const collection-of-rows]
@@ -210,11 +208,11 @@
   [1] map forms can be used to issue multiple queries at once, this allows relic to share indexes and intermediate structures
   and can be more efficient.
 
-    {key relvar|{:q relvar, :rsort ...}}"
-  ([db relvar-or-binds]
-   (if (map? relvar-or-binds)
-     (let [relvars (keep (fn [q] (if (map? q) (:q q) q)) (vals relvar-or-binds))
-           missing (remove #(dataflow/materialized? db %) relvars)
+    {key query|{:q query, :rsort ...}}"
+  ([db query-or-binds]
+   (if (map? query-or-binds)
+     (let [queries (keep (fn [q] (if (map? q) (:q q) q)) (vals query-or-binds))
+           missing (remove #(dataflow/materialized? db %) queries)
            db (reduce dataflow/materialize db missing)]
        (reduce-kv
          (fn [m k qr]
@@ -222,9 +220,9 @@
              (assoc m k (q db (:q qr) qr))
              (assoc m k (q db qr))))
          {}
-         relvar-or-binds))
-     (dataflow/q db relvar-or-binds)))
-  ([db relvar opts]
+         query-or-binds))
+     (dataflow/q db query-or-binds)))
+  ([db query opts]
    (let [{:keys [sort
                  rsort
                  xf]
@@ -233,7 +231,7 @@
          sort* (or sort rsort)
          sort-exprs (if (keyword? sort*) [sort*] sort*)
          sort-fns (mapv dataflow/row-fn sort-exprs)
-         rs (dataflow/qraw db relvar)
+         rs (dataflow/qraw db query)
          sort-fn (when (seq sort-fns)
                    (if (= 1 (count sort-fns))
                      (first sort-fns)
@@ -251,53 +249,52 @@
      rs)))
 
 (defn what-if
-  "Returns the relation for relvar if you were to apply the transactions with transact.
+  "Returns the relation for query if you were to apply the transactions with transact.
   Because databases are immutable, it's not hard to do this anyway with q & transact. This is just sugar."
-  [db relvar & tx]
-  (q (dataflow/transact db tx) relvar))
+  [db query & tx]
+  (q (dataflow/transact db tx) query))
 
 ;; --
 ;; change tracking api
 
 (defn watch
-  "Establishes watches on the relvars, watched relvars are change tracked for subsequent transactions
-  such that track-transact will return changes to those relvars in its results.
+  "Establishes watches on the queries, watched queries are change tracked for subsequent transactions
+  such that track-transact will return changes to those queries in its results.
 
   Returns a new database.
 
   See track-transact.
 
   Remove watches with unwatch."
-  [db & relvars]
-  (reduce dataflow/watch db relvars))
+  [db & queries]
+  (reduce dataflow/watch db queries))
 
 (defn unwatch
-  "Removes a watched relvar, changes for that relvar will no longer be tracked.
+  "Removes a watched query, changes for that query will no longer be tracked.
 
-  Potentially dematerializes the relvar if it was only materialized to maintain the watch.
+  Potentially dematerializes the query if it was only materialized to maintain the watch.
 
   See track-transact."
-  [db & relvars]
-  (reduce dataflow/unwatch db relvars))
+  [db & queries]
+  (reduce dataflow/unwatch db queries))
 
 (defn track-transact
   "Like transact, but instead of returning you a database, returns a map of
 
     :result the result of (apply transact db tx)
-    :changes a map of {relvar {:added [row1, row2 ...], :deleted [row1, row2, ..]}, ..}
+    :changes a map of {query {:added [row1, row2 ...], :deleted [row1, row2, ..]}, ..}
 
-  The :changes allow you to react to additions/removals from derived relvars, and build reactive systems."
+  The :changes allow you to react to additions/removals from derived queries, and build reactive systems."
   [db & tx]
   (dataflow/track-transact db tx))
 
 ;; --
-;; relvar analysis
-;; analysis of relvars will get better later... be patient :)
+;; query analysis
 
 (defn dependencies
-  "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
-  [relvar]
-  (dataflow/dependencies relvar))
+  "Returns the (table name) dependencies of the query, e.g what tables it could be affected by."
+  [query]
+  (dataflow/dependencies query))
 
 ;; --
 ;; min/max

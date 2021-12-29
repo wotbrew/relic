@@ -57,6 +57,8 @@ nav:
     - :delete-exact: delete-exact.md
     - :update: update.md
     - :insert-or-replace: insert-or-replace.md
+    - :insert-or-merge: insert-or-merge.md
+    - :insert-or-update: insert-or-update.md
     - :replace-all: replace-all.md
     - Terse Inserts: terse-insert.md
   - Materialization: materialization.md

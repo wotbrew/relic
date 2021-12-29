@@ -1826,7 +1826,7 @@
 (defn transact-error [tx]
   (raise "Unrecognized transact form" {:tx tx}))
 
-(defn- insert-or-replace [db table-key rows]
+(defn- upsert-base [db table-key f rows]
   (let [unique-indexes (find-indexes db unique? table-key)
 
         path-fns
@@ -1840,6 +1840,7 @@
 
         drop-self (volatile! #{})
         drop-old (volatile! #{})
+        replacement (volatile! {})
 
         _ (run!
             (fn [unique]
@@ -1851,22 +1852,35 @@
                   (fn [m2 row]
                     (let [pth (path row)
                           self-collision (m2 pth)
-                          old-row (seek pth)]
+                          old-row (seek pth)
+                          new-row (if old-row (f old-row row) row)]
                       (when (and self-collision (not= self-collision row))
                         (vswap! drop-self conj self-collision))
                       (cond
                         (nil? old-row) nil
                         :else (vswap! drop-old conj old-row))
+                      (when-not (identical? row new-row)
+                        (vswap! replacement assoc row new-row))
                       (assoc m2 pth row)))
                   m2
                   rows)))
             unique-indexes)
 
-        add-rows (eduction (comp (distinct) (remove @drop-self)) rows)
+        add-rows (eduction (comp (remove @drop-self) (distinct) (map #(@replacement % %))) rows)
         del-rows @drop-old
 
         db (change-table db table-key add-rows del-rows)]
     db))
+
+(defn- insert-or-replace [db table-key rows]
+  (upsert-base db table-key (fn [_ new] new) rows))
+
+(defn- insert-or-update [db table-key f rows]
+  (let [f (update-f-or-set-map-to-fn f)]
+    (upsert-base db table-key (fn [old _] (f old)) rows)))
+
+(defn- insert-or-merge [db table-key binding rows]
+  (upsert-base db table-key (bind-fn binding) rows))
 
 (defn- transact* [db tx]
   (cond
@@ -1882,6 +1896,8 @@
         :delete (delete-where db table-key args)
         :update (let [[f-or-set-map & exprs] args] (update-where db table-key f-or-set-map exprs))
         :insert-or-replace (insert-or-replace db table-key args)
+        :insert-or-update (let [[f-or-set-map & rows] args] (insert-or-update db table-key f-or-set-map rows))
+        :insert-or-merge (let [[binding & rows] args] (insert-or-merge db table-key binding rows))
         :replace-all (change-table db table-key args (q db table-key))
         (transact-error tx)))))
 

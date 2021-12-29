@@ -794,6 +794,22 @@
                         {:A [{:a 1, :b 1} {:a 2, :b 2}]}
                         [:insert-or-replace :A {:a 1, :b 2}])))))
 
+(deftest insert-or-update-test
+  (let [db (rel/transact {} [:insert-or-update :A {:b [inc :a]} {:a 42}])
+        db (rel/materialize db [[:from :A] [:unique :a]])
+        db2 (rel/transact db [:insert-or-update :A {:b [inc :a]} {:a 42, :b 45} {:a 43}])]
+    (is (= {:A #{{:a 42}}} db))
+    (is (= {:A #{{:a 42, :b 43} {:a 43}}} db2))))
+
+(deftest insert-or-merge-test
+  (let [db (rel/transact {} [:insert-or-merge :A :* {:a 42}])
+        db (rel/materialize db [[:from :A] [:unique :a]])
+        db2 (rel/transact db [:insert-or-merge :A :* {:a 42, :b 45} {:a 43}])
+        db3 (rel/transact db2 [:insert-or-merge :A [:c] {:a 42, :c 43} {:a 43, :b 42}])]
+    (is (= {:A #{{:a 42}}} db))
+    (is (= {:A #{{:a 42, :b 45} {:a 43}}} db2))
+    (is (= {:A #{{:a 42, :b 45, :c 43} {:a 43}}} db3))))
+
 (deftest relink-bug-test
   (let [db (rel/materialize {} [[:from :A]
                                 [:where [= :a 42]]])

@@ -16,11 +16,12 @@
   (:refer-clojure :exclude [min max]))
 
 (defn transact
-  "Return a new relic database, with the transaction applied.
+  "Return a new relic database, with the transaction applied. Will throw if any constraints are violated at the end of the
+  transaction.
 
   Accepts transactional commands as args (tx)
 
-  You modify relic databases by submitting commands to tables, a table can be referenced by name, or by table relvar.
+  You modify relic databases by submitting commands to tables, e.g [:insert :Customer row1, row2].
 
   Commands:
 
@@ -29,6 +30,18 @@
 
   Insert or replace (insert or on :unique conflict update by deleting colliding rows and inserting the new ones).
   [:insert-or-replace table row1, row2 ..]
+
+  Insert or merge (insert or on :unique conflict update by merging the new row with the old).
+  ;; merge all keys from new row
+  [:insert-or-merge :Customer :* customer1, :customer2]
+  ;; merge a subset
+  [:insert-or-merge :Customer [:firstname, :lastname] customer1, customer2]
+
+  Insert or update (insert of on :unique conflict update by updating colliding rows using an update fn-or-map).
+  ;; SQL style updates {col expr}
+  [:insert-or-update :Customer {:ts now, :updates inc} customer1, customer2]
+  ;; like :update, you can use a function of a row as an update
+  [:insert-or-update :Customer update-fn customer1, customer2]
 
   Delete rows (exact match) (faster)
   [:delete-exact table rows]

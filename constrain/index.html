@@ -242,8 +242,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1132,6 +1132,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1357,8 +1371,8 @@
 
 
 <h1 id="constrain">:constrain</h1>
-<p>The <code>:constrain</code> operator allows you to compose multiple constraints in one statement for DRY.</p>
-<p>This is unique among relvars only because constraints run for their side effects, so fan-out and check-away results is a valid approach.</p>
+<p>The <code>:constrain</code> operator allows you to compose multiple constraints in one operation for concision.</p>
+<p>This is unique among queries only because constraints run for their side effects, so fan-out and check results is a valid approach.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Person</span><span class="p">]</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:constrain</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a>  <span class="p">[</span><span class="ss">:req</span> <span class="ss">:name</span><span class="p">]</span> 

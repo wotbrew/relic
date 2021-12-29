@@ -242,8 +242,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1132,6 +1132,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1357,8 +1371,8 @@
 <h1 id="change-tracking">Change Tracking</h1>
 <p>One of the key features of relic is discrete change tracking, this enables integration with other reactive or signal graph
 systems such as react or reagent.</p>
-<p>Any relvar can be watched so that you can ask what rows were added or deleted by a transaction with <code>track-transact</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; given a relvar we are interested in watching</span>
+<p>Any query can be watched so that you can ask what rows were added or deleted by a transaction with <code>track-transact</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; given a query we are interested in watching</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">ViewModel</span> 
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:User</span><span class="p">]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a>   <span class="p">[</span><span class="ss">:where</span> <span class="ss">:selected</span><span class="p">]])</span>
@@ -1367,20 +1381,20 @@ systems such as react or reagent.</p>
 <a id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="p">{</span><span class="ss">:User</span> <span class="p">[{</span><span class="ss">:user</span> <span class="s">&quot;alice&quot;</span>, <span class="ss">:selected</span> <span class="nv">false</span><span class="p">}</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8"></a>        <span class="p">{</span><span class="ss">:user</span> <span class="s">&quot;bob&quot;</span>, <span class="ss">:selected</span> <span class="nv">false</span><span class="p">}]}</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10"></a><span class="c1">;; enable change tracking for our relvar with watch</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10"></a><span class="c1">;; enable change tracking for our query with watch</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="c1">;; this returns a new relic database, don&#39;t worry its totally pure!</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/watch</span> <span class="nv">db</span> <span class="nv">ViewModel</span><span class="p">))</span>   
 <a id="__codelineno-0-13" name="__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="c1">;; now we have a watched relvar, we can track-transact and receive changes to it.</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="c1">;; now we have a watched query, we can track-transact and receive changes to it.</span>
 <a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="p">(</span><span class="nf">rel/track-transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:User</span> <span class="p">{</span><span class="ss">:selected</span> <span class="nv">true</span><span class="p">}</span> <span class="p">[</span><span class="nb">= </span><span class="ss">:user</span> <span class="s">&quot;bob&quot;</span><span class="p">]])</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="c1">;; =&gt;</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="p">{</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18"></a> <span class="c1">;; the first key is just the :db as with the transactions applied</span>
 <a id="__codelineno-0-19" name="__codelineno-0-19"></a> <span class="ss">:db</span> <span class="p">{</span><span class="ss">:User</span> <span class="o">#</span><span class="p">{{</span><span class="ss">:user</span> <span class="s">&quot;alice&quot;</span>, <span class="ss">:selected</span> <span class="nv">false</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:user</span> <span class="s">&quot;bob&quot;</span>, <span class="ss">:selected</span> <span class="nv">true</span><span class="p">}}}</span>,
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a> <span class="c1">;; you also get a :changes key, which is the map of {relvar changes} for all watched relvars</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20"></a> <span class="c1">;; you also get a :changes key, which is the map of {query changes} for all watched queries</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21"></a> <span class="ss">:changes</span>
 <a id="__codelineno-0-22" name="__codelineno-0-22"></a>  <span class="p">{</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23"></a>   <span class="c1">;; our watched ViewModel relvar from earlier</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23"></a>   <span class="c1">;; our watched ViewModel query from earlier</span>
 <a id="__codelineno-0-24" name="__codelineno-0-24"></a>   <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:User</span><span class="p">]</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25"></a>    <span class="p">[</span><span class="ss">:where</span> <span class="ss">:selected</span><span class="p">]]</span> 
 <a id="__codelineno-0-26" name="__codelineno-0-26"></a>
@@ -1392,8 +1406,8 @@ systems such as react or reagent.</p>
 <a id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="c1">;; you can unwatch</span>
 <a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/unwatch</span> <span class="nv">db</span> <span class="nv">ViewModel</span><span class="p">))</span>
 </code></pre></div>
-<p>You can <code>watch</code> any <a href="../relvar/">relvar</a>, table or derived view. 
-To enable change tracking <code>watch</code> <a href="../materialization/">materializes</a> relvars so the same memory/performance trade-offs apply.</p>
+<p>You can <code>watch</code> any <a href="../query/">query</a> or table.
+To enable change tracking <code>watch</code> <a href="../materialization/">materializes</a> queries so the same memory/performance trade-offs apply.</p>
 
               
             </article>

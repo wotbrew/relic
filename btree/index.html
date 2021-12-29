@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1146,6 +1146,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1359,12 +1373,12 @@
 
 
 <h1 id="btree">:btree</h1>
-<p>The <code>:btree</code> statement creates a sorted index, it is similar to <a href="../hash/"><code>:hash</code></a> apart from the resulting nested-map is sorted instead of hash-ordered.</p>
+<p>The <code>:btree</code> operation creates a sorted index, it is similar to <a href="../hash/"><code>:hash</code></a> apart from the resulting nested-map is sorted instead of hash-ordered.</p>
 <p>Like other <a href="../indexes/">index</a> statements, this is considered a tuning parameter and isn't necessary for relic to work, typically
 you would only materialize these to enable faster query, or index access to sorted indexes.</p>
 <p><code>:btree</code> indexes can enable range query optimisations, such as seqing from a key in a particular order.</p>
 <p>Here is an example of indexing events by timestamp.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; RELVAR</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; QUERY</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="c1">;; you index expressions, here I am going to use a single expression,</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="c1">;; but I could use multiple and get a nested map, e.g [:btree :a, :b, :c]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Event</span><span class="p">]</span> 

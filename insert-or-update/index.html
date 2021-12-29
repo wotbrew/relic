@@ -13,7 +13,7 @@
     
     
       
-        <title>Relvars - relic</title>
+        <title>:insert-or-update - relic</title>
       
     
     
@@ -58,7 +58,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#relvars" class="md-skip">
+        <a href="#insert-or-update" class="md-skip">
           Skip to content
         </a>
       
@@ -91,7 +91,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Relvars
+              :insert-or-update
             
           </span>
         </div>
@@ -214,14 +214,12 @@
 
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" >
       
       
       
@@ -242,73 +240,11 @@
               
   
   
-    
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          Relvars
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        Relvars
+    <li class="md-nav__item">
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#rationale-of-form" class="md-nav__link">
-    Rationale of form
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#query-statements" class="md-nav__link">
-    Query statements
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#constraints" class="md-nav__link">
-    Constraints
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#indexes-and-direct-index-access" class="md-nav__link">
-    Indexes and direct index access
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1196,6 +1132,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1393,42 +1343,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#rationale-of-form" class="md-nav__link">
-    Rationale of form
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#query-statements" class="md-nav__link">
-    Query statements
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#constraints" class="md-nav__link">
-    Constraints
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#indexes-and-direct-index-access" class="md-nav__link">
-    Indexes and direct index access
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -1439,76 +1353,12 @@
             <article class="md-content__inner md-typeset">
               
                 
-<a href="https://github.com/wotbrew/relic/edit/master/doc/relvar.md" title="Edit this page" class="md-content__button md-icon">
+<a href="https://github.com/wotbrew/relic/edit/master/doc/insert-or-update.md" title="Edit this page" class="md-content__button md-icon">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
 </a>
 
 
-<h1 id="relvars">Relvars</h1>
-<p>The data primitive in relic is the relvar, think of it like a SQL view, a description of some data made by combining 
-tables, applying conditions, and computing columns and aggregates.</p>
-<ul>
-<li>A relvar is always a vector</li>
-<li>relvars are made up of statements, themselves vectors of the form <code>[operator &amp; args]</code>.</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; example relvar from the tcp-h benchmark suite</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:lineitem</span><span class="p">]</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="p">[</span><span class="nv">compare</span> <span class="ss">:l_shipdate</span> <span class="o">#</span><span class="nv">inst</span> <span class="s">&quot;1998-09-02&quot;</span><span class="p">]</span> <span class="mi">0</span><span class="p">]]</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4"></a> <span class="p">[</span><span class="ss">:agg</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5"></a>   <span class="p">[</span><span class="ss">:l_returnflag</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6"></a>    <span class="ss">:l_linestatus</span><span class="p">]</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7"></a> <span class="p">[</span><span class="ss">:sum_qty</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="ss">:l_quantity</span><span class="p">]]</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8"></a> <span class="p">[</span><span class="ss">:sum_base_price</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="ss">:l_extendedprice</span><span class="p">]]</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9"></a> <span class="p">[</span><span class="ss">:sum_disc_price</span>  <span class="p">[</span><span class="nv">rel/sum</span> <span class="p">[</span><span class="nb">* </span><span class="ss">:l_extendedprice</span> <span class="p">[</span><span class="nb">- </span><span class="mi">1</span> <span class="ss">:l_discount</span><span class="p">]]]]</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10"></a> <span class="p">[</span><span class="ss">:sum_charge</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="p">[</span><span class="nb">* </span><span class="ss">:l_extendedprice</span> <span class="p">[</span><span class="nb">- </span><span class="mi">1</span> <span class="ss">:l_discount</span><span class="p">]</span> <span class="p">[</span><span class="nb">+ </span><span class="mi">1</span> <span class="ss">:l_tax</span><span class="p">]]]]</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11"></a> <span class="p">[</span><span class="ss">:avg_qty</span> <span class="p">[</span><span class="nv">rel/avg</span> <span class="ss">:l_quantity</span><span class="p">]]</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12"></a> <span class="p">[</span><span class="ss">:avg_price</span> <span class="p">[</span><span class="nv">rel/avg</span> <span class="ss">:l_extendedprice</span><span class="p">]]</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13"></a> <span class="p">[</span><span class="ss">:avg_disc</span> <span class="p">[</span><span class="nv">rel/avg</span> <span class="ss">:l_discount</span><span class="p">]]</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14"></a> <span class="p">[</span><span class="ss">:count_order</span> <span class="nv">count</span><span class="p">]]]</span>
-</code></pre></div>
-<p>relvars compose by adding to the vector, this is in contrast to other approaches where query optimisers take care of the overall ordering.</p>
-<p>In relic, data always flows top-to-bottom.</p>
-<p>Although a relvar looks much like a query, you can also think of it as a view - and its super power is that relic allows you to materialize the relvar. This will convert the relvar into a
-DAG to support incremental re-computation as data in tables changes.</p>
-<p>With few exceptions (direct index lookup) you can materialize any relvar with <code>rel/materialize</code>.</p>
-<h2 id="rationale-of-form">Rationale of form</h2>
-<p>In the tar pit paper, the language used to express relvars was a traditional expression tree (e.g <code>union(a, b)</code>).</p>
-<p>I wanted a data-first clojure dsl that met two goals, like any good data dsl I wanted to compose new relvars using regular clojure functions,
-and I wanted them to be easy to write and read as literals without ide support.</p>
-<p>The vector form I think is close to SQL, with a nice top-to-bottom reading flow. Each statement is self-contained in its own
-delimited form, and so you can create new relvars with <code>conj</code>, split them with <code>split-at</code> and so on.</p>
-<h2 id="query-statements">Query statements</h2>
-<ul>
-<li><a href="../from/"><code>:from</code></a> a.k.a start here</li>
-<li><a href="../where/"><code>:where</code></a> to select only certain rows</li>
-<li><a href="../join/"><code>:join</code></a> sql style relation inner join</li>
-<li><a href="../left-join/"><code>:left-join</code></a> sql style relational left join</li>
-<li><a href="../extend/"><code>:extend</code></a> compute new columns</li>
-<li><a href="../select/"><code>:select</code></a> project a subset of columns, computations</li>
-<li><a href="../without/"><code>:without</code></a> drop columns</li>
-<li><a href="../expand/"><code>:expand</code></a> flatten nested sequences</li>
-<li><a href="../agg/"><code>:agg</code></a> apply aggregates over rows in groups</li>
-<li><a href="../const/"><code>:const</code></a> provide a constant relation</li>
-<li><a href="../difference/"><code>:difference</code></a> set diff</li>
-<li><a href="../intersection/"><code>:intersection</code></a> set intersection</li>
-<li><a href="../union/"><code>:union</code></a> set union</li>
-<li><a href="../rename/"><code>:rename</code></a> rename columns</li>
-<li><a href="../qualify/"><code>:qualify</code></a> qualify (namespace) columns</li>
-</ul>
-<h2 id="constraints">Constraints</h2>
-<ul>
-<li><a href="../check/"><code>:check</code></a> ensure certain predicates hold </li>
-<li><a href="../req/"><code>:req</code></a> ensure cols exist</li>
-<li><a href="../fk/"><code>:fk</code></a> ensure a referenced row exists in some other relvar</li>
-<li><a href="../unique/"><code>:unique</code></a> unsure only one row exists for some set of <a href="../expr/">expressions</a></li>
-<li><a href="../constrain/"><code>:constrain</code></a> combine multiple constraints on a relvar</li>
-</ul>
-<h2 id="indexes-and-direct-index-access">Indexes and direct index access</h2>
-<ul>
-<li><a href="../hash/"><code>:hash</code></a> standard one-to-many hash index</li>
-<li><a href="../btree/"><code>:btree</code></a> standard one-to-many sorted index</li>
-<li><a href="../lookup/"><code>:lookup</code></a> explicit index lookup</li>
-</ul>
+<h1 id="insert-or-update">:insert-or-update</h1>
 
               
             </article>
@@ -1518,41 +1368,6 @@ delimited form, and so you can create new relvars with <code>conj</code>, split 
       </main>
       
         <footer class="md-footer">
-  
-    <nav class="md-footer__inner md-grid" aria-label="Footer">
-      
-        
-        <a href=".." class="md-footer__link md-footer__link--prev" aria-label="Previous: Intro" rel="prev">
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
-          </div>
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              Intro
-            </div>
-          </div>
-        </a>
-      
-      
-        
-        <a href="../query/" class="md-footer__link md-footer__link--next" aria-label="Next: Issuing queries" rel="next">
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              Issuing queries
-            </div>
-          </div>
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4z"/></svg>
-          </div>
-        </a>
-      
-    </nav>
   
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">

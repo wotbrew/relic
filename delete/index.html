@@ -242,8 +242,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1144,6 +1144,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1356,7 +1370,15 @@
 </a>
 
 
-<h1 id="delete">"delete</h1>
+<h1 id="delete">:delete</h1>
+<p>The <code>:delete</code> transaction form allow you delete rows by predicate <a href="../expr/">expressions</a>.</p>
+<p>In the below example, we delete rows for all people called Tom.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:delete</span> <span class="ss">:Person</span> <span class="p">[</span><span class="nb">= </span><span class="ss">:name</span> <span class="s">&quot;Tom&quot;</span><span class="p">]])</span>
+</code></pre></div>
+<p>You can supply multiple predicates</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:delete</span> <span class="ss">:Event</span> <span class="p">[</span><span class="nb">= </span><span class="ss">:type</span> <span class="s">&quot;insert&quot;</span><span class="p">]</span> <span class="p">[</span><span class="nb">&lt; </span><span class="ss">:ts</span> <span class="mi">1640251544389</span><span class="p">]])</span>
+</code></pre></div>
+<p>Like other <a href="../transact/">transaction</a> forms you can only modify tables, all derived state is maintained by relic.</p>
 
               
             </article>

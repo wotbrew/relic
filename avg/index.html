@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1148,6 +1148,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1363,7 +1377,7 @@
 <h1 id="avg">avg</h1>
 <p>An aggregate function that computes the average for all sampled values by some <a href="../expr/">expr</a>.</p>
 <p>In the below example, we use <code>avg</code> to compute the average-order-value (aov) over a group of orders.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; RELVAR</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; QUERY</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:agg</span> <span class="p">[]</span> <span class="p">[</span><span class="ss">:aov</span> <span class="p">[</span><span class="nv">rel/avg</span> <span class="ss">:total</span><span class="p">]]]]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a>

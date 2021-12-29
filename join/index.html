@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1184,6 +1184,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1421,11 +1435,11 @@
 <h1 id="join">:join</h1>
 <p>Joins relations together, returning the product of matching rows. The columns in the relation on the right will be preferred in a conflict.</p>
 <p>Like <code>set/join</code>, clause is a map of expressions on the left to expressions on the right.</p>
-<p>Accepts both tables (keywords) and other relvars.</p>
+<p>Accepts both tables (keywords) and other queries.</p>
 <p>Similar to an <code>INNER JOIN</code> in SQL.</p>
 <h2 id="form">Form</h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nb">join = </span><span class="p">[</span><span class="ss">:join</span> <span class="nb">right </span><span class="nv">clause</span> <span class="o">&amp;</span> <span class="nv">more</span><span class="p">]</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="nb">right = </span><span class="nv">relvar</span> <span class="nv">|</span> <span class="nv">table</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="nb">right = </span><span class="nv">query</span> <span class="nv">|</span> <span class="nv">table</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="nv">clause</span> <span class="nb">= </span><span class="p">{</span><span class="nv">left-expr</span> <span class="nv">right-expr</span>, <span class="nv">...</span><span class="p">}</span>
 </code></pre></div>
 <h2 id="examples">Examples</h2>

@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1146,6 +1146,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1359,7 +1373,7 @@
 
 
 <h1 id="const">:const</h1>
-<p>Provides a constant collection as a relation. Probably the most boring statement, of questionable utility.</p>
+<p>Provides a constant collection as a relation. Probably the most boring operator, of questionable utility.</p>
 <p>Use if you want to do relic processing on known-ahead-of-time sequences of maps, and don't want to use tables for $reasons.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:const</span> <span class="p">[{</span><span class="ss">:a</span> <span class="mi">1</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">2</span><span class="p">}</span> <span class="p">{</span><span class="ss">:a</span> <span class="mi">3</span><span class="p">}]]</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nv">even?</span> <span class="ss">:a</span><span class="p">]]]</span>

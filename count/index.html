@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1148,6 +1148,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1363,7 +1377,7 @@
 <h1 id="count">count</h1>
 <p>You can use <code>clojure.core/count</code> as an aggregate function! It does pretty much what you expect, count rows within a group.</p>
 <p>Has an optional <a href="../expr/">expr</a> argument if you want to count rows only where some predicate holds (handy!).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; RELVAR</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; QUERY</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:agg</span> <span class="p">[</span><span class="ss">:customer-id</span><span class="p">]</span> 
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a>  <span class="p">[</span><span class="ss">:number-of-orders</span> <span class="nv">count</span><span class="p">]</span>

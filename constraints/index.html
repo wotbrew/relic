@@ -242,8 +242,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1132,6 +1132,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1403,10 +1417,10 @@
 
 
 <h1 id="constraints">Constraints</h1>
-<p>Constraints are just relvars ending in one of the constraint statements likr <a href="../unique/"><code>:unique</code></a>,
+<p>Constraints are just queries ending in one of the constraint statements likr <a href="../unique/"><code>:unique</code></a>,
 <a href="../fk/"><code>:fk</code></a> and <a href="../check/"><code>:check</code></a>. These operators throw typically exceptions when the constraints are not met.</p>
-<p>To constrain a database, you <a href="../materialization/"><code>materialize</code></a> constraint relvars (and they can be removed with <code>dematerialize</code>).</p>
-<p>Constraints can apply to <em>any</em> relvar, so you can apply constraints to derived relvars and joins, here
+<p>To constrain a database, you <a href="../materialization/"><code>materialize</code></a> constraint queries (and they can be removed with <code>dematerialize</code>).</p>
+<p>Constraints can apply to <em>any</em> query, so you can apply constraints to aggregates and joins, here
 is the obligatory <code>order can have at most 10 items if its associated customer is called bob and its tuesday</code> constraint.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="nv">Order</span><span class="p">]</span> 
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:join</span> <span class="nv">Customer</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]</span>
@@ -1414,8 +1428,8 @@ is the obligatory <code>order can have at most 10 items if its associated custom
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">{</span><span class="ss">:pred</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="p">[</span><span class="nb">count </span><span class="ss">:items</span><span class="p">]</span> <span class="mi">10</span><span class="p">]</span>,
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a>          <span class="ss">:error</span> <span class="p">[</span><span class="nb">str </span><span class="s">&quot;order can have at most 10 items if its associated customer is called bob and its tuesday, found: &quot;</span> <span class="p">[</span><span class="nb">count </span><span class="ss">:items</span><span class="p">]]}]]</span>
 </code></pre></div>
-<p>As it is convenient to specify multiple constraints on a relvar in one form, a special
-<code>:constrain</code> statement is provided.</p>
+<p>As it is convenient to specify multiple constraints on a query in one form, a special
+<code>:constrain</code> operator is provided.</p>
 <p>e.g</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="nv">Customer</span><span class="p">]</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2"></a> <span class="p">[</span><span class="ss">:constrain</span>
@@ -1427,8 +1441,8 @@ is the obligatory <code>order can have at most 10 items if its associated custom
 <ul>
 <li><a href="../check/"><code>:check</code></a> ensure certain predicates hold</li>
 <li><a href="../req/"><code>:req</code></a> ensure cols exist</li>
-<li><a href="../fk/"><code>:fk</code></a> ensure a referenced row exists in some other relvar</li>
-<li><a href="../constrain/"><code>:constrain</code></a> combine multiple constraints on a relvar</li>
+<li><a href="../fk/"><code>:fk</code></a> ensure a referenced row exists in some other query/table</li>
+<li><a href="../constrain/"><code>:constrain</code></a> combine multiple constraints on a query/table</li>
 <li><a href="../unique/"><code>:unique</code></a> unsure only one row exists for some set of <a href="../expr/">expressions</a></li>
 </ul>
 

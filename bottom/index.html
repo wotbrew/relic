@@ -244,8 +244,8 @@
   
   
     <li class="md-nav__item">
-      <a href="../relvar/" class="md-nav__link">
-        Relvars
+      <a href="../query/" class="md-nav__link">
+        Overview
       </a>
     </li>
   
@@ -1148,6 +1148,20 @@
   
   
     <li class="md-nav__item">
+      <a href="../replace-all/" class="md-nav__link">
+        :replace-all
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../terse-insert/" class="md-nav__link">
         Terse Inserts
       </a>
@@ -1363,7 +1377,7 @@
 <h1 id="bottom">bottom</h1>
 <p>An <a href="../aggregates/">aggregate</a> functions that returns the lowest <code>n</code> values for some <a href="../expr/">expr</a> across the group.</p>
 <p>In the below example we use bottom to find the lowest 5 scores for a table of Player data.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; RELVAR</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; QUERY</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Player</span><span class="p">]</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:agg</span> <span class="p">[]</span> <span class="p">[</span><span class="ss">:lowest-scores</span> <span class="p">[</span><span class="nv">rel/bottom</span> <span class="mi">5</span> <span class="ss">:score</span><span class="p">]]]]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a>

@@ -1250,6 +1250,11 @@
         relvar
         (conj relvar [:set])))))
 
+(defn- relvar-or-dual [relvar]
+  (if (empty? relvar)
+    [[:const [{}]]]
+    relvar))
+
 (defn to-dataflow* [graph relvar self]
   (let [relvar (to-relvar relvar)
         left (left-relvar relvar)
@@ -1312,6 +1317,7 @@
 
         :select
         (let [[_ & selections] stmt
+              left (relvar-or-dual left)
               cols (filterv keyword? selections)
               extensions (filterv vector? selections)
               deps (vec (into (set cols) (mapcat extend-form-cols) extensions))
@@ -1322,6 +1328,7 @@
 
         :select-unsafe
         (let [[_ & selections] stmt
+              left (relvar-or-dual left)
               cols (filterv keyword? selections)
               extensions (filterv vector? selections)
               deps (vec (into (set cols) (mapcat extend-form-cols) extensions))

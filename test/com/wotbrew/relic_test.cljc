@@ -368,7 +368,7 @@
    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
 
 (deftest watch-table-test
-  (let [A [[:from :A]]
+  (let [A :A
         db (rel/transact {} {A [{:a 42}]})
         db (rel/watch db A)
         {db2 :db, :keys [changes]} (rel/track-transact db {A [{:a 43}]})]

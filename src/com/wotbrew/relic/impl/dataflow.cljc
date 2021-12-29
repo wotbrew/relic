@@ -1948,6 +1948,9 @@
 
       db)))
 
+(defn- to-table-key-if-table [relvar]
+  (if (table-relvar? relvar) (to-table-key relvar) relvar))
+
 (defn track-transact
   "Like transact, but instead of returning you a database, returns a map of
 
@@ -1964,7 +1967,8 @@
           changes (for [[id {:keys [adds dels]}] *tracking*
                         :let [{:keys [results, relvar] :or {results #{}}} (graph id)
                               {oresults :results, :or {oresults #{}}} (ograph id)]]
-                    [relvar {:added (filterv results (iterable-mut-list adds))
-                             :deleted (filterv (every-pred (complement results) oresults) (iterable-mut-list dels))}])]
+                    [(to-table-key-if-table relvar)
+                     {:added (filterv results (iterable-mut-list adds))
+                      :deleted (filterv (every-pred (complement results) oresults) (iterable-mut-list dels))}])]
       {:db db
        :changes (into {} changes)})))

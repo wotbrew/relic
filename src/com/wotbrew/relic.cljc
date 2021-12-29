@@ -43,6 +43,9 @@
   ;; like :update, you can use a function of a row as an update
   [:insert-or-update :Customer update-fn customer1, customer2]
 
+  Insert or ignore on :unique conflict
+  [:insert-ignore :Customer customer1, customer2 ...]
+
   Delete rows (exact match) (faster)
   [:delete-exact table rows]
 

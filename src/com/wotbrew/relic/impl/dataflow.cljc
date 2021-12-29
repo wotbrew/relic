@@ -118,12 +118,14 @@
               (apply f (iterable-mut-list arg-buf)))))))))
 
 (defn- demunge-expr [expr]
-  (let [expr-str (str expr)
-        [ns f] (str/split expr-str #"\$")
-        show-ns (if (= "clojure.core" ns) false true)
+  (let [expr-str (str #?(:clj expr :cljs (.-name expr)))
+        split-expr (str/split expr-str #"\$")
+        ns (str/join "." (butlast split-expr))
+        f (last split-expr)
+        show-ns (if (= #?(:clj "clojure.core" :cljs "cljs.core") ns) false true)
         [f] (str/split (str f) #"\@")]
     #?(:clj  (clojure.lang.Compiler/demunge (if show-ns (str ns "/" f) f))
-       :cljs (str expr))))
+       :cljs (if (empty? f) "fn" (demunge (if show-ns (str ns "/" f) f))))))
 
 (defn- safe-print-expr [expr]
   (cond

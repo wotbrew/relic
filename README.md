@@ -32,12 +32,12 @@ Did you try [meander](https://github.com/noprompt/meander), [core.logic](https:/
 
 ![in the tar pit](doc/tar.jpeg)
 
-Are you spending too much time writing mechanical wiring and glue? That has *nothing* to do with your actual business logic?
+Are you tired of writing mechanical wiring and glue? That has *nothing* to do with your actual business logic?
 
 `relic` might help, but it's not a medical professional. It's a functional relational programming library.
 
 - like SQL for clojure data.
-- munge with joy via the glorious relational open access information model.
+- join with joy with the glorious relational open access information model.
 - laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
 - relational expressions as __data__, open to introspection and analysis. Gives static tools a fighting chance.
 - __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](https://wotbrew.github.io/relic/constraints).
@@ -56,15 +56,15 @@ This is a query, that will return customers where `(= 42 (:id customer))`.
 
 ```clojure 
  [[:from :Customer]
-  [:where [= :id 42]]]
+  [:where [= :name "bob"]]]
  ```
 
 You can refine queries by just adding elements to the vector.  All your favorites are here, filtering (`:where`), computing columns (`:extend`), joins (`:join` & `:left-join`), grouping and aggregation (`:agg`) and more.
 
 ```clojure 
 [[:from :Customer]
- [:where [= :id 42]]
- [:extend [:fullname [str :firstname " " :lastname]]]
+ [:where [= :name "bob"]]
+ [:extend [:greeting [str "Hello, " :name "!"]]]
 ```
 
 Because queries are just vectors, they just sort of lounge around being values. To put them to work we have to feed some data into relic.
@@ -77,26 +77,26 @@ Because queries are just vectors, they just sort of lounge around being values. 
 
 See, boring.
 
-You manipulate your database with the [`transact`](#transact-reference) function. This just returns a new database. Plain old functional programming, no surprises.
+You manipulate your database with the [`transact`](https://wotbrew.github.io/relic/transact) function. This returns a new database with the transaction applied. Plain old functional programming, no surprises.
 ```clojure 
-(def db (rel/transact {} [:insert :Customer {:id 42, :name "bob"} {:id 43, :name "alice"}])
+(def db (rel/transact {} [:insert :Customer {:name "bob"} {:name "alice"}])
 
 db 
 ;; =>
-{:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
+{:Customer #{{:name "bob"}, {:name "alice"}}}
 
 ```
 
 Now we have some state, we can ask questions of relic, as you would a SQL database.
 
 ```clojure 
-(rel/q db [[:from :Customer] [:where [= :id 42]]]) 
+(rel/q db [[:from :Customer] [:where [= :name "bob"]]]) 
 ;; => 
-#{{:id 42, :name "bob"}}
+#{{:name "bob"}}
 
 (rel/q db [[:from :Customer] [:where [= :name "alice"]]])
 ;; => 
-#{{:id 43, :name "alice"}}
+#{{:name "alice"}}
 ```
 
 Ok ok, neat but not _cool_.
@@ -104,12 +104,13 @@ Ok ok, neat but not _cool_.
 Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like some kind of cave man technology - it is powered by a __data flow graph__.
 `relic` knows when your data changes, and it knows how to modify dependent relations in a smart way.
 
-```clojure 
-(rel/materialize db [[:from :Customer] [:where [= :id 42]]])
-;; => returns the database, its value will be the same (hint: metadata).
-{:Customer #{{:id 42, :name "bob"}, {:id 43, :name "alice"}}}
-```
 You can materialize any query such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
+
+```clojure 
+(rel/materialize db [[:from :Customer] [:where [= :name "bob"]]])
+;; => returns the database, its value will be the same (hint: metadata).
+{:Customer #{{:name "bob"}, {:name "alice"}}}
+```
 
 `materialize` will return a new _database_, against which materialized queries will be instant, and __as you change data in tables, those changes will flow to materialized queries automatically.__
 

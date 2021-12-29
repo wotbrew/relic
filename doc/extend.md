@@ -62,4 +62,3 @@ Sub queries with `:$1` and `:$`
 
 - [`:select`](select.md)
 - [`:agg`](agg.md)
-- [Unsafe transformation](unsafe-transform.md)

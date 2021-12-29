@@ -422,6 +422,10 @@
     (is (= #{{:a 43}, {:a 44}} (set (rel/what-if db A [:update A {:a 43} [= :a 42]]))))
     (is (= #{{:a 43}, {:a 44}} (set (rel/what-if db A [:update A #(assoc % :a 43) [= :a 42]]))))))
 
+(deftest update-set-nil-test
+  (let [db (rel/transact {} {:Counter [{:n 0}]})]
+    (is (= {:Counter #{{}}} (rel/transact db [:update :Counter {:n nil}])))))
+
 (deftest delete-test
   (let [A [[:from :A]]
         db (rel/transact {} {A [{:a 42} {:a 44}]})]

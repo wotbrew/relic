@@ -1780,7 +1780,7 @@
 
 (defn- update-f-or-set-map-to-fn [f-or-set-map]
   (if (map? f-or-set-map)
-    (reduce-kv (fn [f k e] (comp f (let [f2 (row-fn e)] #(assoc % k (f2 %))))) identity f-or-set-map)
+    (reduce-kv (fn [f k e] (comp f (let [f2 (row-fn e)] #(overwrite-key % k (f2 %))))) identity f-or-set-map)
     f-or-set-map))
 
 (defn- update-where [db table-key f-or-set-map exprs]

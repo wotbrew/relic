@@ -26,6 +26,7 @@ nav:
       - Overview: indexes.md
       - :btree: btree.md
       - :hash: hash.md
+      - :unique: unique.md
       - :lookup: lookup.md
     - Aggregates: aggregates.md
     - Aggregate functions:

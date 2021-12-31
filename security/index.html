@@ -1489,12 +1489,18 @@
 <h1 id="security">Security</h1>
 <p>Relic goes out of its way to be resistant to injection attacks with its design.</p>
 <p>As relic's support of clojure functions allows pretty arbitrary evaluation as part of a query, e.g 
-<code>[sh/sh "rm" "-rf" "/"]</code> we need to mindful of security in regards to user input.</p>
+<code>[sh/sh "rm" "-rf" "/"]</code> we need to mindful of security when processing untrusted user input.</p>
 <h2 id="protection-offered-by-relic-by-default">Protection offered by relic by default</h2>
-<p>Only function objects (not symbols!), whitelisted sentinel values (that could not normally be constructed with <code>edn/read</code>)
-safe keywords sentinels like <code>:_</code> that cannot be used for exfiltration / eval, and column keywords in the prefix position of relic expressions.</p>
-<p>Out of the 3 column keywords are the one to be worried about, although they do not provide
-opportunities for RCE, you should wary of expressions like this <code>[:extend [:my-col untrusted]]</code> as they could be used to exfiltrate any data on the row.
+<p>relic is careful about what is allowed in the prefix function position of relic expressions (a potential vector for injection)</p>
+<p>Relic allows:</p>
+<ul>
+<li>function objects (not symbols!), </li>
+<li>whitelisted sentinel values (that could not normally be constructed with <code>edn/read</code>)</li>
+<li>safe keywords sentinels like <code>:_</code> that cannot be used for exfiltration / eval, </li>
+<li>column keywords</li>
+</ul>
+<p>Out of these column keywords are the one to be worried about, although they do not provide
+opportunities for RCE, you should be wary of expressions like this <code>[:extend [:my-col untrusted]]</code> as they could be used to exfiltrate any data on the row.
 Now I do not think in practice users will do this</p>
 <p>I would advise in general to not allow user input to create arbitrary keywords as regardless of vectors against relic, it could be used
 to pollute the keyword cache and cause a DOS by increasing memory pressure / weak reference collection time.</p>

@@ -1394,6 +1394,36 @@
   
 
     
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        Security
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension/" class="md-nav__link">
+        Extension
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1453,7 +1483,7 @@
 is the obligatory <code>order can have at most 10 items if its associated customer is called bob and its tuesday</code> constraint.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="nv">Order</span><span class="p">]</span> 
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:join</span> <span class="nv">Customer</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">= </span><span class="s">&quot;bob&quot;</span> <span class="ss">:firstname</span><span class="p">]</span> <span class="p">[</span><span class="nv">tuesday?</span> <span class="p">[</span><span class="ss">::rel/env</span> <span class="ss">:now</span><span class="p">]]]</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">= </span><span class="s">&quot;bob&quot;</span> <span class="ss">:firstname</span><span class="p">]</span> <span class="p">[</span><span class="nv">tuesday?</span> <span class="p">[</span><span class="nv">rel/env</span> <span class="ss">:now</span><span class="p">]]]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a> <span class="p">[</span><span class="ss">:check</span> <span class="p">{</span><span class="ss">:pred</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="p">[</span><span class="nb">count </span><span class="ss">:items</span><span class="p">]</span> <span class="mi">10</span><span class="p">]</span>,
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a>          <span class="ss">:error</span> <span class="p">[</span><span class="nb">str </span><span class="s">&quot;order can have at most 10 items if its associated customer is called bob and its tuesday, found: &quot;</span> <span class="p">[</span><span class="nb">count </span><span class="ss">:items</span><span class="p">]]}]]</span>
 </code></pre></div>

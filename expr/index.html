@@ -1401,6 +1401,36 @@
   
 
     
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        Security
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension/" class="md-nav__link">
+        Extension
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1485,22 +1515,18 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="nv">my-pred?</span><span class="p">]]</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="c1">;; in clojure you can use symbols if you want.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="c1">;; same rules apply to computing columns</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="o">`</span><span class="nv">my-pred?</span><span class="p">]]</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="p">(</span><span class="kd">defn </span><span class="nv">compute-bar</span> <span class="p">[{</span><span class="ss">:keys</span> <span class="p">[</span><span class="nv">foo</span><span class="p">]}]</span> <span class="p">(</span><span class="nb">inc </span><span class="nv">foo</span><span class="p">))</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10"></a>
-<a id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="c1">;; same rules apply to computing columns</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:extend</span> <span class="p">[</span><span class="ss">:bar</span> <span class="nv">compute-bar</span><span class="p">]]</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12"></a>
-<a id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="p">(</span><span class="kd">defn </span><span class="nv">compute-bar</span> <span class="p">[{</span><span class="ss">:keys</span> <span class="p">[</span><span class="nv">foo</span><span class="p">]}]</span> <span class="p">(</span><span class="nb">inc </span><span class="nv">foo</span><span class="p">))</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:select</span> <span class="p">[</span><span class="ss">:bar</span> <span class="nv">compute-bar</span><span class="p">]]</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14"></a>
-<a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:extend</span> <span class="p">[</span><span class="ss">:bar</span> <span class="nv">compute-bar</span><span class="p">]]</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16"></a>
-<a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:select</span> <span class="p">[</span><span class="ss">:bar</span> <span class="nv">compute-bar</span><span class="p">]]</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18"></a>
-<a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="c1">;; and expansions</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="p">(</span><span class="kd">defn </span><span class="nv">compute-baz-seq</span> <span class="p">[{</span><span class="ss">:keys</span> <span class="p">[</span><span class="nv">foo</span><span class="p">]}]</span> <span class="p">(</span><span class="nb">range </span><span class="nv">foo</span><span class="p">))</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21"></a>
-<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:expand</span> <span class="p">[</span><span class="ss">:baz</span> <span class="nv">compute-baz-seq</span><span class="p">]]</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="c1">;; and expansions</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="p">(</span><span class="kd">defn </span><span class="nv">compute-baz-seq</span> <span class="p">[{</span><span class="ss">:keys</span> <span class="p">[</span><span class="nv">foo</span><span class="p">]}]</span> <span class="p">(</span><span class="nb">range </span><span class="nv">foo</span><span class="p">))</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17"></a>
+<a id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:expand</span> <span class="p">[</span><span class="ss">:baz</span> <span class="nv">compute-baz-seq</span><span class="p">]]</span>
 </code></pre></div>
 <h2 id="relic-expressions">relic expressions</h2>
 <p>For convenience, and some extra goodies - an expression dsl is provided that lets you do simple computations 'inline',
@@ -1534,10 +1560,10 @@ provides better ergonmics as you are working with rows 100% of the time, and all
 <a id="__codelineno-1-25" name="__codelineno-1-25"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">= </span><span class="p">[</span><span class="ss">:_</span> <span class="ss">:bar</span><span class="p">]</span> <span class="ss">:foo</span><span class="p">]]]</span>
 <a id="__codelineno-1-26" name="__codelineno-1-26"></a>
 <a id="__codelineno-1-27" name="__codelineno-1-27"></a><span class="c1">;; you can reference the env (see env.md)</span>
-<a id="__codelineno-1-28" name="__codelineno-1-28"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">= </span><span class="ss">:foo</span> <span class="p">[</span><span class="ss">::rel/env</span> <span class="ss">:foo</span><span class="p">]]]]</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">= </span><span class="ss">:foo</span> <span class="p">[</span><span class="nv">rel/env</span> <span class="ss">:foo</span><span class="p">]]]]</span>
 <a id="__codelineno-1-29" name="__codelineno-1-29"></a>
-<a id="__codelineno-1-30" name="__codelineno-1-30"></a><span class="c1">;; you can issue sub queries with :$1 (first row) and :$ (all rows) (see sub-queries.md)</span>
-<a id="__codelineno-1-31" name="__codelineno-1-31"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:$1</span> <span class="ss">:B</span> <span class="p">{</span><span class="ss">:a-id</span> <span class="ss">:a-id</span><span class="p">}]]]</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30"></a><span class="c1">;; you can issue sub queries with rel/sel1 (first row) and rel/sel (all rows) (see sub-queries.md)</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nv">rel/sel1</span> <span class="ss">:B</span> <span class="p">{</span><span class="ss">:a-id</span> <span class="ss">:a-id</span><span class="p">}]]]</span>
 <a id="__codelineno-1-32" name="__codelineno-1-32"></a>
 <a id="__codelineno-1-33" name="__codelineno-1-33"></a><span class="c1">;; nil safe calls with :?</span>
 <a id="__codelineno-1-34" name="__codelineno-1-34"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:?</span> <span class="nv">str/includes?</span> <span class="ss">:foo</span> <span class="ss">:bar</span><span class="p">]]]</span>

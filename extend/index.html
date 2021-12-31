@@ -1410,6 +1410,36 @@
   
 
     
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        Security
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension/" class="md-nav__link">
+        Extension
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1498,19 +1528,19 @@
 <a id="__codelineno-1-5" name="__codelineno-1-5"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6"></a>   <span class="p">[</span><span class="ss">:agg</span> <span class="p">[</span><span class="ss">:customer-id</span><span class="p">]</span> <span class="p">[</span><span class="ss">:total-spend</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="ss">:total</span><span class="p">]]]])</span>
 </code></pre></div>
-<p>Sub queries with <code>:$1</code> and <code>:$</code></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="c1">;; $1 to sub select another row, i.e an implicit left-join.</span>
+<p>Sub queries with <code>rel/sel1</code> and <code>rel/sel</code></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="c1">;; rel/sel1 to sub select another row, i.e an implicit left-join.</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">CustomerStats</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4"></a>   <span class="p">[</span><span class="ss">:extend</span> <span class="p">[[</span><span class="ss">:total-spend</span><span class="p">]</span> <span class="p">[</span><span class="ss">:$1</span> <span class="nv">TotalSpend</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]]]])</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4"></a>   <span class="p">[</span><span class="ss">:extend</span> <span class="p">[[</span><span class="ss">:total-spend</span><span class="p">]</span> <span class="p">[</span><span class="nv">rel/sel1</span> <span class="nv">TotalSpend</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]]]])</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5"></a>
 <a id="__codelineno-2-6" name="__codelineno-2-6"></a><span class="c1">;; would result in a relation something like:</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7"></a><span class="o">#</span><span class="p">{{</span><span class="ss">:customer</span> <span class="mi">42</span>, <span class="ss">:total-spend</span> <span class="mf">340.0</span><span class="nv">M</span><span class="p">}}</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9"></a><span class="c1">;; $1 to bind rows from another query to a column</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9"></a><span class="c1">;; rel/sel to bind rows from another query to a column</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10"></a><span class="p">(</span><span class="k">def </span><span class="nv">Order</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12"></a>   <span class="p">[</span><span class="ss">:extend</span> <span class="p">[</span><span class="ss">:items</span> <span class="p">[</span><span class="ss">:$</span> <span class="nv">OrderItem</span> <span class="p">{</span><span class="ss">:order-id</span> <span class="ss">:order-id</span><span class="p">}]]]])</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12"></a>   <span class="p">[</span><span class="ss">:extend</span> <span class="p">[</span><span class="ss">:items</span> <span class="p">[</span><span class="nv">rel/sel</span> <span class="nv">OrderItem</span> <span class="p">{</span><span class="ss">:order-id</span> <span class="ss">:order-id</span><span class="p">}]]]])</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13"></a>
 <a id="__codelineno-2-14" name="__codelineno-2-14"></a><span class="c1">;; would result in a relation something like:</span>
 <a id="__codelineno-2-15" name="__codelineno-2-15"></a><span class="o">#</span><span class="p">{{</span><span class="ss">:customer-id</span> <span class="mi">42</span>,

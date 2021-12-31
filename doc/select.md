@@ -4,14 +4,14 @@ The projection operator, takes columns & [extension](extend.md) style bindings a
 
 ## Form 
 
-```clojure 
+```clojure
 select = [:select & col-or-extension]
 col-or-binding = col | [binding expr]
 ```
 
 ## Examples
 
-```clojure 
+```clojure
 [[:from :Customer]
  [:select :firstname :lastname [:fullname [str :firstname " " :lastname]]]]
  ```

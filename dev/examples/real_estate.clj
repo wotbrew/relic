@@ -49,13 +49,13 @@
     [:area-code [area-code :address]]
 
     [[:number-of-rooms]
-     [:$1
+     [rel/sel1
       [[:from RoomInfo]
        [:agg [:address] [:number-of-rooms count]]]
       {:address :address}]]
 
     [[:square-feet]
-     [:$1
+     [rel/sel1
       [[:from RoomInfo]
        [:agg [:address] [:square-feet [rel/sum :room-size]]]]
       {:address :address}]]]])

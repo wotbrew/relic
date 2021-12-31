@@ -127,13 +127,29 @@
     #?(:clj  (clojure.lang.Compiler/demunge (if show-ns (str ns "/" f) f))
        :cljs (if (empty? f) "fn" (demunge (if show-ns (str ns "/" f) f))))))
 
-(defn- safe-print-expr [expr]
+;; not going to use keywords as I do not want
+;; exfiltration to be possible using edn user input
+(deftype SubSelectFirst [])
+(deftype SubSelect [])
+(deftype Env [])
+
+(defonce sub-select-first (->SubSelectFirst))
+(defonce sub-select (->SubSelect))
+(defonce env (->Env))
+
+(defn- safe-expr-str [expr]
   (cond
     (fn? expr) (demunge-expr expr)
 
     (keyword? expr) expr
 
-    (vector? expr) (with-out-str (print (mapv safe-print-expr expr)))
+    (vector? expr) (with-out-str (print (mapv safe-expr-str expr)))
+
+    (identical? sub-select-first expr) "sel"
+
+    (identical? sub-select expr) "sel1"
+
+    (identical? env expr) "env"
 
     :else (str "(" (type expr) ")")))
 
@@ -145,16 +161,14 @@
       (f row)
       #?(:clj
          (catch NullPointerException e
-           (raise (str "Null pointer exception thrown by relic expression, consider using " (safe-print-expr (into [:?] expr)))
+           (raise (str "Null pointer exception thrown by relic expression, consider using " (safe-expr-str (into [:?] expr)))
                   {:expr expr} e)))
       (catch #?(:clj Throwable :cljs js/Error) e
-        (raise (str "Exception thrown by relic expression " (safe-print-expr expr)) {:expr expr} e)))))
+        (raise (str "Exception thrown by relic expression " (safe-expr-str expr)) {:expr expr} e)))))
 
 (defn- to-function [f]
   (cond
     (fn? f) f
-    #?@(:clj [(qualified-symbol? f) @(requiring-resolve f)])
-    #?@(:clj [(symbol? f) @(resolve f)])
     (keyword? f) f
     :else (raise "Expected a function in expression prefix position")))
 
@@ -177,35 +191,17 @@
 
     (vector? expr)
     (let [[f & args] expr]
-      (case f
-        :and (apply every-pred (map row-fn args))
-        :or (apply some-fn (map row-fn args))
-        :not (unsafe-row-fn-call not args)
-        :if (let [[c t e] (map row-fn args)]
-              (if e
-                (fn [row]
-                  (if (c row)
-                    (t row)
-                    (e row)))
-                (fn [row]
-                  (when (c row)
-                    (t row)))))
-
-        :com.wotbrew.relic/env
+      (cond
+        ;; unsafe ops are matched against sentinel vals
+        ;; this avoids exfiltration via injection attack using
+        ;; edn data
+        (identical? env f)
         (let [[k not-found] args]
           (track-env-dep k)
           (fn [row]
             (-> row ::env (get k not-found))))
 
-        :com.wotbrew.relic/get
-        (let [[k not-found] args]
-          (fn [row] (row k not-found)))
-
-        (:com.wotbrew.relic/esc :_)
-        (let [[v] args]
-          (constantly v))
-
-        (:com.wotbrew.relic/join-coll :$)
+        (identical? sub-select f)
         (let [[relvar clause] args
               relvar (to-relvar relvar)
               k [relvar clause]]
@@ -213,28 +209,47 @@
           (fn [row]
             (row k)))
 
-        (:com.wotbrew.relic/join-first :$1)
+        (identical? sub-select-first f)
         (let [[relvar clause] args
               relvar (to-relvar relvar)
               k [relvar clause]]
           (add-implicit-join relvar clause)
           (fn [row] (first (row k))))
 
-        (:com.wotbrew.relic/nil-safe :?)
-        (let [[f & args] args]
-          (add-expr-ex-handler (nil-safe-row-fn-call (to-function f) args) expr))
+        :else
+        (case f
+          :and (apply every-pred (map row-fn args))
+          :or (apply some-fn (map row-fn args))
+          :not (unsafe-row-fn-call not args)
+          :if (let [[c t e] (map row-fn args)]
+                (if e
+                  (fn [row]
+                    (if (c row)
+                      (t row)
+                      (e row)))
+                  (fn [row]
+                    (when (c row)
+                      (t row)))))
 
-        (:com.wotbrew.relic/unsafe :!)
-        (let [[f & args] args]
-          (unsafe-row-fn-call (to-function f) args))
+          :com.wotbrew.relic/get
+          (let [[k not-found] args]
+            (fn [row] (row k not-found)))
 
-        (add-expr-ex-handler (unsafe-row-fn-call (to-function f) args) expr)))
+          (:com.wotbrew.relic/esc :_)
+          (let [[v] args]
+            (constantly v))
+
+          (:com.wotbrew.relic/nil-safe :?)
+          (let [[f & args] args]
+            (add-expr-ex-handler (nil-safe-row-fn-call (to-function f) args) expr))
+
+          (:com.wotbrew.relic/unsafe :!)
+          (let [[f & args] args]
+            (unsafe-row-fn-call (to-function f) args))
+
+          (add-expr-ex-handler (unsafe-row-fn-call (to-function f) args) expr))))
 
     (keyword? expr) expr
-
-    #?@(:clj [(qualified-symbol? expr) @(requiring-resolve expr)])
-
-    #?@(:clj [(symbol? expr) @(resolve expr)])
 
     (fn? expr) expr
 

@@ -33,22 +33,22 @@ See [expression reference](expr.md) for more information on expressions.
    [:agg [:customer-id] [:total-spend [rel/sum :total]]]])
 ```
 
-Sub queries with `:$1` and `:$`
+Sub queries with `rel/sel1` and `rel/sel`
 
 ```clojure 
 
-;; $1 to sub select another row, i.e an implicit left-join.
+;; rel/sel1 to sub select another row, i.e an implicit left-join.
 (def CustomerStats
   [[:from :Customer]
-   [:extend [[:total-spend] [:$1 TotalSpend {:customer-id :customer-id}]]]])
+   [:extend [[:total-spend] [rel/sel1 TotalSpend {:customer-id :customer-id}]]]])
 
 ;; would result in a relation something like:
 #{{:customer 42, :total-spend 340.0M}}
 
-;; $1 to bind rows from another query to a column
+;; rel/sel to bind rows from another query to a column
 (def Order
   [[:from :Order]
-   [:extend [:items [:$ OrderItem {:order-id :order-id}]]]])
+   [:extend [:items [rel/sel OrderItem {:order-id :order-id}]]]])
 
 ;; would result in a relation something like:
 #{{:customer-id 42,

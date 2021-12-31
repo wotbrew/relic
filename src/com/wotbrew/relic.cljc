@@ -479,3 +479,45 @@
   "Given a relic database map, removes any relic meta data."
   [db]
   (vary-meta db (comp not-empty dissoc) ::dataflow/graph))
+
+;; --
+;; relic expr sentinels
+;; these sentinels can be used for unsafe query expansions such as
+;; sub-select and env
+;; the reason these use sentinels rather than say keywords is that
+;; it would be possible to exfiltrate data using untrusted edn if we allowed
+;; keywords.
+
+(def sel1
+  "sub-select-first relic expr function.
+
+  You can use this in the prefix position to do a sub select and bind the first row.
+
+  e.g
+
+  [rel/sel1 :OrderItem {:o/order-id :i/order-id}]
+
+  See also: sel"
+  dataflow/sub-select-first)
+
+(def sel
+  "sub-select relic expr function.
+
+  You can use this in the prefix position to do a sub select and bind all rows as a set.
+
+  e.g
+
+  [rel/sel :OrderItem {:o/order-id :i/order-id}]
+
+  See also: sel1"
+  dataflow/sub-select)
+
+(def env
+  "env get relic expr function.
+
+  You can use this in the prefix position (of relic expressions) to bind the value of an environment param.
+
+  e.g
+
+  [rel/env :now]"
+  dataflow/env)

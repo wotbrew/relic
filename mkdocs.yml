@@ -71,6 +71,7 @@ nav:
     - :req: req.md
     - :unique: unique.md
     - :constrain: constrain.md
+  - Security: security.md
 theme:
   name: material
   icon:

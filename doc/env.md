@@ -11,8 +11,8 @@ make working with things like time a bit easier.
 ;; replaces the environment with the given map, returning a new db
 (rel/with-env db {:now (System/currentTimeMillis)})
 
-;; you can reference the environment in queries with the ::rel/env special expression form
-[[:select [:seconds [/ [::rel/env :now] 1000]]]
+;; you can reference the environment in queries with the Frel/env special expression form
+[[:select [:seconds [/ [rel/env :now] 1000]]]
 
 ;; get the env map
 (rel/get-env db)
@@ -34,7 +34,7 @@ local times, projections, datatypes etc that your queries can use.
 
 (def Time 
  [[:select 
-   [:time/epoch-ms [::rel/env :now]]
+   [:time/epoch-ms [rel/env :now]]
    [:time/instant [instant :time/epoch-ms]]
    [:time/london [local-date-time :time/instant "Europe/London"]]])
 ```

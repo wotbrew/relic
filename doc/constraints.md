@@ -13,7 +13,7 @@ is the obligatory `order can have at most 10 items if its associated customer is
 ```clojure 
 [[:from Order] 
  [:join Customer {:customer-id :customer-id}]
- [:where [= "bob" :firstname] [tuesday? [::rel/env :now]]]
+ [:where [= "bob" :firstname] [tuesday? [rel/env :now]]]
  [:check {:pred [<= [count :items] 10],
           :error [str "order can have at most 10 items if its associated customer is called bob and its tuesday, found: " [count :items]]}]]
 ```

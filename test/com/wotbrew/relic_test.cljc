@@ -436,8 +436,8 @@
 (deftest env-test
   (let [A [[:from :A]]
         A2 [[:from A]
-            [:extend [:b [str [::rel/env :b]]]]
-            [:where [any? [::rel/env :b]]]
+            [:extend [:b [str [rel/env :b]]]]
+            [:where [any? [rel/env :b]]]
             [:set]]]
 
     (is (= [{:a 1, :b ""}]
@@ -1077,6 +1077,38 @@
                     {:type "insert" :ts 2}]}]
     (is (= {:Event #{{:type "delete" :ts 1}
                      {:type "insert" :ts 2}}} (rel/transact {} st tx)))))
+
+;; sub-select.md
+
+(deftest sub-select-example-test
+  (let [q
+        [[:from :Order]
+         [:select :order-id [:items [rel/sel :OrderItem {:order-id :order-id}]]]]
+        st
+        {:Order #{{:order-id 0}}
+         :OrderItem #{{:order-id 0, :product "eggs"}, {:order-id 0, :product "bread"} {:order-id 1, :product "cheese"}}}
+        rs [{:order-id 0, :items #{{:order-id 0, :product "eggs"}, {:order-id 0, :product "bread"}}}]]
+    (is (= rs (rel/what-if {} q st)))))
+
+(deftest sub-select-no-clause-example-test
+  (let [q
+        [[:from :Order]
+         [:select :order-id [:items [rel/sel :OrderItem]]]]
+        st
+        {:Order #{{:order-id 0}}
+         :OrderItem #{{:order-id 0, :product "eggs"}, {:order-id 0, :product "bread"} {:order-id 1, :product "cheese"}}}
+        rs [{:order-id 0, :items #{{:order-id 0, :product "eggs"}, {:order-id 0, :product "bread"}, {:order-id 1, :product "cheese"}}}]]
+    (is (= rs (rel/what-if {} q st)))))
+
+(deftest sub-select-first-example-test
+  (let [q
+        [[:from :Order]
+         [:select [:egg [rel/sel1 [[:from :OrderItem] [:where [= :product "eggs"]]] {:order-id :order-id}]]]]
+        st
+        {:Order #{{:order-id 0}}
+         :OrderItem #{{:order-id 0, :product "eggs"}, {:order-id 0, :product "bread"} {:order-id 1, :product "cheese"}}}
+        rs [{:egg {:order-id 0, :product "eggs"}}]]
+    (is (= rs (rel/what-if {} q st)))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

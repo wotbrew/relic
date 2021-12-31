@@ -31,10 +31,6 @@ Clojure functions are fully supported by relic, and it is a major design goal to
 
 [[:from :A] [:where my-pred?]]
 
-;; in clojure you can use symbols if you want.
-
-[[:from :A] [:where `my-pred?]]
-
 ;; same rules apply to computing columns
 
 (defn compute-bar [{:keys [foo]}] (inc foo))
@@ -87,10 +83,10 @@ The goal is to avoid quote/unquote template shenanigans, and help make programmi
 [[:from :A] [:where [= [:_ :bar] :foo]]]
 
 ;; you can reference the env (see env.md)
-[[:from :A] [:where [= :foo [::rel/env :foo]]]]
+[[:from :A] [:where [= :foo [rel/env :foo]]]]
 
-;; you can issue sub queries with :$1 (first row) and :$ (all rows) (see sub-queries.md)
-[[:from :A] [:where [:$1 :B {:a-id :a-id}]]]
+;; you can issue sub queries with rel/sel1 (first row) and rel/sel (all rows) (see sub-queries.md)
+[[:from :A] [:where [rel/sel1 :B {:a-id :a-id}]]]
 
 ;; nil safe calls with :?
 [[:from :A] [:where [:? str/includes? :foo :bar]]]

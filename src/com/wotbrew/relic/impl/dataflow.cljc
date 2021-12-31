@@ -1180,9 +1180,10 @@
        :combiner (fn [a b] (reduce (fn [m combiner-fn] (combiner-fn m a b)) {} combiner-fns))})))
 
 (defn- realise-collection [maybe-eduction]
-  (if (coll? maybe-eduction)
-    maybe-eduction
-    (vec maybe-eduction)))
+  (cond
+    (nil? maybe-eduction) nil
+    (coll? maybe-eduction) maybe-eduction
+    :else (vec maybe-eduction)))
 
 (defn generic-agg [graph self left cols aggs]
   (let [key-fn (project-fn cols)
@@ -1575,10 +1576,12 @@
               (let [dependents (sort-dependents dependents)
                     fns (mapv (comp :linked graph) dependents)]
                 (fn flow-fan-out [db inserted deleted]
-                  (reduce
-                    (fn flow-step [db f] (f db inserted deleted))
-                    db
-                    fns)))))
+                  (let [inserted (realise-collection inserted)
+                        deleted (realise-collection deleted)]
+                    (reduce
+                      (fn flow-step [db f] (f db inserted deleted))
+                      db
+                      fns))))))
           (build-fn [graph edge id]
             (let [{:keys [dependents
                           flow]
@@ -1618,10 +1621,12 @@
                 (let [dependents (sort-dependents dependents)
                       fns (mapv (comp #(get % dep) :init graph) dependents)]
                   (fn flow-fan-out [db inserted deleted]
-                    (reduce
-                      (fn flow-step [db f] (f db inserted deleted))
-                      db
-                      fns)))))
+                    (let [inserted (realise-collection inserted)
+                          deleted (realise-collection deleted)]
+                      (reduce
+                        (fn flow-step [db f] (f db inserted deleted))
+                        db
+                        fns))))))
             (dirty? [graph id]
               (let [generation (:generation (graph id))]
                 (cond

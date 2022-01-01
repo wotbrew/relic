@@ -488,7 +488,7 @@
   [graph self left right]
   (let [[mgetl] (mem left)
         [mgetr] (mem right)]
-    {:deps [left right]
+    {:deps (if (seq left) [left right] [right])
      :flow (flow left (fn [db inserted deleted forward]
                         (let [ridx (mgetr db #{})
                               deleted (eduction (remove ridx) deleted)]

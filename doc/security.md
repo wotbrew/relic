@@ -18,7 +18,8 @@ Relic allows:
 
 Out of these column keywords are the one to be worried about, although they do not provide
 opportunities for RCE, you should be wary of expressions like this `[:extend [:my-col untrusted]]` as they could be used to exfiltrate any data on the row.
-Now I do not think in practice users will do this
+
+I suspect in practice this is very unlikely, but see [escaping](#escaping) if you have this problem.
 
 I would advise in general to not allow user input to create arbitrary keywords as regardless of vectors against relic, it could be used
 to pollute the keyword cache and cause a DOS by increasing memory pressure / weak reference collection time.

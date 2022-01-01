@@ -602,6 +602,9 @@
    (let [hash (conj left (into [:hash] exprs))]
      [hash (index-seek-from-exprs row-exprs)])))
 
+(defn- boost [relvar score]
+  {(id relvar) score})
+
 (defn join
   "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).
 
@@ -610,6 +613,7 @@
   (let [[mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [right left]
+     :boost (boost right 1)
      :flow (flow left (fn [db inserted deleted forward]
                         (let [ridx (mgetr db {})
                               xf (fn [rf]
@@ -644,6 +648,7 @@
         [mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [right left]
+     :boost (boost right 1)
      :flow (flow
              left (fn [db inserted deleted forward]
                     (let [idx (mget db {})
@@ -1407,12 +1412,12 @@
         :union
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj (require-set left) (mapv (fn [r] [union (require-set (to-relvar r))]) relvars)))
+          (reduce conj left (mapv (fn [r] [union (require-set (to-relvar r))]) relvars)))
 
         :difference
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj (require-set left) (mapv (fn [r] [difference (require-set (to-relvar r))]) relvars)))
+          (reduce conj left (mapv (fn [r] [difference (require-set (to-relvar r))]) relvars)))
 
         :table
         (let [[_ table-key] stmt]

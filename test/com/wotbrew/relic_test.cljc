@@ -593,7 +593,7 @@
             [:a [count [even? :a]]]
             [:b count]]]
         db (rel/materialize {} B)
-        db (rel/transact db {A [{:a 1} {:a 2}, {:a 3} {:a 4}]})]
+        db (rel/transact db {A [{:a 1} {:a 2} {:a 3} {:a 4}]})]
 
     (is (= [{:a 2, :b 4}] (rel/q db B)))
     (is (= [{:a 2, :b 3}] (rel/what-if db B [:delete-exact :A {:a 1}])))

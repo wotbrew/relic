@@ -107,8 +107,9 @@
    [:where
     [>= [compare :o_orderdate #inst "1993-07-01"] 0]
     [< [compare :o_orderdate #inst "1993-10-01"] 0]
-    [:$1 [[:from :lineitem]
-          [:where [< [compare :l_commitdate :l_receiptdate] 0]]]
+    [rel/sel1
+     [[:from :lineitem]
+      [:where [< [compare :l_commitdate :l_receiptdate] 0]]]
      {:o_orderkey :l_orderkey}]]
    [:agg [:o_orderpriority] [:order_count count]]])
 

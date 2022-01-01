@@ -59,6 +59,12 @@
   ([msg map] (throw (ex-info msg map)))
   ([msg map cause] (throw (ex-info msg map cause))))
 
+(defn- realise-coll [maybe-eduction]
+  (cond
+    (nil? maybe-eduction) nil
+    (coll? maybe-eduction) maybe-eduction
+    :else (vec maybe-eduction)))
+
 (def ^:dynamic *env-deps* nil)
 (defn- track-env-dep [k]
   (if *env-deps*
@@ -448,18 +454,19 @@
   (let [[mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
-                        (let [adds (mutable-set)
-                              dels (mutable-set)
-                              idx (mget db {})
+                        (let [idx (mget db {})
+                              adds (mutable-list)
+                              dels (mutable-list)
                               nidx (reduce (fn [idx row]
                                              (let [new-row (f row)
                                                    s (idx new-row #{})
                                                    ns (disj s row)]
                                                (cond
                                                  (same-size? s ns) idx
-                                                 (empty? ns) (do (add-to-mutable-set dels new-row)
+                                                 (empty? ns) (do (add-to-mutable-list dels new-row)
                                                                  (dissoc idx new-row))
                                                  :else (assoc idx new-row ns)))) idx deleted)
+
                               nidx (reduce (fn [idx row]
                                              (let [new-row (f row)
                                                    s (idx new-row #{})
@@ -467,11 +474,11 @@
                                                (if (same-size? s ns)
                                                  idx
                                                  (let [idx (assoc idx new-row ns)]
-                                                   (add-to-mutable-set adds new-row)
+                                                   (add-to-mutable-list adds new-row)
                                                    idx)))) nidx inserted)
                               db (mset db nidx)
-                              adds (iterable-mut-set adds)
-                              dels (iterable-mut-set dels)]
+                              adds (iterable-mut-list adds)
+                              dels (iterable-mut-list dels)]
                           (forward db adds dels))))
      :provide (fn [db] (some-> (mget db) not-empty keys))}))
 
@@ -731,6 +738,8 @@
                         (let [os (mget db)
                               s (or os #{})
                               s (transient s)
+                              deleted (realise-coll deleted)
+                              inserted (realise-coll inserted)
                               s (reduce disj! s deleted)
                               s (reduce conj! s inserted)
                               ns (persistent! s)
@@ -756,6 +765,8 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db)
+                              inserted (realise-coll inserted)
+                              deleted (realise-coll deleted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -772,6 +783,8 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db sm)
+                              deleted (realise-coll deleted)
+                              inserted (realise-coll inserted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -785,7 +798,7 @@
     1 (vals m)
     2 (eduction (mapcat vals) (vals m))
     (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
-      (eduction comp xf (vals m)))))
+      (eduction xf (vals m)))))
 
 (defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
@@ -800,6 +813,8 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db)
+                              deleted (realise-coll deleted)
+                              inserted (realise-coll inserted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -882,7 +897,7 @@
           (conj left (into [:without-unsafe] without-cols)))
         (reduce conj relvar remainder)))))
 
-(defn- join-merge [{:keys [left, right]}] (overwrite-keys left right))
+(defn- join-merge [{:keys [left, right]}] (conj left right))
 
 (defn- add-join [left right clause graph]
   (add-implicit-joins
@@ -1184,12 +1199,6 @@
        :reducer (fn [rows] (reduce (fn [m reducer-fn] (reducer-fn m rows)) {} reducer-fns))
        :combiner (fn [a b] (reduce (fn [m combiner-fn] (combiner-fn m a b)) {} combiner-fns))})))
 
-(defn- realise-collection [maybe-eduction]
-  (cond
-    (nil? maybe-eduction) nil
-    (coll? maybe-eduction) maybe-eduction
-    :else (vec maybe-eduction)))
-
 (defn generic-agg [graph self left cols aggs]
   (let [key-fn (project-fn cols)
         key-xf (map key-fn)
@@ -1204,8 +1213,8 @@
              left
              (fn [db inserted deleted forward]
                (let [idx (mget db empty-idx)
-                     deleted (realise-collection deleted)
-                     inserted (realise-collection inserted)
+                     deleted (realise-coll deleted)
+                     inserted (realise-coll inserted)
                      ks (into #{} key-xf deleted)
                      ks (into ks key-xf inserted)
                      nidx (reduce gai/unindex-row idx deleted)
@@ -1581,8 +1590,8 @@
               (let [dependents (sort-dependents dependents)
                     fns (mapv (comp :linked graph) dependents)]
                 (fn flow-fan-out [db inserted deleted]
-                  (let [inserted (realise-collection inserted)
-                        deleted (realise-collection deleted)]
+                  (let [inserted (realise-coll inserted)
+                        deleted (realise-coll deleted)]
                     (reduce
                       (fn flow-step [db f] (f db inserted deleted))
                       db
@@ -1626,8 +1635,8 @@
                 (let [dependents (sort-dependents dependents)
                       fns (mapv (comp #(get % dep) :init graph) dependents)]
                   (fn flow-fan-out [db inserted deleted]
-                    (let [inserted (realise-collection inserted)
-                          deleted (realise-collection deleted)]
+                    (let [inserted (realise-coll inserted)
+                          deleted (realise-coll deleted)]
                       (reduce
                         (fn flow-step [db f] (f db inserted deleted))
                         db

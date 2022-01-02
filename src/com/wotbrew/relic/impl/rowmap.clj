@@ -1,5 +1,5 @@
 (ns com.wotbrew.relic.impl.rowmap
-  (:import (clojure.lang RT IPersistentCollection Seqable IPersistentMap IPersistentVector IKVReduce Associative ILookup Util Murmur3 IFn MapEntry IHashEq)
+  (:import (clojure.lang IPersistentCollection Seqable IPersistentMap IPersistentVector IKVReduce Associative ILookup Util Murmur3 IFn MapEntry IHashEq MapEquivalence)
            (java.util Map$Entry Map)))
 
 (defprotocol Unwrap
@@ -25,6 +25,7 @@
   (toString [this] (.toString m))
   (equals [this o] (.equals m o))
   (hashCode [this] (.hashCode m))
+  MapEquivalence
   IPersistentCollection
   (count [this] (.count ^IPersistentCollection m))
   (cons [this o]

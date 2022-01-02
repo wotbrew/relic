@@ -246,13 +246,13 @@
               rsort (sort-by sort-fn (fn [a b] (compare b a)) rs)
               :else rs)
 
-         xf (if xf
+         #_#_ xf (if xf
               (comp (map rm/unwrap) xf)
               (map rm/unwrap))
 
          rs (if into-coll
-              (into into-coll xf rs)
-              (sequence xf rs))]
+              (if xf (into into-coll xf rs) (into into-coll rs))
+              (if xf (sequence xf rs) (seq rs)))]
      rs)))
 
 (defn what-if

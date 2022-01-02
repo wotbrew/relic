@@ -902,7 +902,7 @@
           (conj left (into [:without-unsafe] without-cols)))
         (reduce conj relvar remainder)))))
 
-(defn- join-merge [{:keys [left, right]}] (conj left right))
+(defn- join-merge [{:keys [left, right]}] (conj (rm/from-clj-map left) right))
 
 (defn- add-join [left right clause graph]
   (add-implicit-joins

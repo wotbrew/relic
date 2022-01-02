@@ -12,7 +12,8 @@
   - track changes with `track-transact`, `watch` and `unwatch`.
 
   I like to alias :as rel. @wotbrew"
-  (:require [com.wotbrew.relic.impl.dataflow :as dataflow])
+  (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
+            [com.wotbrew.relic.impl.rowmap :as rm])
   (:refer-clojure :exclude [min max]))
 
 (defn transact
@@ -245,10 +246,13 @@
               rsort (sort-by sort-fn (fn [a b] (compare b a)) rs)
               :else rs)
 
-         rs (cond
-              into-coll (if xf (into into-coll xf rs) (into into-coll rs))
-              xf (sequence xf rs)
-              :else (seq rs))]
+         xf (if xf
+              (comp (map rm/unwrap) xf)
+              (map rm/unwrap))
+
+         rs (if into-coll
+              (into into-coll xf rs)
+              (sequence xf rs))]
      rs)))
 
 (defn what-if

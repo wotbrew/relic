@@ -2,6 +2,7 @@
   "Core dataflow implementation - the 'innards'. All functions in this namespace
   should be considered private."
   (:require [com.wotbrew.relic.impl.generic-agg-index :as gai]
+            [com.wotbrew.relic.impl.rowmap :as rm]
             [clojure.set :as set]
             [clojure.string :as str]))
 
@@ -444,6 +445,8 @@
 
 (defn- same-size? [coll1 coll2] (= (count coll1) (count coll2)))
 
+(defrecord Joined [left right])
+
 (defn transform
   "Returns a transform node, applying (f) to each row. As (f) may narrow rows such that n input rows
   = 1 output row, a deduping index is used that keeps track of all inputs, a row is only deletable if all
@@ -451,7 +454,11 @@
 
   It is important therefore to use transform also on any narrowing, such as join, expand and so on."
   [graph self left f]
-  (let [[mget mset] (mem self)]
+  (let [[mget mset] (mem self)
+        f (fn [row]
+            (if (instance? Joined row)
+              (f row)
+              (f (rm/from-clj-map row))))]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [idx (mget db {})
@@ -570,8 +577,6 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (forward db (eduction xf inserted) (eduction xf deleted))))}))
-
-(defrecord Joined [left right])
 
 (defn expand
   "f is a fn of row to a collection of rows, emitting (Joined parent child) for each child in coll."
@@ -1710,7 +1715,7 @@
 (defn- sg [db graph] (vary-meta db assoc ::graph graph))
 
 (defn qraw
-  "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
+  "A version of query who's return type is undefined, just some seqable/reducable collection of row maps."
   [db query]
   (if (keyword? query)
     (query db)

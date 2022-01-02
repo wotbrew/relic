@@ -1,7 +1,8 @@
 (ns com.wotbrew.relic-test
   (:require [clojure.test :refer [deftest is are]]
             [com.wotbrew.relic :as rel]
-            [com.wotbrew.relic.impl.dataflow :as dataflow]))
+            [com.wotbrew.relic.impl.dataflow :as dataflow]
+            [com.wotbrew.relic.impl.rowmap :as rm]))
 
 (deftest basics-test
   (let [a [[:from :A]]
@@ -374,7 +375,7 @@
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2 A1)]
    (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) :results)))
-   (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
+   (is (= [{:a 43}] (-> db dataflow/gg (dataflow/get-node A2) :results (->> (map rm/unwrap)))))
    (is (some? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
    (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) :results)))
    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
@@ -408,6 +409,10 @@
         db (rel/unwatch db A1)]
     (is (nil? (-> db dataflow/gg (dataflow/get-node A1))))))
 
+(defn- unwrap-coll [coll]
+  (when coll
+    (into (empty coll) (map rm/unwrap) coll)))
+
 (deftest unwatch-keeps-explicitly-mat-test
   (let [A [[:from :A]]
         A1 [[:from :A] [:where [= :a 42]]]
@@ -418,7 +423,7 @@
         db (rel/unwatch db A2)]
 
     (is (some? (-> db dataflow/gg (dataflow/get-node A1))))
-    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))))
+    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results unwrap-coll)))))
 
 (deftest track-transients-are-removed-test
   (is (= {:db {:A #{}}

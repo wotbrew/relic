@@ -1130,7 +1130,10 @@
     (is (= (reverse aseq) (rel/q db :A {:rsort [:a]})))
 
     (is (= aseq (rel/q db [[:from :A] [:where true]] {:sort [:a]})))
-    (is (= (reverse aseq) (rel/q db [[:from :A] [:where true]] {:rsort [:a]})))))
+    (is (= (reverse aseq) (rel/q db [[:from :A] [:where true]] {:rsort [:a]})))
+    (is (= (reverse aseq) (rel/q db :A {:sort [[- :a]]})))
+    (is (= (sort-by (juxt #(mod (:a %) 10) :a) aseq) (rel/q db :A {:sort [[mod :a 10] :a]})))
+    (is (= (reverse (sort-by (juxt #(mod (:a %) 10) :a) aseq)) (rel/q db :A {:rsort [[mod :a 10] :a]})))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

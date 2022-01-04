@@ -840,8 +840,7 @@
         db (rel/transact db {:A [{:a 42}]})
         db (rel/materialize db [[:from :A] [:select :a]])
         db (rel/transact db {:A [{:a 43}]})]
-    (def d (dataflow/gg db))
-    (is (= [{:a 42}, {:a 43}] (rel/q db [[:from :A] [:select :a]] {:sort :a})))))
+    (is (= [{:a 42}, {:a 43}] (rel/q db [[:from :A] [:select :a]] {:sort [:a]})))))
 
 (deftest select-dual-test
   (is (= [{}] (rel/q {} [[:select]])))

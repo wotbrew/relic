@@ -315,7 +315,7 @@
       (fn [idx _] (when idx (idx nil))))))
 
 (defn- index-seek-fn [index]
-  (let [[& exprs] (r/head-stmt index)]
+  (let [[& exprs] (r/head index)]
     (index-seek-from-exprs exprs)))
 
 (defn find-hash-index
@@ -604,11 +604,11 @@
           without-cols (into without-cols joins)]
 
       (if (or (seq joins) env-join)
-        (let [left (r/left-relvar relvar)
-              stmt (r/head-stmt relvar)
+        (let [left (r/left relvar)
+              head (r/head relvar)
               left (if env-join (conj left env-join) left)
               left (reduce conj left join-statements)
-              left (conj left stmt)
+              left (conj left head)
               left (reduce conj left remainder)]
           (conj left (into [:without-unsafe] without-cols)))
         (reduce conj relvar remainder)))))
@@ -979,7 +979,7 @@
         [iget] (mem index)]
     (when-not (graph (id index))
       (u/raise ":lookup used but index is not materialized" {:index index}))
-    (when-not (= (count path) (dec (count (r/head-stmt index))))
+    (when-not (= (count path) (dec (count (r/head index))))
       (u/raise ":lookup path length must currently match indexed expressions"))
     {:provide (fn [db]
                 (when-some [i (iget db)]
@@ -992,7 +992,7 @@
   [relvar]
   (if (empty? relvar)
     relvar
-    (case (r/operator (r/head-stmt relvar))
+    (case (r/operator (r/head relvar))
       :set relvar
       (if (r/unwrap-table-key relvar)
         relvar
@@ -1005,33 +1005,33 @@
 
 (defn to-dataflow* [graph relvar self]
   (let [relvar (r/to-relvar relvar)
-        left (r/left-relvar relvar)
-        stmt (r/head-stmt relvar)
-        operator (r/operator stmt)]
+        left (r/left relvar)
+        head (r/head relvar)
+        operator (r/operator head)]
     (if (fn? operator)
-      (let [[op & args] stmt] (apply op graph self left args))
+      (let [[op & args] head] (apply op graph self left args))
       (case operator
         :from
-        (let [[_ relvar] stmt
+        (let [[_ relvar] head
               relvar (if (keyword? relvar)
                        [[:table relvar]]
                        relvar)]
           (conj relvar [pass]))
 
         :where
-        (let [[_ & exprs] stmt]
+        (let [[_ & exprs] head]
           (add-implicit-joins #(conj left [where (where-pred exprs)])))
 
         :without
-        (let [[_ & cols] stmt]
+        (let [[_ & cols] head]
           (conj left [transform (without-fn cols)]))
 
         :without-unsafe
-        (let [[_ & cols] stmt]
+        (let [[_ & cols] head]
           (conj left [transform-unsafe (without-fn cols)]))
 
         :join-as-coll
-        (let [[_ right clause binding {:keys [unsafe]}] stmt
+        (let [[_ right clause binding {:keys [unsafe]}] head
               right (r/to-relvar right)]
           (add-implicit-joins
             (fn []
@@ -1044,27 +1044,27 @@
                          (assoc left binding coll))])))))
 
         :join
-        (let [[_ & joins] stmt]
+        (let [[_ & joins] head]
           (reduce (fn [left [right clause]] (add-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :left-join
-        (let [[_ & joins] stmt]
+        (let [[_ & joins] head]
           (reduce (fn [left [right clause]] (add-left-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :extend
-        (let [[_ & extends] stmt]
+        (let [[_ & extends] head]
           (add-implicit-joins #(conj left [transform (extend-fn extends)])))
 
         :extend-unsafe
-        (let [[_ & extends] stmt]
+        (let [[_ & extends] head]
           (add-implicit-joins #(conj left [transform-unsafe (extend-fn extends)])))
 
         :expand
-        (let [[_ & expansions] stmt]
+        (let [[_ & expansions] head]
           (add-implicit-joins #(conj left [expand (expand-fn expansions)]) [transform join-merge]))
 
         :select
-        (let [[_ & selections] stmt
+        (let [[_ & selections] head
               left (relvar-or-dual left)
               cols (filterv keyword? selections)
               extensions (filterv vector? selections)
@@ -1075,7 +1075,7 @@
             (conj left [transform project])))
 
         :select-unsafe
-        (let [[_ & selections] stmt
+        (let [[_ & selections] head
               left (relvar-or-dual left)
               cols (filterv keyword? selections)
               extensions (filterv vector? selections)
@@ -1086,28 +1086,28 @@
             (conj left [transform-unsafe project])))
 
         :set
-        (let [[_] stmt]
+        (let [[_] head]
           (conj left [save-set]))
 
         :hash
-        (let [[_ & exprs] stmt]
+        (let [[_ & exprs] head]
           (add-implicit-joins #(conj left [save-hash (mapv e/row-fn exprs)])))
 
         :btree
-        (let [[_ & exprs] stmt]
+        (let [[_ & exprs] head]
           (add-implicit-joins #(conj left [save-btree (mapv e/row-fn exprs)])))
 
         :check
-        (let [[_ & checks] stmt
+        (let [[_ & checks] head
               left (require-set left)]
           (add-implicit-joins #(conj left [runf (check-fn left checks) identity])))
 
         :req
-        (let [[_ & cols] stmt]
+        (let [[_ & cols] head]
           (conj left (into [:check] (map #(req-col-check left %)) cols)))
 
         :fk
-        (let [[_ right clause opts] stmt]
+        (let [[_ right clause opts] head]
           (add-implicit-joins
             (fn []
               (let [references (r/to-relvar right)
@@ -1119,52 +1119,52 @@
                 (conj left [fk seekl right seekr clause origin references opts])))))
 
         :unique
-        (let [[_ & exprs] stmt]
+        (let [[_ & exprs] head]
           (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs)])))
 
         :constrain
-        (let [[_ & constraints] stmt]
+        (let [[_ & constraints] head]
           (reduce conj left constraints))
 
         :const
-        (let [[_ coll] stmt]
+        (let [[_ coll] head]
           [[provide (constantly coll)]])
 
         :intersection
-        (let [[_ & relvars] stmt]
+        (let [[_ & relvars] head]
           (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set (r/to-relvar r))]) relvars)))
 
         :union
-        (let [[_ & relvars] stmt
+        (let [[_ & relvars] head
               left (require-set left)]
           (reduce conj left (mapv (fn [r] [union (require-set (r/to-relvar r))]) relvars)))
 
         :difference
-        (let [[_ & relvars] stmt
+        (let [[_ & relvars] head
               left (require-set left)]
           (reduce conj left (mapv (fn [r] [difference (require-set (r/to-relvar r))]) relvars)))
 
         :table
-        (let [[_ table-key] stmt]
+        (let [[_ table-key] head]
           {:deps []
            :table table-key
            :flow {nil flow-pass}
            :provide (fn [db] (db table-key))})
 
         :agg
-        (let [[_ cols & aggs] stmt]
+        (let [[_ cols & aggs] head]
           (conj left [agg cols aggs]))
 
         :qualify
-        (let [[_ namespace] stmt]
+        (let [[_ namespace] head]
           (conj left [transform #(reduce-kv (fn [m k v] (assoc m (keyword namespace (name k)) v)) {} %)]))
 
         :rename
-        (let [[_ renames] stmt]
+        (let [[_ renames] head]
           (conj left [transform #(set/rename-keys % renames)]))
 
         :lookup
-        (let [[_ index & path] stmt]
+        (let [[_ index & path] head]
           [[lookup index path]])))))
 
 (defn to-dataflow [graph relvar]
@@ -1180,10 +1180,10 @@
        s
        (if-some [table (r/unwrap-table relvar)]
          (conj s table)
-         (let [stmt (r/head-stmt relvar)
-               op (r/operator stmt)]
+         (let [head (r/head relvar)
+               op (r/operator head)]
            (case op
-             :lookup (let [[_ i] stmt] (full-dependencies i))
+             :lookup (let [[_ i] head] (full-dependencies i))
              (let [{:keys [deps]} (to-dataflow {} relvar)]
                (reduce rf s deps)))))))
    #{} relvar))
@@ -1587,7 +1587,7 @@
         path-fns
         (reduce
           (fn [m unique]
-            (let [[_ & exprs] (r/head-stmt unique)
+            (let [[_ & exprs] (r/head unique)
                   path (if (seq exprs) (apply juxt (map e/row-fn exprs)) (constantly [nil]))]
               (assoc m unique path)))
           {}
@@ -1678,7 +1678,6 @@
     (let [db (reduce transact* db tx-coll)
           db (cascade db)]
 
-      ;; todo rollup errors?
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
         (when (seq rows)
           (u/raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))

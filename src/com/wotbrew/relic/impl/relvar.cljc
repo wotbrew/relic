@@ -7,20 +7,20 @@
 
 (defn operator [stmt] (nth stmt 0))
 
-(defn left-relvar [relvar] (when (peek relvar) (subvec relvar 0 (dec (count relvar)))))
+(defn left [relvar] (when (peek relvar) (subvec relvar 0 (dec (count relvar)))))
 
-(defn head-stmt [relvar] (peek relvar))
+(defn head [relvar] (peek relvar))
 
 (defn table-relvar?
   "True if the relvar is a table."
   [relvar]
   (case (count relvar)
-    1 (= :table (operator (head-stmt relvar)))
+    1 (= :table (operator (head relvar)))
     false))
 
 (defn unwrap-from [relvar]
-  (if (= :from (operator (head-stmt relvar)))
-    (let [[_ relvar] (head-stmt relvar)]
+  (if (= :from (operator (head relvar)))
+    (let [[_ relvar] (head relvar)]
       (unwrap-from (to-relvar relvar)))
     relvar))
 
@@ -34,9 +34,9 @@
         relvar))))
 
 (defn unwrap-table-key [relvar]
-  (let [[_ table-key] (some-> (unwrap-table relvar) head-stmt)]
+  (let [[_ table-key] (some-> (unwrap-table relvar) head)]
     table-key))
 
 (defn head-operator [relvar]
   (when (vector? relvar)
-    (some-> relvar head-stmt operator)))
+    (some-> relvar head operator)))

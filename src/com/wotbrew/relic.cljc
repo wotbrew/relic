@@ -201,7 +201,7 @@
    Sort with :sort / :rsort
 
    Pass either a relic expr (e.g a column keyword or function, or relic vector), or coll of expressions to sort by those expressions.
-   e.g :sort :a == sort by :a
+   e.g :sort [:a] == sort by :a
        :sort [:a :b] == sort by :a then :b
        :sort [[inc a]] == sort by (inc (:a row))
 
@@ -233,8 +233,7 @@
           into-coll :into} opts
 
          sort* (or sort rsort)
-         sort-exprs (if (keyword? sort*) [sort*] sort*)
-         sort-fns (mapv e/row-fn sort-exprs)
+         sort-fns (mapv e/row-fn sort*)
          rs (dataflow/qraw db query)
          sort-fn (when (seq sort-fns)
                    (if (= 1 (count sort-fns))

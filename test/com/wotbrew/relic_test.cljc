@@ -1123,5 +1123,14 @@
         rs [{:egg {:order-id 0, :product "eggs"}}]]
     (is (= rs (rel/what-if {} q st)))))
 
+(deftest q-sort-test
+  (let [aseq (map array-map (repeat :a) (range 100))
+        db (rel/transact {} {:A aseq})]
+    (is (= aseq (rel/q db :A {:sort [:a]})))
+    (is (= (reverse aseq) (rel/q db :A {:rsort [:a]})))
+
+    (is (= aseq (rel/q db [[:from :A] [:where true]] {:sort [:a]})))
+    (is (= (reverse aseq) (rel/q db [[:from :A] [:where true]] {:rsort [:a]})))))
+
 (comment
   (clojure.test/run-all-tests #"relic"))

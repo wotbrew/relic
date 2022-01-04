@@ -706,12 +706,12 @@
 
 (deftest overwrite-binding-test
   (let [db (rel/transact {} {:A [{:a 1}]})]
-    (is (= [{:b 1}] (rel/q db [[:from :A] [:extend [:a 42] [:a nil] [:b 1]]])))))
+    (is (= [{:a nil, :b 1}] (rel/q db [[:from :A] [:extend [:a 42] [:a nil] [:b 1]]])))))
 
 (deftest bind-all-test
   (let [db (rel/transact {} {:A [{:a {:a nil, :b 2, :c 3}}]})]
-    (is (= [{:b 2, :c 3}] (rel/q db [[:from :A] [:extend [::rel/* :a]]])))
-    (is (= [{:b 2, :c 3}] (rel/q db [[:from :A] [:extend [:* :a]]])))))
+    (is (= [{:a nil, :b 2, :c 3}] (rel/q db [[:from :A] [:extend [::rel/* :a]]])))
+    (is (= [{:a nil, :b 2, :c 3}] (rel/q db [[:from :A] [:extend [:* :a]]])))))
 
 (deftest from-as-table-alias-test
   (let [db (rel/transact {} {:A [{:a 1}]

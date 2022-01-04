@@ -16,25 +16,21 @@
 (defn without-fn [cols]
   #(apply dissoc % cols))
 
-(defn- overwrite-key
-  "If v is not nil, assoc into m, otherwise dissoc."
-  [m k v]
-  (if (nil? v)
-    (dissoc m k)
-    (assoc m k v)))
-
 (defn- overwrite-keys
-  ([m1 m2] (reduce-kv overwrite-key m1 m2))
-  ([m1 m2 ks]
-   (if (nil? m2)
-     m1
-     (reduce (fn [m k] (overwrite-key m k (m2 k))) m1 ks))))
+  [m1 m2 ks]
+  (if (nil? m2)
+    m1
+    (reduce (fn [m k] (let [v (m2 k ::not-found)]
+                        (if #?(:clj  (identical? ::not-found v)
+                               :cljs (keyword-identical? ::not-found v))
+                          m
+                          (assoc m k v)))) m1 ks)))
 
 (defn bind-fn [binding]
   (if (keyword? binding)
     (case binding
-      (:com.wotbrew.relic/* :*) overwrite-keys
-      #(overwrite-key %1 binding %2))
+      (:com.wotbrew.relic/* :*) conj
+      #(assoc %1 binding %2))
     #(overwrite-keys %1 %2 binding)))
 
 (defn extend-form-fn [form]

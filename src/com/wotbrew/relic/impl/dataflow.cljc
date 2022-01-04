@@ -2,85 +2,16 @@
   "Core dataflow implementation - the 'innards'. All functions in this namespace
   should be considered private."
   (:require [com.wotbrew.relic.impl.generic-agg-index :as gai]
+            [com.wotbrew.relic.impl.util :as u]
             [clojure.set :as set]
             [clojure.string :as str]))
 
-(defn- dissoc-in
-  "Recursive dissoc, like assoc-in.
-  Removes intermediates.
-  Not safe on records or vectors. Map only."
-  [m ks]
-  (if-let [[k & ks] (seq ks)]
-    (if (seq ks)
-      (let [v (dissoc-in (get m k) ks)]
-        (if (empty? v)
-          (dissoc m k)
-          (assoc m k v)))
-      (dissoc m k))
-    m))
-
-(defn- disjoc
-  "Convenience for remove the element x of the set at (m k) returning a new map.
-  If the resulting set is empty, drop k from the map."
-  [m k x]
-  (let [ns (disj (get m k) x)]
-    (if (empty? ns)
-      (dissoc m k)
-      (assoc m k ns))))
-
-(defn- disjoc-in
-  "Recursive disjoc for a set nested in a map given a path, see disjoc.
-  Removes intermediates. Not safe on records or vectors. Map only."
-  [m ks x]
-  (let [[k & ks] ks]
-    (if ks
-      (let [nm (disjoc-in (get m k) ks x)]
-        (if (empty? nm)
-          (dissoc m k)
-          (assoc m k nm)))
-      (let [ns (disj (get m k) x)]
-        (if (empty? ns)
-          (dissoc m k)
-          (assoc m k ns))))))
-
-(defn- update-in2
-  ([m empty ks f & args]
-   (let [up (fn up [m ks f args]
-              (let [[k & ks] ks]
-                (if ks
-                  (assoc m k (up (get m k empty) ks f args))
-                  (assoc m k (apply f (get m k) args)))))]
-     (up m ks f args))))
-
-(def ^:private set-conj (fnil conj #{}))
-
-(defn- raise
-  ([msg] (throw (ex-info msg {})))
-  ([msg map] (throw (ex-info msg map)))
-  ([msg map cause] (throw (ex-info msg map cause))))
-
-(defn- realise-coll [maybe-eduction]
-  (cond
-    (nil? maybe-eduction) nil
-    (coll? maybe-eduction) maybe-eduction
-    :else (vec maybe-eduction)))
-
 (def ^:dynamic *env-deps* nil)
+
 (defn- track-env-dep [k]
   (if *env-deps*
     (set! *env-deps* (conj *env-deps* k))
-    (raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
-
-;; cross platform mutable set
-(defn- mutable-set [] (volatile! (transient #{})))
-(defn- add-to-mutable-set [mset v] (vswap! mset conj! v) mset)
-(defn- del-from-mutable-set [mset v] (vswap! mset disj! v) mset)
-(defn- iterable-mut-set [mset] (when mset (persistent! @mset)))
-
-;; cross platform mutable list
-(defn- mutable-list [] (volatile! (transient [])))
-(defn- add-to-mutable-list [mlist v] (vswap! mlist conj! v) mlist)
-(defn- iterable-mut-list [mlist] (when mlist (persistent! @mlist)))
+    (u/raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
 
 (declare row-fn)
 
@@ -88,7 +19,7 @@
   (let [xfn (row-fn expr)]
     (fn [arg-buf row]
       (if-some [xval (xfn row)]
-        (add-to-mutable-list arg-buf xval)
+        (u/add-to-mutable-list arg-buf xval)
         (reduced nil)))))
 
 (defn- unsafe-row-fn-call [f args]
@@ -118,20 +49,12 @@
                 (f aval bval)))))
       (let [as-rf (mapv expr-mut-reduction args)]
         (fn [row]
-          (let [arg-buf (mutable-list)
+          (let [arg-buf (u/mutable-list)
                 arg-buf (reduce (fn [arg-buf f] (f arg-buf row)) arg-buf as-rf)]
             (when arg-buf
-              (apply f (iterable-mut-list arg-buf)))))))))
+              (apply f (u/iterable-mut-list arg-buf)))))))))
 
-(defn- demunge-expr [expr]
-  (let [expr-str (str #?(:clj expr :cljs (.-name expr)))
-        split-expr (str/split expr-str #"\$")
-        ns (str/join "." (butlast split-expr))
-        f (last split-expr)
-        show-ns (if (= #?(:clj "clojure.core" :cljs "cljs.core") ns) false true)
-        [f] (str/split (str f) #"\@")]
-    #?(:clj  (clojure.lang.Compiler/demunge (if show-ns (str ns "/" f) f))
-       :cljs (if (empty? f) "fn" (demunge (if show-ns (str ns "/" f) f))))))
+(defn- demunge-expr [expr] (u/best-effort-fn-name expr))
 
 ;; not going to use keywords as I do not want
 ;; exfiltration to be possible using edn user input
@@ -167,16 +90,16 @@
       (f row)
       #?(:clj
          (catch NullPointerException e
-           (raise (str "Null pointer exception thrown by relic expression, consider using " (safe-expr-str (into [:?] expr)))
+           (u/raise (str "Null pointer exception thrown by relic expression, consider using " (safe-expr-str (into [:?] expr)))
                   {:expr expr} e)))
       (catch #?(:clj Throwable :cljs js/Error) e
-        (raise (str "Exception thrown by relic expression " (safe-expr-str expr)) {:expr expr} e)))))
+        (u/raise (str "Exception thrown by relic expression " (safe-expr-str expr)) {:expr expr} e)))))
 
 (defn- to-function [f]
   (cond
     (fn? f) f
     (keyword? f) f
-    :else (raise "Expected a function in expression prefix position")))
+    :else (u/raise "Expected a function in expression prefix position")))
 
 (def ^:dynamic *implicit-joins* nil)
 
@@ -305,7 +228,7 @@
   (let [[binding] form]
     (if (keyword? binding)
       (case binding
-        (:* :com.wotbrew.relic/*) (raise "Cannot use ::rel/* in select expressions yet, use :extend.")
+        (:* :com.wotbrew.relic/*) (u/raise "Cannot use ::rel/* in select expressions yet, use :extend.")
         #{binding})
       (set binding))))
 
@@ -371,11 +294,11 @@
 (defn- bad-check [relvar check row]
   (if-some [m *check-violations*]
     (do
-      (set! *check-violations* (update m [relvar check] set-conj row))
+      (set! *check-violations* (update m [relvar check] u/set-conj row))
       row)
     (let [{:keys [error]} check
           error-fn (row-fn (or error "Check constraint violation"))]
-      (raise (error-fn row) {:check check, :row row, :relvar relvar}))))
+      (u/raise (error-fn row) {:check check, :row row, :relvar relvar}))))
 
 (defn- good-check [relvar check row]
   row)
@@ -426,7 +349,7 @@
   [relvar]
   (if-some [table-key (unwrap-table-key relvar)]
     [(fn mget ([db] (db table-key)) ([db default] (db table-key default)))
-     (fn mset [& _] (raise "Cannot call mset on table memory"))]
+     (fn mset [& _] (u/raise "Cannot call mset on table memory"))]
     (let [id (id relvar)]
       [(fn mget
          ([db] (:mem (db id)))
@@ -455,15 +378,15 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [idx (mget db {})
-                              adds (mutable-list)
-                              dels (mutable-list)
+                              adds (u/mutable-list)
+                              dels (u/mutable-list)
                               nidx (reduce (fn [idx row]
                                              (let [new-row (f row)
                                                    s (idx new-row #{})
                                                    ns (disj s row)]
                                                (cond
                                                  (same-size? s ns) idx
-                                                 (empty? ns) (do (add-to-mutable-list dels new-row)
+                                                 (empty? ns) (do (u/add-to-mutable-list dels new-row)
                                                                  (dissoc idx new-row))
                                                  :else (assoc idx new-row ns)))) idx deleted)
 
@@ -474,11 +397,11 @@
                                                (if (same-size? s ns)
                                                  idx
                                                  (let [idx (assoc idx new-row ns)]
-                                                   (add-to-mutable-list adds new-row)
+                                                   (u/add-to-mutable-list adds new-row)
                                                    idx)))) nidx inserted)
                               db (mset db nidx)
-                              adds (iterable-mut-list adds)
-                              dels (iterable-mut-list dels)]
+                              adds (u/iterable-mut-list adds)
+                              dels (u/iterable-mut-list dels)]
                           (forward db adds dels))))
      :provide (fn [db] (some-> (mget db) not-empty keys))}))
 
@@ -661,15 +584,15 @@
                     (let [idx (mget db {})
                           ridx (mgetr db {})
 
-                          adds (mutable-set)
-                          dels (mutable-set)
+                          adds (u/mutable-set)
+                          dels (u/mutable-set)
 
                           nidx
                           (reduce
                             (fn [idx row]
                               (let [j (idx row)]
                                 (if j
-                                  (do (add-to-mutable-set dels j)
+                                  (do (u/add-to-mutable-set dels j)
                                       (dissoc idx row))
                                   idx)))
                             idx
@@ -680,15 +603,15 @@
                             (fn [idx row]
                               (let [j (idx row)]
                                 (when j
-                                  (add-to-mutable-set dels j))
+                                  (u/add-to-mutable-set dels j))
                                 (let [nj (->JoinColl row (seekr ridx row))]
-                                  (add-to-mutable-set adds nj)
+                                  (u/add-to-mutable-set adds nj)
                                   (assoc idx row nj))))
                             nidx
                             inserted)
 
-                          adds (iterable-mut-set adds)
-                          dels (iterable-mut-set dels)
+                          adds (u/iterable-mut-set adds)
+                          dels (u/iterable-mut-set dels)
 
                           db (mset db nidx)]
                       (forward db adds dels)))
@@ -697,8 +620,8 @@
                            lidx (mgetl db {})
                            ridx (mgetr db {})
 
-                           adds (mutable-set)
-                           dels (mutable-set)
+                           adds (u/mutable-set)
+                           dels (u/mutable-set)
 
                            lrows (into #{} (comp cat (mapcat #(seekl lidx %))) [inserted deleted])
 
@@ -707,14 +630,14 @@
                              (fn [idx row]
                                (let [j (idx row)
                                      nj (->JoinColl row (seekr ridx row))]
-                                 (add-to-mutable-set dels j)
-                                 (add-to-mutable-set adds nj)
+                                 (u/add-to-mutable-set dels j)
+                                 (u/add-to-mutable-set adds nj)
                                  (assoc idx row nj)))
                              idx
                              lrows)
 
-                           adds (iterable-mut-set adds)
-                           dels (iterable-mut-set dels)
+                           adds (u/iterable-mut-set adds)
+                           dels (u/iterable-mut-set dels)
 
                            db (mset db nidx)]
                        (forward db adds dels))))
@@ -738,8 +661,8 @@
                         (let [os (mget db)
                               s (or os #{})
                               s (transient s)
-                              deleted (realise-coll deleted)
-                              inserted (realise-coll inserted)
+                              deleted (u/realise-coll deleted)
+                              inserted (u/realise-coll inserted)
                               s (reduce disj! s deleted)
                               s (reduce conj! s inserted)
                               ns (persistent! s)
@@ -759,14 +682,14 @@
 
 (defn save-hash [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        add-row (fn [m row] (update-in m (path row) set-conj row))
-        del-row (fn [m row] (disjoc-in m (path row) row))
+        add-row (fn [m row] (update-in m (path row) u/set-conj row))
+        del-row (fn [m row] (u/disjoc-in m (path row) row))
         [mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db)
-                              inserted (realise-coll inserted)
-                              deleted (realise-coll deleted)
+                              inserted (u/realise-coll inserted)
+                              deleted (u/realise-coll deleted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -777,14 +700,14 @@
 (defn save-btree [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
         sm (sorted-map)
-        add-row (fn [m row] (update-in2 m sm (path row) set-conj row))
-        del-row (fn [m row] (disjoc-in m (path row) row))
+        add-row (fn [m row] (u/update-in2 m sm (path row) u/set-conj row))
+        del-row (fn [m row] (u/disjoc-in m (path row) row))
         [mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db sm)
-                              deleted (realise-coll deleted)
-                              inserted (realise-coll inserted)
+                              deleted (u/realise-coll deleted)
+                              inserted (u/realise-coll inserted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -802,19 +725,19 @@
 
 (defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        raise-violation (fn [old-row new-row] (raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
+        raise-violation (fn [old-row new-row] (u/raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
         on-collision (fn on-collision [old-row new-row] (raise-violation old-row new-row))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
                                            :else (on-collision old-row row)))
         add-row (fn [m row] (update-in m (path row) replace-fn row))
-        del-row (fn [m row] (dissoc-in m (path row)))
+        del-row (fn [m row] (u/dissoc-in m (path row)))
         [mget mset] (mem self)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted forward]
                         (let [m (mget db)
-                              deleted (realise-coll deleted)
-                              inserted (realise-coll inserted)
+                              deleted (u/realise-coll deleted)
+                              inserted (u/realise-coll inserted)
                               m (reduce del-row m deleted)
                               m (reduce add-row m inserted)
                               db (mset db m)]
@@ -826,19 +749,19 @@
 
 (defn- bad-fk [left right clause row cascade]
   (when (and (= cascade :delete) *foreign-key-cascades*)
-    (set! *foreign-key-cascades* (update *foreign-key-cascades* [left right clause] set-conj (dissoc row ::fk))))
+    (set! *foreign-key-cascades* (update *foreign-key-cascades* [left right clause] u/set-conj (dissoc row ::fk))))
   (if *foreign-key-violations*
-    (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] set-conj (dissoc row ::fk)))
-    (raise "Foreign key violation" {:relvar left
+    (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] u/set-conj (dissoc row ::fk)))
+    (u/raise "Foreign key violation" {:relvar left
                                     :references right
                                     :clause clause
                                     :row (dissoc row ::fk)})))
 
 (defn- good-fk [left right clause row cascade]
   (when (and (= cascade :delete) *foreign-key-cascades*)
-    (set! *foreign-key-cascades* (disjoc *foreign-key-cascades* [left right clause] (dissoc row ::fk))))
+    (set! *foreign-key-cascades* (u/disjoc *foreign-key-cascades* [left right clause] (dissoc row ::fk))))
   (when *foreign-key-violations*
-    (set! *foreign-key-violations* (disjoc *foreign-key-violations* [left right clause] (dissoc row ::fk)))))
+    (set! *foreign-key-violations* (u/disjoc *foreign-key-violations* [left right clause] (dissoc row ::fk)))))
 
 (defn fk [graph self left seekl right seekr clause origin references {:keys [cascade]}]
   (let [good #(good-fk origin references clause % cascade)
@@ -942,17 +865,17 @@
                         nset (conj eset row)]
                     (if (same-size? eset nset)
                       idx
-                      (do (add-to-mutable-set changed group)
+                      (do (u/add-to-mutable-set changed group)
                           (assoc idx group nset)))))
                 (fn [idx row changed]
                   (let [group (group-fn row)
                         [rows eset] (idx group)
-                        nrows (set-conj rows row)
-                        nset (if-some [v (elfn row)] (set-conj eset v) eset)]
+                        nrows (u/set-conj rows row)
+                        nset (if-some [v (elfn row)] (u/set-conj eset v) eset)]
                     (if (same-size? nrows rows)
                       idx
                       (do (when-not (identical? nset eset)
-                            (add-to-mutable-set changed group))
+                            (u/add-to-mutable-set changed group))
                           (assoc idx group [nrows nset]))))))
         deleter (if (= identity elfn)
                   (fn [idx row changed]
@@ -961,7 +884,7 @@
                           nset (disj eset row)]
                       (if (same-size? eset nset)
                         idx
-                        (do (add-to-mutable-set changed group)
+                        (do (u/add-to-mutable-set changed group)
                             (if (empty? nset)
                               (dissoc idx group)
                               (assoc idx group nset))))))
@@ -973,7 +896,7 @@
                       (if (same-size? nrows rows)
                         idx
                         (do (when-not (same-size? nset eset)
-                              (add-to-mutable-set changed group))
+                              (u/add-to-mutable-set changed group))
                             (if (empty? nrows)
                               (dissoc idx group)
                               (assoc idx group [nrows nset])))))))
@@ -989,13 +912,13 @@
              (fn [db inserted deleted forward]
                (let [idx (mget db {})
 
-                     changed (mutable-set)
+                     changed (u/mutable-set)
 
                      nidx (reduce #(deleter %1 %2 changed) idx deleted)
                      nidx (reduce #(adder %1 %2 changed) nidx inserted)
                      db (mset db nidx)
 
-                     changed (iterable-mut-set changed)
+                     changed (u/iterable-mut-set changed)
 
                      deleted
                      (eduction
@@ -1025,11 +948,11 @@
 
         add-row (fn [coll row]
                   (if coll
-                    (update coll (elfn row) set-conj row)
-                    (update (sorted-map) (elfn row) set-conj row)))
+                    (update coll (elfn row) u/set-conj row)
+                    (update (sorted-map) (elfn row) u/set-conj row)))
         rem-row (fn [coll row]
                   (if coll
-                    (disjoc coll (elfn row) row)
+                    (u/disjoc coll (elfn row) row)
                     (sorted-map)))
 
         adder (fn [idx row changed]
@@ -1039,7 +962,7 @@
                   (if (identical? ev nv)
                     idx
                     (do
-                      (add-to-mutable-set changed group)
+                      (u/add-to-mutable-set changed group)
                       (assoc idx group nv)))))
 
         deleter (fn [idx row changed]
@@ -1049,7 +972,7 @@
                     (if (identical? ev nv)
                       idx
                       (do
-                        (del-from-mutable-set changed group)
+                        (u/del-from-mutable-set changed group)
                         (if (empty? nv)
                           (dissoc idx group)
                           (assoc idx group nv))))))
@@ -1062,13 +985,13 @@
              (fn [db inserted deleted forward]
                (let [idx (mget db {})
 
-                     changed (mutable-set)
+                     changed (u/mutable-set)
 
                      nidx (reduce #(deleter %1 %2 changed) idx deleted)
                      nidx (reduce #(adder %1 %2 changed) nidx inserted)
                      db (mset db nidx)
 
-                     changed (iterable-mut-set changed)
+                     changed (u/iterable-mut-set changed)
 
                      deleted
                      (eduction
@@ -1213,8 +1136,8 @@
              left
              (fn [db inserted deleted forward]
                (let [idx (mget db empty-idx)
-                     deleted (realise-coll deleted)
-                     inserted (realise-coll inserted)
+                     deleted (u/realise-coll deleted)
+                     inserted (u/realise-coll inserted)
                      ks (into #{} key-xf deleted)
                      ks (into ks key-xf inserted)
                      nidx (reduce gai/unindex-row idx deleted)
@@ -1242,7 +1165,7 @@
           join-clause (zipmap cols cols)
           _ (run! (fn [[binding]]
                     (when (contains? col-set binding)
-                      (raise "Cannot bind aggregate to a grouping key"))) aggs)
+                      (u/raise "Cannot bind aggregate to a grouping key"))) aggs)
           [custom-nodes standard-aggs] ((juxt keep remove) #(get-custom-agg-node left cols %) aggs)]
       (cond
         (empty? custom-nodes) (conj left [generic-agg cols standard-aggs])
@@ -1262,9 +1185,9 @@
   (let [path (vec path)
         [iget] (mem index)]
     (when-not (graph (id index))
-      (raise ":lookup used but index is not materialized" {:index index}))
+      (u/raise ":lookup used but index is not materialized" {:index index}))
     (when-not (= (count path) (dec (count (head-stmt index))))
-      (raise ":lookup path length must currently match indexed expressions"))
+      (u/raise ":lookup path length must currently match indexed expressions"))
     {:provide (fn [db]
                 (when-some [i (iget db)]
                   (get-in i path)))}))
@@ -1397,7 +1320,7 @@
               (let [references (to-relvar right)
                     origin left
                     _ (when (and (:cascade opts) (not (unwrap-table origin)))
-                        (raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
+                        (u/raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
                     [left seekl] (find-hash-index graph left (keys clause) (vals clause))
                     [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
@@ -1569,8 +1492,8 @@
 (defn- track [id added deleted]
   (when (and *tracking* (*tracking* id))
     (let [ntracking (update *tracking* id (fn [{:keys [adds dels]}]
-                                            {:adds (reduce add-to-mutable-list (or adds (mutable-list)) added)
-                                             :dels (reduce add-to-mutable-list (or dels (mutable-list)) deleted)}))]
+                                            {:adds (reduce u/add-to-mutable-list (or adds (u/mutable-list)) added)
+                                             :dels (reduce u/add-to-mutable-list (or dels (u/mutable-list)) deleted)}))]
       (set! *tracking* ntracking)))
   nil)
 
@@ -1590,8 +1513,8 @@
               (let [dependents (sort-dependents dependents)
                     fns (mapv (comp :linked graph) dependents)]
                 (fn flow-fan-out [db inserted deleted]
-                  (let [inserted (realise-coll inserted)
-                        deleted (realise-coll deleted)]
+                  (let [inserted (u/realise-coll inserted)
+                        deleted (u/realise-coll deleted)]
                     (reduce
                       (fn flow-step [db f] (f db inserted deleted))
                       db
@@ -1635,8 +1558,8 @@
                 (let [dependents (sort-dependents dependents)
                       fns (mapv (comp #(get % dep) :init graph) dependents)]
                   (fn flow-fan-out [db inserted deleted]
-                    (let [inserted (realise-coll inserted)
-                          deleted (realise-coll deleted)]
+                    (let [inserted (u/realise-coll inserted)
+                          deleted (u/realise-coll deleted)]
                       (reduce
                         (fn flow-step [db f] (f db inserted deleted))
                         db
@@ -1745,7 +1668,7 @@
      db
      (let [graph (gg db)
            graph (inc-generation graph)
-           graph (if (:ephemeral opts) graph (update graph ::materialized set-conj relvar))
+           graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
            relvar (conj relvar [mat])
            graph (add-to-graph graph relvar)
            graph (init graph relvar)]
@@ -1790,7 +1713,7 @@
   (let [relvar (to-relvar relvar)
         db (materialize db relvar {:ephemeral true})
         graph (gg db)
-        graph (update graph ::watched set-conj (get-id graph relvar))]
+        graph (update graph ::watched u/set-conj (get-id graph relvar))]
     (sg db graph)))
 
 (defn unwatch [db relvar]
@@ -1847,17 +1770,17 @@
          relvar (unwrap-from (to-relvar relvar))
          id (get-id graph relvar)
          {:keys [dependents]} (graph id)]
-     (iterable-mut-list
+     (u/iterable-mut-list
        (reduce
          (fn !
            [lst child-id]
            (let [child-node (graph child-id)
                  relvar (:relvar child-node)]
              (cond
-               (and (index? relvar) (pred relvar)) (add-to-mutable-list lst relvar)
+               (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
                (from? relvar) (reduce ! lst (:dependents child-node))
                :else lst)))
-         (mutable-list)
+         (u/mutable-list)
          dependents)))))
 
 (defn index [db relvar]
@@ -1867,7 +1790,7 @@
     mem))
 
 (defn transact-error [tx]
-  (raise "Unrecognized transact form" {:tx tx}))
+  (u/raise "Unrecognized transact form" {:tx tx}))
 
 (defn- upsert-base [db table-key f rows]
   (let [unique-indexes (find-indexes db unique? table-key)
@@ -1969,7 +1892,7 @@
       ;; todo rollup errors?
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
         (when (seq rows)
-          (raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+          (u/raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
 
       (doseq [[[relvar check] rows] *check-violations*
               :let [graph (gg db)
@@ -1980,7 +1903,7 @@
                     rows (seq (filter idx rows))]]
         (when-some [row (first rows)]
           (let [error (row-fn (:error check "Check violation"))]
-            (raise (error row) {:relvar relvar, :check check, :rows rows}))))
+            (u/raise (error row) {:relvar relvar, :check check, :rows rows}))))
 
       db)))
 
@@ -2004,7 +1927,7 @@
                         :let [{:keys [results, relvar] :or {results #{}}} (graph id)
                               {oresults :results, :or {oresults #{}}} (ograph id)]]
                     [(to-table-key-if-table relvar)
-                     {:added (filterv results (iterable-mut-list adds))
-                      :deleted (filterv (every-pred (complement results) oresults) (iterable-mut-list dels))}])]
+                     {:added (filterv results (u/iterable-mut-list adds))
+                      :deleted (filterv (every-pred (complement results) oresults) (u/iterable-mut-list dels))}])]
       {:db db
        :changes (into {} changes)})))

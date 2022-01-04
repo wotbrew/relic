@@ -3,8 +3,7 @@
   should be considered private."
   (:require [com.wotbrew.relic.impl.generic-agg-index :as gai]
             [com.wotbrew.relic.impl.util :as u]
-            [clojure.set :as set]
-            [clojure.string :as str]))
+            [clojure.set :as set]))
 
 (def ^:dynamic *env-deps* nil)
 

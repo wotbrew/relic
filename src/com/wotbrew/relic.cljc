@@ -12,7 +12,8 @@
   - track changes with `track-transact`, `watch` and `unwatch`.
 
   I like to alias :as rel. @wotbrew"
-  (:require [com.wotbrew.relic.impl.dataflow :as dataflow])
+  (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
+            [com.wotbrew.relic.impl.expr :as e])
   (:refer-clojure :exclude [min max]))
 
 (defn transact
@@ -233,7 +234,7 @@
 
          sort* (or sort rsort)
          sort-exprs (if (keyword? sort*) [sort*] sort*)
-         sort-fns (mapv dataflow/row-fn sort-exprs)
+         sort-fns (mapv e/row-fn sort-exprs)
          rs (dataflow/qraw db query)
          sort-fn (when (seq sort-fns)
                    (if (= 1 (count sort-fns))
@@ -336,11 +337,11 @@
     0 {:combiner (constantly 0) :reducer (constantly 0)}
     1
     (let [expr (first exprs)
-          f (dataflow/row-fn expr)
+          f (e/row-fn expr)
           xf (keep f)]
       {:combiner sum-add-fn
        :reducer #(transduce xf sum-add-fn %)})
-    (let [fns (map dataflow/row-fn exprs)
+    (let [fns (map e/row-fn exprs)
           nums (apply juxt fns)
           xf (comp (mapcat nums) (remove nil?))]
       {:combiner sum-add-fn
@@ -350,7 +351,7 @@
 ;; set-concat
 
 (defn set-concat [expr]
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:custom-node (fn [left cols [binding]]
                     (conj left
                           [dataflow/group cols f]
@@ -361,7 +362,7 @@
 
 (defn count-distinct [& exprs]
   (let [expr (if (= 1 (count exprs)) (first exprs) (into [vector] exprs))
-        f (dataflow/row-fn expr)]
+        f (e/row-fn expr)]
     {:custom-node (fn [left cols [binding]]
                     (conj left
                           [dataflow/group cols f]
@@ -388,7 +389,7 @@
 (defn any
   "An aggregate function that binds true if any row has a truthy value of expr, false if not."
   [expr]
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:reducer #(some f %)
      :combiner #(and %1 %2)
      :complete boolean}))
@@ -396,7 +397,7 @@
 (defn not-any
   "An aggregate function that binds false if any row has a truthy value of expr, true if not."
   [expr]
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:reducer #(not-any? f %)
      :combiner #(and %1 %2)
      :complete boolean}))
@@ -410,7 +411,7 @@
   Materialization can be slow if the n parameter is large, use for small summaries."
   [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:custom-node
      (fn [left cols [binding]]
        (conj left
@@ -424,7 +425,7 @@
   Materialization can be slow if the n parameter is large, use for small summaries."
   [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:custom-node
      (fn [left cols [binding]]
        (conj left
@@ -438,7 +439,7 @@
   Materialization can be slow if the n parameter is large, use for small summaries."
   [n expr]
   (assert (nat-int? n) "top requires a 0 or positive integer arg first")
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:custom-node
      (fn [left cols [binding]]
        (conj left
@@ -452,7 +453,7 @@
   Materialization can be slow if the n parameter is large, use for small summaries."
   [n expr]
   (assert (nat-int? n) "bottom requires a 0 or positive integer arg first")
-  (let [f (dataflow/row-fn expr)]
+  (let [f (e/row-fn expr)]
     {:custom-node
      (fn [left cols [binding]]
        (conj left
@@ -463,10 +464,10 @@
 ;; --
 ;; env api
 
-(defn get-env [db] (first (q db ::dataflow/Env)))
+(defn get-env [db] (first (q db ::e/Env)))
 
 (defn set-env-tx [env]
-  [:replace-all ::dataflow/Env {::dataflow/env env}])
+  [:replace-all ::e/Env {::e/env env}])
 
 (defn with-env [db env] (transact db (set-env-tx env)))
 
@@ -498,7 +499,7 @@
   [rel/sel1 :OrderItem {:o/order-id :i/order-id}]
 
   See also: sel"
-  dataflow/sub-select-first)
+  e/sub-select-first)
 
 (def sel
   "sub-select relic expr function.
@@ -510,7 +511,7 @@
   [rel/sel :OrderItem {:o/order-id :i/order-id}]
 
   See also: sel1"
-  dataflow/sub-select)
+  e/sub-select)
 
 (def env
   "env get relic expr function.
@@ -520,4 +521,4 @@
   e.g
 
   [rel/env :now]"
-  dataflow/env)
+  e/env)

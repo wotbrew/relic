@@ -3,191 +3,15 @@
   should be considered private."
   (:require [com.wotbrew.relic.impl.generic-agg-index :as gai]
             [com.wotbrew.relic.impl.util :as u]
+            [com.wotbrew.relic.impl.expr :as e]
+            [com.wotbrew.relic.impl.relvar :as r]
             [clojure.set :as set]))
-
-(def ^:dynamic *env-deps* nil)
-
-(defn- track-env-dep [k]
-  (if *env-deps*
-    (set! *env-deps* (conj *env-deps* k))
-    (u/raise "Can only use ::rel/env in :extend/:select/:expand statements.")))
-
-(declare row-fn)
-
-(defn- expr-mut-reduction [expr]
-  (let [xfn (row-fn expr)]
-    (fn [arg-buf row]
-      (if-some [xval (xfn row)]
-        (u/add-to-mutable-list arg-buf xval)
-        (reduced nil)))))
-
-(defn- unsafe-row-fn-call [f args]
-  (let [args (mapv row-fn args)]
-    (case (count args)
-      0 f
-      1 (comp f (first args))
-      2 (let [[a b] args] #(f (a %) (b %)))
-      3 (let [[a b c] args] #(f (a %) (b %) (c %)))
-      4 (let [[a b c d] args] #(f (a %) (b %) (c %) (d %)))
-      5 (let [[a b c d e] args] #(f (a %) (b %) (c %) (d %) (e %)))
-      (let [get-args (apply juxt args)]
-        #(apply f (get-args %))))))
-
-(defn- nil-safe-row-fn-call [f args]
-  (let [args (mapv row-fn args)]
-    (case (count args)
-      0 f
-      1 (let [[a] args]
-          (fn apply1 [row]
-            (when-some [aval (a row)]
-              (f aval))))
-      2 (let [[a b] args]
-          (fn apply2 [row]
-            (when-some [aval (a row)]
-              (when-some [bval (b row)]
-                (f aval bval)))))
-      (let [as-rf (mapv expr-mut-reduction args)]
-        (fn [row]
-          (let [arg-buf (u/mutable-list)
-                arg-buf (reduce (fn [arg-buf f] (f arg-buf row)) arg-buf as-rf)]
-            (when arg-buf
-              (apply f (u/iterable-mut-list arg-buf)))))))))
-
-(defn- demunge-expr [expr] (u/best-effort-fn-name expr))
-
-;; not going to use keywords as I do not want
-;; exfiltration to be possible using edn user input
-(deftype SubSelectFirst [])
-(deftype SubSelect [])
-(deftype Env [])
-
-(defonce sub-select-first (->SubSelectFirst))
-(defonce sub-select (->SubSelect))
-(defonce env (->Env))
-
-(defn- safe-expr-str [expr]
-  (cond
-    (fn? expr) (demunge-expr expr)
-
-    (keyword? expr) expr
-
-    (vector? expr) (with-out-str (print (mapv safe-expr-str expr)))
-
-    (identical? sub-select-first expr) "sel"
-
-    (identical? sub-select expr) "sel1"
-
-    (identical? env expr) "env"
-
-    :else (str "(" (type expr) ")")))
-
-(defn- add-expr-ex-handler
-  "Adds default exception handling to relic function calls, `f` is a function of a row."
-  [f expr]
-  (fn with-ex-handler [row]
-    (try
-      (f row)
-      #?(:clj
-         (catch NullPointerException e
-           (u/raise (str "Null pointer exception thrown by relic expression, consider using " (safe-expr-str (into [:?] expr)))
-                  {:expr expr} e)))
-      (catch #?(:clj Throwable :cljs js/Error) e
-        (u/raise (str "Exception thrown by relic expression " (safe-expr-str expr)) {:expr expr} e)))))
-
-(defn- to-function [f]
-  (cond
-    (fn? f) f
-    (keyword? f) f
-    :else (u/raise "Expected a function in expression prefix position")))
-
-(def ^:dynamic *implicit-joins* nil)
-
-(defn- add-implicit-join [relvar clause]
-  (when-some [j *implicit-joins*]
-    (set! *implicit-joins* (conj j [relvar clause]))))
-
-(defn to-relvar [relvar-or-table]
-  (if (keyword? relvar-or-table)
-    [[:table relvar-or-table]]
-    relvar-or-table))
-
-(defn row-fn [expr]
-  (cond
-    (= [] expr) (constantly [])
-
-    (= :% expr) identity
-
-    (vector? expr)
-    (let [[f & args] expr]
-      (cond
-        ;; unsafe ops are matched against sentinel vals
-        ;; this avoids exfiltration via injection attack using
-        ;; edn data
-        (identical? env f)
-        (let [[k not-found] args]
-          (track-env-dep k)
-          (fn [row]
-            (-> row ::env (get k not-found))))
-
-        (identical? sub-select f)
-        (let [[relvar clause] args
-              relvar (to-relvar relvar)
-              k [relvar clause]]
-          (add-implicit-join relvar clause)
-          (fn [row]
-            (row k)))
-
-        (identical? sub-select-first f)
-        (let [[relvar clause] args
-              relvar (to-relvar relvar)
-              k [relvar clause]]
-          (add-implicit-join relvar clause)
-          (fn [row] (first (row k))))
-
-        :else
-        (case f
-          :and (apply every-pred (map row-fn args))
-          :or (apply some-fn (map row-fn args))
-          :not (unsafe-row-fn-call not args)
-          :if (let [[c t e] (map row-fn args)]
-                (if e
-                  (fn [row]
-                    (if (c row)
-                      (t row)
-                      (e row)))
-                  (fn [row]
-                    (when (c row)
-                      (t row)))))
-
-          :com.wotbrew.relic/get
-          (let [[k not-found] args]
-            (fn [row] (row k not-found)))
-
-          (:com.wotbrew.relic/esc :_)
-          (let [[v] args]
-            (constantly v))
-
-          (:com.wotbrew.relic/nil-safe :?)
-          (let [[f & args] args]
-            (add-expr-ex-handler (nil-safe-row-fn-call (to-function f) args) expr))
-
-          (:com.wotbrew.relic/unsafe :!)
-          (let [[f & args] args]
-            (unsafe-row-fn-call (to-function f) args))
-
-          (add-expr-ex-handler (unsafe-row-fn-call (to-function f) args) expr))))
-
-    (keyword? expr) expr
-
-    (fn? expr) expr
-
-    :else (constantly expr)))
 
 (defn where-pred [exprs]
   (case (count exprs)
     0 (constantly true)
-    1 (row-fn (first exprs))
-    (apply every-pred (map row-fn exprs))))
+    1 (e/row-fn (first exprs))
+    (apply every-pred (map e/row-fn exprs))))
 
 (defn without-fn [cols]
   #(apply dissoc % cols))
@@ -217,7 +41,7 @@
   (cond
     (vector? form)
     (let [[binding expr] form
-          expr-fn (row-fn expr)
+          expr-fn (e/row-fn expr)
           bind (bind-fn binding)]
       (fn bind-extend [row] (bind row (expr-fn row))))
 
@@ -239,7 +63,7 @@
 
 (defn- expand-form-fn [form]
   (let [[binding expr] form
-        expr-fn (row-fn expr)
+        expr-fn (e/row-fn expr)
         bind-fn (bind-fn binding)]
     (fn [row]
       (for [v (expr-fn row)]
@@ -253,38 +77,8 @@
           exp-xf (apply comp (rseq exp-xforms))]
       #(into #{} exp-xf [%]))))
 
-(defn operator [stmt] (nth stmt 0))
-(defn left-relvar [relvar] (when (peek relvar) (subvec relvar 0 (dec (count relvar)))))
-(defn head-stmt [relvar] (peek relvar))
-
-(defn table-relvar?
-  "True if the relvar is a table."
-  [relvar]
-  (case (count relvar)
-    1 (= :table (operator (head-stmt relvar)))
-    false))
-
-(defn unwrap-from [relvar]
-  (if (= :from (operator (head-stmt relvar)))
-    (let [[_ relvar] (head-stmt relvar)]
-      (unwrap-from (to-relvar relvar)))
-    relvar))
-
-(defn unwrap-table
-  "If the relvar is a table (or :from chain containing a table) then unwrap the underlying table relvar and return it."
-  [relvar]
-  (if (table-relvar? relvar)
-    relvar
-    (let [relvar (unwrap-from relvar)]
-      (when (table-relvar? relvar)
-        relvar))))
-
-(defn unwrap-table-key [relvar]
-  (let [[_ table-key] (some-> (unwrap-table relvar) head-stmt)]
-    table-key))
-
 (defn req-col-check [relvar col]
-  (let [table-key-or-name (if-some [tk (unwrap-table-key relvar)] tk "(derived relvar)")]
+  (let [table-key-or-name (if-some [tk (r/unwrap-table-key relvar)] tk "(derived relvar)")]
     {:pred [some? col],
      :error [str [:com.wotbrew.relic/esc col] " required by " [:com.wotbrew.relic/esc table-key-or-name] ", but not found."]}))
 
@@ -296,7 +90,7 @@
       (set! *check-violations* (update m [relvar check] u/set-conj row))
       row)
     (let [{:keys [error]} check
-          error-fn (row-fn (or error "Check constraint violation"))]
+          error-fn (e/row-fn (or error "Check constraint violation"))]
       (u/raise (error-fn row) {:check check, :row row, :relvar relvar}))))
 
 (defn- good-check [relvar check row]
@@ -305,13 +99,13 @@
 (defn- check-pred [relvar check]
   (if (map? check)
     (let [{:keys [pred]} check
-          pred-fn (row-fn pred)]
+          pred-fn (e/row-fn pred)]
       (fn [m]
         (let [r (pred-fn m)]
           (if r
             (good-check relvar check m)
             (bad-check relvar check m)))))
-    (let [f2 (row-fn check)]
+    (let [f2 (e/row-fn check)]
       (fn [m]
         (let [r (f2 m)]
           (if r
@@ -346,7 +140,7 @@
 
 (defn mem
   [relvar]
-  (if-some [table-key (unwrap-table-key relvar)]
+  (if-some [table-key (r/unwrap-table-key relvar)]
     [(fn mget ([db] (db table-key)) ([db default] (db table-key default)))
      (fn mset [& _] (u/raise "Cannot call mset on table memory"))]
     (let [id (id relvar)]
@@ -514,14 +308,14 @@
                    (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn- index-seek-from-exprs [exprs]
-  (let [fns (mapv row-fn exprs)
+  (let [fns (mapv e/row-fn exprs)
         path (if (empty? fns) (constantly []) (apply juxt fns))]
     (if (seq fns)
       (fn [idx row] (get-in idx (path row)))
       (fn [idx _] (when idx (idx nil))))))
 
 (defn- index-seek-fn [index]
-  (let [[& exprs] (head-stmt index)]
+  (let [[& exprs] (r/head-stmt index)]
     (index-seek-from-exprs exprs)))
 
 (defn find-hash-index
@@ -786,11 +580,11 @@
   (forward db inserted deleted))
 
 (defn add-implicit-joins [thunk & remainder]
-  (binding [*env-deps* #{}
-            *implicit-joins* #{}]
+  (binding [e/*env-deps* #{}
+            e/*implicit-joins* #{}]
     (let [relvar (thunk)
-          env-deps *env-deps*
-          joins *implicit-joins*
+          env-deps e/*env-deps*
+          joins e/*implicit-joins*
 
           join-statements
           (mapv (fn [[relvar clause :as jk]]
@@ -799,19 +593,19 @@
           env-join
           (when (seq env-deps)
             [:left-join
-             (conj [[:from ::Env]] [:select [::env [select-keys ::env env-deps]]])
+             (conj [[:from ::e/Env]] [:select [::e/env [select-keys ::e/env env-deps]]])
              {}])
 
           without-cols
           (if (seq env-deps)
-            [::env]
+            [::e/env]
             [])
 
           without-cols (into without-cols joins)]
 
       (if (or (seq joins) env-join)
-        (let [left (left-relvar relvar)
-              stmt (head-stmt relvar)
+        (let [left (r/left-relvar relvar)
+              stmt (r/head-stmt relvar)
               left (if env-join (conj left env-join) left)
               left (reduce conj left join-statements)
               left (conj left stmt)
@@ -1021,14 +815,14 @@
                          [group cols identity]
                          [transform-unsafe (bind-group binding count)]))})
   ([expr]
-   (let [f (row-fn [:if expr :%])]
+   (let [f (e/row-fn [:if expr :%])]
      {:custom-node (fn [left cols [binding]]
                      (conj left
                            [group cols f]
                            [transform-unsafe (bind-group binding count)]))})))
 
 (defn max-by [expr]
-  (let [f (row-fn expr)
+  (let [f (e/row-fn expr)
         rf (fn
              ([] nil)
              ([a] a)
@@ -1045,7 +839,7 @@
      :reducer (fn [rows] (reduce rf rows))}))
 
 (defn min-by [expr]
-  (let [f (row-fn expr)
+  (let [f (e/row-fn expr)
         rf (fn
              ([] nil)
              ([a] a)
@@ -1067,10 +861,10 @@
     (assoc aggregate-map :complete f)))
 
 (defn max-agg [expr]
-  (comp-complete (max-by expr) (row-fn expr)))
+  (comp-complete (max-by expr) (e/row-fn expr)))
 
 (defn min-agg [expr]
-  (comp-complete (min-by expr) (row-fn expr)))
+  (comp-complete (min-by expr) (e/row-fn expr)))
 
 ;; --
 ;; agg expressions e.g [rel/sum :foo]
@@ -1185,7 +979,7 @@
         [iget] (mem index)]
     (when-not (graph (id index))
       (u/raise ":lookup used but index is not materialized" {:index index}))
-    (when-not (= (count path) (dec (count (head-stmt index))))
+    (when-not (= (count path) (dec (count (r/head-stmt index))))
       (u/raise ":lookup path length must currently match indexed expressions"))
     {:provide (fn [db]
                 (when-some [i (iget db)]
@@ -1198,9 +992,9 @@
   [relvar]
   (if (empty? relvar)
     relvar
-    (case (operator (head-stmt relvar))
+    (case (r/operator (r/head-stmt relvar))
       :set relvar
-      (if (unwrap-table-key relvar)
+      (if (r/unwrap-table-key relvar)
         relvar
         (conj relvar [:set])))))
 
@@ -1210,10 +1004,10 @@
     relvar))
 
 (defn to-dataflow* [graph relvar self]
-  (let [relvar (to-relvar relvar)
-        left (left-relvar relvar)
-        stmt (head-stmt relvar)
-        operator (operator stmt)]
+  (let [relvar (r/to-relvar relvar)
+        left (r/left-relvar relvar)
+        stmt (r/head-stmt relvar)
+        operator (r/operator stmt)]
     (if (fn? operator)
       (let [[op & args] stmt] (apply op graph self left args))
       (case operator
@@ -1238,7 +1032,7 @@
 
         :join-as-coll
         (let [[_ right clause binding {:keys [unsafe]}] stmt
-              right (to-relvar right)]
+              right (r/to-relvar right)]
           (add-implicit-joins
             (fn []
               (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
@@ -1251,11 +1045,11 @@
 
         :join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-join left (to-relvar right) clause graph)) left (partition-all 2 joins)))
+          (reduce (fn [left [right clause]] (add-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :left-join
         (let [[_ & joins] stmt]
-          (reduce (fn [left [right clause]] (add-left-join left (to-relvar right) clause graph)) left (partition-all 2 joins)))
+          (reduce (fn [left [right clause]] (add-left-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :extend
         (let [[_ & extends] stmt]
@@ -1297,11 +1091,11 @@
 
         :hash
         (let [[_ & exprs] stmt]
-          (add-implicit-joins #(conj left [save-hash (mapv row-fn exprs)])))
+          (add-implicit-joins #(conj left [save-hash (mapv e/row-fn exprs)])))
 
         :btree
         (let [[_ & exprs] stmt]
-          (add-implicit-joins #(conj left [save-btree (mapv row-fn exprs)])))
+          (add-implicit-joins #(conj left [save-btree (mapv e/row-fn exprs)])))
 
         :check
         (let [[_ & checks] stmt
@@ -1316,9 +1110,9 @@
         (let [[_ right clause opts] stmt]
           (add-implicit-joins
             (fn []
-              (let [references (to-relvar right)
+              (let [references (r/to-relvar right)
                     origin left
-                    _ (when (and (:cascade opts) (not (unwrap-table origin)))
+                    _ (when (and (:cascade opts) (not (r/unwrap-table origin)))
                         (u/raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
                     [left seekl] (find-hash-index graph left (keys clause) (vals clause))
                     [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
@@ -1326,7 +1120,7 @@
 
         :unique
         (let [[_ & exprs] stmt]
-          (add-implicit-joins #(conj left [save-unique (mapv row-fn exprs)])))
+          (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs)])))
 
         :constrain
         (let [[_ & constraints] stmt]
@@ -1338,17 +1132,17 @@
 
         :intersection
         (let [[_ & relvars] stmt]
-          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set (to-relvar r))]) relvars)))
+          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set (r/to-relvar r))]) relvars)))
 
         :union
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj left (mapv (fn [r] [union (require-set (to-relvar r))]) relvars)))
+          (reduce conj left (mapv (fn [r] [union (require-set (r/to-relvar r))]) relvars)))
 
         :difference
         (let [[_ & relvars] stmt
               left (require-set left)]
-          (reduce conj left (mapv (fn [r] [difference (require-set (to-relvar r))]) relvars)))
+          (reduce conj left (mapv (fn [r] [difference (require-set (r/to-relvar r))]) relvars)))
 
         :table
         (let [[_ table-key] stmt]
@@ -1384,10 +1178,10 @@
   ((fn rf [s relvar]
      (if (empty? relvar)
        s
-       (if-some [table (unwrap-table relvar)]
+       (if-some [table (r/unwrap-table relvar)]
          (conj s table)
-         (let [stmt (head-stmt relvar)
-               op (operator stmt)]
+         (let [stmt (r/head-stmt relvar)
+               op (r/operator stmt)]
            (case op
              :lookup (let [[_ i] stmt] (full-dependencies i))
              (let [{:keys [deps]} (to-dataflow {} relvar)]
@@ -1709,14 +1503,14 @@
           (sg db graph))))))
 
 (defn watch [db relvar]
-  (let [relvar (to-relvar relvar)
+  (let [relvar (r/to-relvar relvar)
         db (materialize db relvar {:ephemeral true})
         graph (gg db)
         graph (update graph ::watched u/set-conj (get-id graph relvar))]
     (sg db graph)))
 
 (defn unwatch [db relvar]
-  (let [relvar (to-relvar relvar)
+  (let [relvar (r/to-relvar relvar)
         graph (gg db)
         graph (update graph ::watched disj (get-id graph relvar))
         db (sg db graph)
@@ -1728,7 +1522,7 @@
 (defn- to-table-key [k-or-relvar]
   (if (keyword? k-or-relvar)
     k-or-relvar
-    (unwrap-table-key k-or-relvar)))
+    (r/unwrap-table-key k-or-relvar)))
 
 (defn- delete-where [db table-key exprs]
   (let [rows (q db (conj [[:table table-key]] (into [:where] exprs)))]
@@ -1738,7 +1532,7 @@
 
 (defn- update-f-or-set-map-to-fn [f-or-set-map]
   (if (map? f-or-set-map)
-    (reduce-kv (fn [f k e] (comp f (let [f2 (row-fn e)] #(overwrite-key % k (f2 %))))) identity f-or-set-map)
+    (reduce-kv (fn [f k e] (comp f (let [f2 (e/row-fn e)] #(overwrite-key % k (f2 %))))) identity f-or-set-map)
     f-or-set-map))
 
 (defn- update-where [db table-key f-or-set-map exprs]
@@ -1752,21 +1546,17 @@
 (defn materialized? [db relvar]
   (contains? (::materialized (gg db)) relvar))
 
-(defn- head-operator [relvar]
-  (when (vector? relvar)
-    (some-> relvar head-stmt operator)))
-
-(defn index? [relvar] (#{:hash :btree :unique} (head-operator relvar)))
-(defn unique? [relvar] (= :unique (head-operator relvar)))
-(defn hash? [relvar] (= :hash (head-operator relvar)))
-(defn btree? [relvar] (= :btree (head-operator relvar)))
-(defn from? [relvar] (= :from (head-operator relvar)))
+(defn index? [relvar] (#{:hash :btree :unique} (r/head-operator relvar)))
+(defn unique? [relvar] (= :unique (r/head-operator relvar)))
+(defn hash? [relvar] (= :hash (r/head-operator relvar)))
+(defn btree? [relvar] (= :btree (r/head-operator relvar)))
+(defn from? [relvar] (= :from (r/head-operator relvar)))
 
 (defn find-indexes
   ([db relvar] (find-indexes db identity relvar))
   ([db pred relvar]
    (let [graph (gg db)
-         relvar (unwrap-from (to-relvar relvar))
+         relvar (r/unwrap-from (r/to-relvar relvar))
          id (get-id graph relvar)
          {:keys [dependents]} (graph id)]
      (u/iterable-mut-list
@@ -1797,8 +1587,8 @@
         path-fns
         (reduce
           (fn [m unique]
-            (let [[_ & exprs] (head-stmt unique)
-                  path (if (seq exprs) (apply juxt (map row-fn exprs)) (constantly [nil]))]
+            (let [[_ & exprs] (r/head-stmt unique)
+                  path (if (seq exprs) (apply juxt (map e/row-fn exprs)) (constantly [nil]))]
               (assoc m unique path)))
           {}
           unique-indexes)
@@ -1896,18 +1686,18 @@
       (doseq [[[relvar check] rows] *check-violations*
               :let [graph (gg db)
                     id (get-id graph relvar)
-                    idx (if-some [tk (unwrap-table-key relvar)]
+                    idx (if-some [tk (r/unwrap-table-key relvar)]
                           (graph tk #{})
                           (:mem (graph id) #{}))
                     rows (seq (filter idx rows))]]
         (when-some [row (first rows)]
-          (let [error (row-fn (:error check "Check violation"))]
+          (let [error (e/row-fn (:error check "Check violation"))]
             (u/raise (error row) {:relvar relvar, :check check, :rows rows}))))
 
       db)))
 
 (defn- to-table-key-if-table [relvar]
-  (if (table-relvar? relvar) (to-table-key relvar) relvar))
+  (if (r/table-relvar? relvar) (to-table-key relvar) relvar))
 
 (defn track-transact
   "Like transact, but instead of returning you a database, returns a map of

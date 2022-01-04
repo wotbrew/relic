@@ -1,6 +1,7 @@
 (ns com.wotbrew.relic-test
   (:require [clojure.test :refer [deftest is are]]
             [com.wotbrew.relic :as rel]
+            [com.wotbrew.relic.impl.relvar :as r]
             [com.wotbrew.relic.impl.dataflow :as dataflow]))
 
 (deftest basics-test
@@ -141,9 +142,9 @@
 
 (deftest base-relvar-test
   (let [A [[:table :A]]]
-    (is (dataflow/table-relvar? A))
-    (is (not (dataflow/table-relvar? [])))
-    (is (not (dataflow/table-relvar? (conj A [:where [= 1 1]]))))))
+    (is (r/table-relvar? A))
+    (is (not (r/table-relvar? [])))
+    (is (not (r/table-relvar? (conj A [:where [= 1 1]]))))))
 
 (deftest state-statement-test
   (let [A [[:from :A]]

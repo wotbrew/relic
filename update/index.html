@@ -1450,16 +1450,11 @@
 <a id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="c1">;; =&gt;</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="p">{</span><span class="ss">:Counter</span> <span class="o">#</span><span class="p">{{</span><span class="ss">:n</span> <span class="mi">42</span><span class="p">}}}</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18"></a>
-<a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="c1">;; you can remove columns with nil (in relic nil/absence are the same)</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:Counter</span> <span class="p">{</span><span class="ss">:n</span> <span class="nv">nil</span><span class="p">}])</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="c1">;; =&gt;</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="p">{</span><span class="ss">:Counter</span> <span class="o">#</span><span class="p">{{}}}</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23"></a>
-<a id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="c1">;; additional expresssions can be passed as args to filter updated rows</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:Counter</span> <span class="p">{</span><span class="ss">:n</span> <span class="nv">inc</span><span class="p">}</span> <span class="p">[</span><span class="nv">even?</span> <span class="ss">:n</span><span class="p">]])</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="c1">;; =&gt; {:Counter #{{:n 1}}}</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:Counter</span> <span class="p">{</span><span class="ss">:n</span> <span class="nv">inc</span><span class="p">}</span> <span class="p">[</span><span class="nv">odd?</span> <span class="ss">:n</span><span class="p">]])</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="c1">;; =&gt; {:Counter #{{:n 0}}}  </span>
+<a id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="c1">;; additional expresssions can be passed as args to filter updated rows</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:Counter</span> <span class="p">{</span><span class="ss">:n</span> <span class="nv">inc</span><span class="p">}</span> <span class="p">[</span><span class="nv">even?</span> <span class="ss">:n</span><span class="p">]])</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="c1">;; =&gt; {:Counter #{{:n 1}}}</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="p">(</span><span class="nf">rel/transact</span> <span class="nv">db</span> <span class="p">[</span><span class="ss">:update</span> <span class="ss">:Counter</span> <span class="p">{</span><span class="ss">:n</span> <span class="nv">inc</span><span class="p">}</span> <span class="p">[</span><span class="nv">odd?</span> <span class="ss">:n</span><span class="p">]])</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="c1">;; =&gt; {:Counter #{{:n 0}}}  </span>
 </code></pre></div>
 
               

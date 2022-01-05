@@ -25,11 +25,6 @@ e.g
 ;; =>
 {:Counter #{{:n 42}}}
 
-;; you can remove columns with nil (in relic nil/absence are the same)
-(rel/transact db [:update :Counter {:n nil}])
-;; =>
-{:Counter #{{}}}
-
 ;; additional expresssions can be passed as args to filter updated rows
 (rel/transact db [:update :Counter {:n inc} [even? :n]])
 ;; => {:Counter #{{:n 1}}}

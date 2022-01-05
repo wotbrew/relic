@@ -321,9 +321,6 @@
    (let [hash (conj left (into [:hash] exprs))]
      [hash (index-seek-from-exprs row-exprs)])))
 
-(defn- boost [relvar score]
-  {(id relvar) score})
-
 (defn join
   "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).
 
@@ -332,7 +329,6 @@
   (let [[mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [right left]
-     :boost (boost right 1)
      :flow (flow left (fn [db inserted deleted forward]
                         (let [ridx (mgetr db {})
                               xf (fn [rf]
@@ -367,7 +363,6 @@
         [mgetl] (mem left)
         [mgetr] (mem right)]
     {:deps [right left]
-     :boost (boost right 1)
      :flow (flow
              left (fn [db inserted deleted forward]
                     (let [idx (mget db {})
@@ -1230,7 +1225,7 @@
     :else
     (let [{:keys [deps table] :as node} (to-dataflow graph relvar)
           nid (id relvar)
-          graph (assoc graph nid (assoc node :relvar relvar :score 0))
+          graph (assoc graph nid (assoc node :relvar relvar))
           graph (if table (update graph ::tables assoc table nid) graph)
           graph (reduce add-to-graph* graph deps)
           graph (reduce #(depend %1 (id %2) nid) graph deps)
@@ -1293,14 +1288,11 @@
 
 (defn link
   [graph table-key]
-  (letfn [(sort-dependents [dependents]
-            (sort-by (comp :score graph) > dependents))
-          (forward-fn [graph dependents]
+  (letfn [(forward-fn [graph dependents]
             (case (count dependents)
               0 flow-noop
               1 (:linked (graph (first dependents)))
-              (let [dependents (sort-dependents dependents)
-                    fns (mapv (comp :linked graph) dependents)]
+              (let [fns (mapv (comp :linked graph) dependents)]
                 (fn flow-fan-out [db inserted deleted]
                   (let [inserted (u/realise-coll inserted)
                         deleted (u/realise-coll deleted)]
@@ -1312,7 +1304,6 @@
             (let [{:keys [dependents
                           flow]
                    :as node} (graph id)
-                  dependents (sort-dependents dependents)
                   flow-fn (get flow edge flow-noop)
                   graph (reduce #(build-fn %1 id %2) graph dependents)
                   forward (tracked-flow id (forward-fn graph dependents))
@@ -1338,14 +1329,11 @@
   (let [new-generation (::generation graph)
         provided (volatile! #{})]
     (letfn [(id [relvar] (get-id graph relvar))
-            (sort-dependents [dependents]
-              (sort-by (comp :score graph) > dependents))
             (forward-fn [graph dep dependents]
               (case (count dependents)
                 0 flow-noop
                 1 (get (:init (graph (first dependents))) dep)
-                (let [dependents (sort-dependents dependents)
-                      fns (mapv (comp #(get % dep) :init graph) dependents)]
+                (let [fns (mapv (comp #(get % dep) :init graph) dependents)]
                   (fn flow-fan-out [db inserted deleted]
                     (let [inserted (u/realise-coll inserted)
                           deleted (u/realise-coll deleted)]
@@ -1366,7 +1354,7 @@
               (let [{:keys [deps
                             flow]
                      :as node} (graph uninit)
-                    dirty (sort-dependents (dirty graph uninit))
+                    dirty (dirty graph uninit)
                     graph (reduce link-uninitialised graph dirty)
                     forward (forward-fn graph uninit dirty)
                     init (reduce

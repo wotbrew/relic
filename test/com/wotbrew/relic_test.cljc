@@ -1,5 +1,5 @@
 (ns com.wotbrew.relic-test
-  (:require [clojure.test :refer [deftest is are]]
+  (:require [clojure.test :refer [deftest is are testing]]
             [com.wotbrew.relic :as rel]
             [com.wotbrew.relic.impl.relvar :as r]
             [com.wotbrew.relic.impl.dataflow :as dataflow]))
@@ -1133,6 +1133,35 @@
     (is (= (reverse aseq) (rel/q db :A {:sort [[- :a]]})))
     (is (= (sort-by (juxt #(mod (:a %) 10) :a) aseq) (rel/q db :A {:sort [[mod :a 10] :a]})))
     (is (= (reverse (sort-by (juxt #(mod (:a %) 10) :a) aseq)) (rel/q db :A {:rsort [[mod :a 10] :a]})))))
+
+(deftest comparison-test
+  (testing "<"
+    (is (true? (rel/< 3 4)))
+    (is (false? (rel/< 3 3)))
+    (is (false? (rel/< 4 3)))
+    (is (true? (rel/< "a" "b")))
+    (is (false? (rel/< "b" "a"))))
+
+  (testing "<="
+    (is (true? (rel/<= 3 4)))
+    (is (true? (rel/<= 3 3)))
+    (is (false? (rel/<= 4 3)))
+    (is (true? (rel/<= "a" "b")))
+    (is (false? (rel/<= "b" "a"))))
+
+  (testing ">"
+    (is (false? (rel/> 3 4)))
+    (is (false? (rel/> 3 3)))
+    (is (true? (rel/> 4 3)))
+    (is (false? (rel/> "a" "b")))
+    (is (true? (rel/> "b" "a"))))
+
+  (testing ">="
+    (is (false? (rel/>= 3 4)))
+    (is (true? (rel/>= 3 3)))
+    (is (true? (rel/>= 4 3)))
+    (is (false? (rel/>= "a" "b")))
+    (is (true? (rel/>= "b" "a")))))
 
 (comment
   (clojure.test/run-all-tests #"relic"))

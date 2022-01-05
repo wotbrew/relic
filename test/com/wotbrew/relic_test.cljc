@@ -437,7 +437,7 @@
 
 (deftest update-set-nil-test
   (let [db (rel/transact {} {:Counter [{:n 0}]})]
-    (is (= {:Counter #{{}}} (rel/transact db [:update :Counter {:n nil}])))))
+    (is (= {:Counter #{{:n nil}}} (rel/transact db [:update :Counter {:n nil}])))))
 
 (deftest delete-test
   (let [A [[:from :A]]

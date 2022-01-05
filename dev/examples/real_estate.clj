@@ -181,7 +181,7 @@
 (def CannotSubmitOfferOnceSaleAgreed
   [[:from ::Offer]
    [:join [[:from Acceptance] [:select :address :decision-date]] {:address :address}]
-   [:check {:pred [:? <= [compare :offer-date :decision-date] 0]
+   [:check {:pred [:? rel/<= :offer-date :decision-date]
             :error "Offer cannot be submitted after acceptance."}]])
 
 (def NoMoreThan50AdvertisedPremiumProperties

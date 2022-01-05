@@ -1,5 +1,7 @@
 # relic
 
+![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg)
+
 `STATUS: PRIMORDIAL TAR, ready soon...`
 
 `relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra.

@@ -185,9 +185,10 @@
                                                    ns (conj s row)]
                                                (if (same-size? s ns)
                                                  idx
-                                                 (let [idx (assoc idx new-row ns)]
-                                                   (u/add-to-mutable-list adds new-row)
-                                                   idx)))) nidx inserted)
+                                                 (let [nidx (assoc idx new-row ns)]
+                                                   (when-not (same-size? nidx idx)
+                                                     (u/add-to-mutable-list adds new-row))
+                                                   nidx)))) nidx inserted)
                               db (mset db nidx)
                               adds (u/iterable-mut-list adds)
                               dels (u/iterable-mut-list dels)]
@@ -992,6 +993,47 @@
     [[:const [{}]]]
     relvar))
 
+(defn- find-btree
+  ([graph relvar exprs] (find-btree graph relvar exprs exprs))
+  ([graph relvar exprs row-exprs]
+   (let [btree (conj relvar (into [:btree] exprs))
+         expr-fns (mapv e/row-fn row-exprs)
+         p (if (empty? expr-fns)
+             (constantly [nil])
+             (apply juxt expr-fns))]
+     [btree
+      (fn [idx row] (get-in idx (p row)))])))
+
+(defn- find-sort-btree [graph relvar sorts]
+  (let [exprs (mapv first sorts)
+        btree (conj relvar (into [:btree] exprs))
+        seq-orders (mapv second sorts)
+        seq-fn (mapv {:asc seq :desc rseq, nil seq} seq-orders)]
+    [btree
+     (if (seq seq-fn)
+       (fn [idx]
+         (let [kvs
+               (reduce
+                 (fn [kvs f]
+                   (mapcat (comp f val) kvs))
+                 ((first seq-fn) idx)
+                 (rest seq-fn))]
+           (mapcat val kvs)))
+       (fn [idx] (mapcat val idx)))]))
+
+(defn- save-view [graph self index view-fn]
+  (let [sid (id self)
+        [mget] (mem index)]
+    {:deps [index]
+     :flow
+     (flow
+       index
+       (fn [db inserted deleted forward]
+         (let [idx (mget db)
+               v (when idx (view-fn idx))
+               db (assoc-in db [sid :view] v)]
+           (forward db inserted deleted))))}))
+
 (defn to-dataflow* [graph relvar self]
   (let [relvar (r/to-relvar relvar)
         left (r/left relvar)
@@ -1154,7 +1196,17 @@
 
         :lookup
         (let [[_ index & path] head]
-          [[lookup index path]])))))
+          [[lookup index path]])
+
+        :sort
+        (let [[_ & sorts] head
+              [btree view-fn] (find-sort-btree graph left sorts)]
+          (conj btree [save-view view-fn]))
+
+        :sort-limit
+        (let [[_ n & sorts] head
+              [btree view-fn] (find-sort-btree graph left sorts)]
+          (conj btree [save-view (comp #(take n %) view-fn)]))))))
 
 (defn to-dataflow [graph relvar]
   (let [ret (to-dataflow* graph relvar relvar)]
@@ -1388,50 +1440,32 @@
                   (reduce init graph deps))))]
       (init graph relvar))))
 
-(defn- result [graph self left box]
-  (let [swap (fn [existing inserted deleted]
-               (if existing
-                 (let [e (transient (set existing))
-                       e (reduce disj! e deleted)
-                       e (reduce conj! e inserted)]
-                   (persistent! e))
-                 inserted))]
-    {:deps [left]
-     :flow (flow left (fn [db inserted deleted forward]
-                        (vswap! box swap inserted deleted)
-                        db))}))
-
 (defn gg [db] (::graph (meta db) {}))
 (defn- sg [db graph] (vary-meta db assoc ::graph graph))
 
-(defn qraw
-  "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
-  [db query]
-  (if (keyword? query)
-    (query db)
-    (let [graph (gg db)]
-      (or (:results (graph (get-id graph query)))
-          (let [rbox (volatile! nil)
-                query (conj query [result rbox])
-                graph (inc-generation graph)
-                graph (add-to-graph graph query)
-                _ (init graph query)]
-            @rbox)))))
-
-(defn q
-  [db query]
-  (seq (qraw db query)))
-
-(defn- mat [graph self left]
+(defn- mat [graph self left is-query]
   (let [left-id (id left)]
     {:deps [left]
      :flow (flow left (fn [db inserted deleted _]
-                        (let [s (:results (db left-id) #{})
-                              s (transient s)
-                              s (reduce disj! s deleted)
-                              s (reduce conj! s inserted)]
-                          (update db left-id assoc :results (persistent! s)))))
-     :provide (fn [db] (:results (db left)))}))
+                        (let [node (db left-id)
+                              v (:view node)
+                              s (:results node)
+                              rs (:result-set node)]
+                          (if s
+                            (let [s (transient @rs)
+                                  s (reduce disj! s deleted)
+                                  s (reduce conj! s inserted)
+                                  s (persistent! s)]
+                              (update db left-id assoc
+                                      :results s
+                                      :view v,
+                                      :result-set (delay s)))
+                            (let [inserted (if is-query inserted (u/realise-coll inserted))]
+                              (update db left-id assoc
+                                      :results inserted,
+                                      :view v,
+                                      :result-set (delay (set inserted))))))))
+     :provide (fn [db] (some-> (db left) :result-set deref))}))
 
 (defn materialize
   ([db relvar] (materialize db relvar {}))
@@ -1441,7 +1475,7 @@
      (let [graph (gg db)
            graph (inc-generation graph)
            graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
-           relvar (conj relvar [mat])
+           relvar (conj relvar [mat (:query opts false)])
            graph (add-to-graph graph relvar)
            graph (init graph relvar)]
        (sg db graph)))))
@@ -1449,9 +1483,29 @@
 (defn dematerialize [db relvar]
   (let [graph (gg db)
         graph (update graph ::materialized disj relvar)
-        relvar (conj relvar [mat])
+        relvar (conj relvar [mat false])
         graph (del-from-graph graph relvar)]
     (sg db graph)))
+
+(defn qraw
+  "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
+  [db query]
+  (if (keyword? query)
+    (query db)
+    (or
+      (let [graph (gg db)]
+        (when-some [node (graph (get-id graph query))]
+          (or (:view node)
+              (:results node))))
+      (let [db (materialize db query {:query true})
+            graph (gg db)]
+        (when-some [node (graph (get-id graph query))]
+          (or (:view node)
+              (:results node)))))))
+
+(defn q
+  [db query]
+  (seq (qraw db query)))
 
 (defn change-table [db table-key inserts deletes]
   (let [graph (gg db)
@@ -1691,10 +1745,10 @@
           db (transact db tx-coll)
           graph (gg db)
           changes (for [[id {:keys [adds dels]}] *tracking*
-                        :let [{:keys [results, relvar] :or {results #{}}} (graph id)
-                              {oresults :results, :or {oresults #{}}} (ograph id)]]
+                        :let [{:keys [result-set, relvar] :or {result-set (delay #{})}} (graph id)
+                              {oresults :result-set, :or {oresults (delay #{})}} (ograph id)]]
                     [(to-table-key-if-table relvar)
-                     {:added (filterv results (u/iterable-mut-list adds))
-                      :deleted (filterv (every-pred (complement results) oresults) (u/iterable-mut-list dels))}])]
+                     {:added (filterv @result-set (u/iterable-mut-list adds))
+                      :deleted (filterv (every-pred (complement @result-set) @oresults) (u/iterable-mut-list dels))}])]
       {:db db
        :changes (into {} changes)})))

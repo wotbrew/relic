@@ -4,6 +4,8 @@
             [com.wotbrew.relic.impl.relvar :as r]
             [com.wotbrew.relic.impl.dataflow :as dataflow]))
 
+(defn- result-set [node] (some-> node :result-set deref))
+
 (deftest basics-test
   (let [a [[:from :A]]
         b [[:from :B]]
@@ -343,7 +345,7 @@
                           (rel/transact {A [{:a 42}, {:a 43}]})
                           (dataflow/gg)
                           (dataflow/get-node [[:from A] [:where [= :a 43]]])
-                          :results)))
+                          result-set)))
 
     (is (= [{:a 42}] (rel/what-if db [[:from A] [:where [= :a 42] {[:b :% [::rel/esc ::missing]] ::missing}]] {A [{:a 42}, {:a 43}]})))
     (is (= nil (rel/what-if db [[:from A] [:where {:a 42} {:a 43}]])))
@@ -354,7 +356,7 @@
         A1 [[:from :A] [:where [= :a 42]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A1)]
-    (is (= #{{:a 42}} (-> db (dataflow/gg) (dataflow/get-node A1) :results)))
+    (is (= #{{:a 42}} (-> db (dataflow/gg) (dataflow/get-node A1) result-set)))
     (is (nil? (-> db (rel/dematerialize A1) (dataflow/gg) (dataflow/get-node A1))))
     (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg :A)))))
 
@@ -364,7 +366,7 @@
         A2 [[:from :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2)]
-    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
+    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) result-set)))
     (is (nil? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
     (is (= #{{:a 42}} (-> db (rel/dematerialize A2) dataflow/gg :A)))))
 
@@ -374,10 +376,10 @@
         A2 [[:from :A] [:where [= :a 42]] [:extend [:a [inc :a]]]]
         db (rel/transact {} {A [{:a 42}]})
         db (rel/materialize db A2 A1)]
-   (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) :results)))
-   (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))
+   (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) result-set)))
+   (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) result-set)))
    (is (some? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
-   (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) :results)))
+   (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) result-set)))
    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
 
 (deftest watch-table-test
@@ -419,7 +421,7 @@
         db (rel/unwatch db A2)]
 
     (is (some? (-> db dataflow/gg (dataflow/get-node A1))))
-    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) :results)))))
+    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) result-set)))))
 
 (deftest track-transients-are-removed-test
   (is (= {:db {:A #{}}
@@ -616,6 +618,13 @@
   (let [A [[:from :A]]
         B [[:from A] [:extend [:a 1]]]
         db (rel/transact (rel/materialize {} B) {:A [{:a 42} {:a 43}]})]
+    (is (= [{:a 1}] (rel/q db B)))
+    (is (= [{:a 1}] (rel/what-if db B [:delete-exact :A {:a 42}])))))
+
+(deftest narrowing-query-extend-glitch-test
+  (let [A [[:from :A]]
+        B [[:from A] [:extend [:a 1]]]
+        db (rel/transact {} {:A [{:a 42} {:a 43}]})]
     (is (= [{:a 1}] (rel/q db B)))
     (is (= [{:a 1}] (rel/what-if db B [:delete-exact :A {:a 42}])))))
 
@@ -1163,5 +1172,30 @@
     (is (false? (rel/>= "a" "b")))
     (is (true? (rel/>= "b" "a")))))
 
+(deftest sort-test
+  (let [aseq (map array-map (repeat :a) (range 100))
+        db (rel/transact {} {:A aseq})]
+    (is (= aseq (rel/q db [[:from :A] [:sort [:a :asc]]])))
+    (is (= aseq (rel/q db [[:from :A] [:sort [:a]]])))
+    (is (= (sort-by :a > aseq) (rel/q db [[:from :A] [:sort [:a :desc]]])))
+
+    (let [data [{:a "a"
+                 :b 1}
+                {:a "b"
+                 :b 0}
+                {:a "b"
+                 :b 1}]]
+
+      (is (= [{:a "a", :b 1} {:a "b", :b 1},{:a "b", :b 0}] (rel/q {} [[:const data] [:sort [:a :asc] [:b :desc]]])))
+      (is (= [{:a "b", :b 0} {:a "b", :b 1},{:a "a", :b 1}] (rel/q {} [[:const data] [:sort [:a :desc] [:b :asc]]]))))))
+
+(deftest sort-limit-test
+  (let [aseq (map array-map (repeat :a) (range 100))
+        db (rel/transact {} {:A aseq})]
+    (is (= aseq (rel/q db [[:from :A] [:sort-limit 101 [:a :asc]]])))
+    (is (= (take 10 aseq) (rel/q db [[:from :A] [:sort-limit 10 [:a :asc]]])))
+    (is (= (take 10 aseq) (rel/q db [[:from :A] [:sort-limit 10 [:a]]])))
+    (is (= (take 10 (sort-by :a > aseq)) (rel/q db [[:from :A] [:sort-limit 10 [:a :desc]]])))))
+
 (comment
-  (clojure.test/run-all-tests #"relic"))
+  (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

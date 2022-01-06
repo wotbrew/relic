@@ -52,3 +52,7 @@
 
 (defn stop-shadow []
   (s.server/stop!))
+
+(defn clj-tests []
+  (require 'clojure.test)
+  (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

@@ -19,6 +19,8 @@ nav:
       - :qualify: qualify.md
       - :rename: rename.md
       - :select: select.md
+      - :sort: sort.md
+      - :sort-limit: sort-limit.md
       - :union: union.md
       - :where: where.md
       - :without: without.md

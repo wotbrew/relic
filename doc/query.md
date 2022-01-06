@@ -52,6 +52,8 @@ delimited form, and so you can create new queries with `conj`, split them with `
 - [`:without`](without.md) drop columns
 - [`:expand`](expand.md) flatten nested sequences
 - [`:agg`](agg.md) apply aggregates over rows in groups
+- [`:sort`](sort.md) sort rows 
+- [`:sort-limit`](sort-limit.md) sort with a limit
 - [`:const`](const.md) provide a constant relation
 - [`:difference`](difference.md) set diff
 - [`:intersection`](intersection.md) set intersection

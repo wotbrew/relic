@@ -963,8 +963,6 @@
               left (reduce conj left joins)]
           left)))))
 
-(declare full-dependencies)
-
 (defn lookup [graph self _ index path]
   (let [path (vec path)
         [iget] (mem index)]
@@ -1165,24 +1163,21 @@
          (! (to-dataflow* graph ret relvar))
          ret)) ret)))
 
-(defn full-dependencies [relvar]
+(defn dependencies
+  "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
+  [relvar]
   ((fn rf [s relvar]
      (if (empty? relvar)
        s
-       (if-some [table (r/unwrap-table relvar)]
+       (if-some [table (r/unwrap-table-key relvar)]
          (conj s table)
          (let [head (r/head relvar)
                op (r/operator head)]
            (case op
-             :lookup (let [[_ i] head] (full-dependencies i))
+             :lookup (let [[_ i] head] (dependencies i))
              (let [{:keys [deps]} (to-dataflow {} relvar)]
                (reduce rf s deps)))))))
    #{} relvar))
-
-(defn dependencies
-  "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
-  [relvar]
-  (distinct (map #(nth (first %) 1 nil) (full-dependencies relvar))))
 
 (defn- tag-generation [graph node-id generation]
   (let [{e-gen :generation

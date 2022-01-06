@@ -659,8 +659,7 @@
                         nset (if-some [v (elfn row)] (u/set-conj eset v) eset)]
                     (if (same-size? nrows rows)
                       idx
-                      (do (when-not (identical? nset eset)
-                            (u/add-to-mutable-set changed group))
+                      (do (u/add-to-mutable-set changed group)
                           (assoc idx group [nrows nset]))))))
         deleter (if (= identity elfn)
                   (fn [idx row changed]
@@ -680,8 +679,7 @@
                           nset (if-some [v (elfn row)] (disj eset v) eset)]
                       (if (same-size? nrows rows)
                         idx
-                        (do (when-not (same-size? nset eset)
-                              (u/add-to-mutable-set changed group))
+                        (do (u/add-to-mutable-set changed group)
                             (if (empty? nrows)
                               (dissoc idx group)
                               (assoc idx group [nrows nset])))))))

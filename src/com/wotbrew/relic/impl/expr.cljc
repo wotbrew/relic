@@ -174,3 +174,38 @@
     (fn? expr) expr
 
     :else (constantly expr)))
+
+(defn call-expr? [expr]
+  (vector? expr))
+
+(defn operator [expr]
+  (when (call-expr? expr) (nth expr 0)))
+
+(defn const-expr?
+  [expr]
+  (cond
+    (vector? expr) (contains? #{:_ :com.wotbrew.relic/esc} (operator expr))
+    (keyword? expr) false
+    (fn? expr) false
+    :else true))
+
+(defn unwrap-const
+  [expr]
+  (when (const-expr? expr)
+    (if (vector? expr)
+      (recur (nth expr 1 nil))
+      expr)))
+
+(defn eq-expr? [expr]
+  (= = (operator expr)))
+
+(defn eq-to-const?
+  "True if [= a b] where either a or b is const (but not both)"
+  [expr]
+  (and (eq-expr? expr)
+       (= 3 (count expr))
+       (let [[_ a b] expr]
+         (and (or (const-expr? a)
+                  (const-expr? b))
+              (or (not (const-expr? a))
+                  (not (const-expr? b)))))))

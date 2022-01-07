@@ -114,7 +114,6 @@
     1 (check-pred relvar (first checks))
     (apply comp (rseq (mapv #(check-pred relvar %) checks)))))
 
-
 (def ^:dynamic *ids* nil)
 (def ^:dynamic *idn* nil)
 
@@ -153,6 +152,10 @@
     (if-some [[relvar f & tail] (seq more)]
       (recur (assoc ret (id relvar) f) tail)
       ret)))
+
+(def ^:dynamic *no-mat*
+  "Bound by query for dataflow nodes that only being materialized for query, not to keep."
+  nil)
 
 (defn- same-size? [coll1 coll2] (= (count coll1) (count coll2)))
 
@@ -538,9 +541,9 @@
   (if *foreign-key-violations*
     (set! *foreign-key-violations* (update *foreign-key-violations* [left right clause] u/set-conj (dissoc row ::fk)))
     (u/raise "Foreign key violation" {:relvar left
-                                    :references right
-                                    :clause clause
-                                    :row (dissoc row ::fk)})))
+                                      :references right
+                                      :clause clause
+                                      :row (dissoc row ::fk)})))
 
 (defn- good-fk [left right clause row cascade]
   (when (and (= cascade :delete) *foreign-key-cascades*)
@@ -1032,6 +1035,85 @@
                db (assoc-in db [sid :view] v)]
            (forward db inserted deleted))))}))
 
+(defn index? [relvar] (#{:hash :btree :unique} (r/head-operator relvar)))
+(defn unique? [relvar] (= :unique (r/head-operator relvar)))
+(defn hash? [relvar] (= :hash (r/head-operator relvar)))
+(defn btree? [relvar] (= :btree (r/head-operator relvar)))
+(defn from? [relvar] (= :from (r/head-operator relvar)))
+
+(defn find-indexes
+  ([graph relvar] (find-indexes graph identity relvar))
+  ([graph pred relvar]
+   (let [relvar (r/unwrap-from (r/to-relvar relvar))
+         id (get-id graph relvar)
+         {:keys [dependents]} (graph id)]
+     (u/iterable-mut-list
+       (reduce
+         (fn !
+           [lst child-id]
+           (let [child-node (graph child-id)
+                 relvar (:relvar child-node)]
+             (cond
+               (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
+               (from? relvar) (reduce ! lst (:dependents child-node))
+               :else lst)))
+         (u/mutable-list)
+         dependents)))))
+
+(defn- optimise-where
+  [graph relvar exprs]
+  (let [indexes (find-indexes graph relvar)
+
+        ;; for each expr while you can find indexes
+        ;; that might satisfy the lookup
+        ;; return data about those indexes
+        index-hits
+        (for [expr exprs
+              :while (e/eq-to-const? expr)
+              :let [[_ a b] expr
+                    c (if (e/const-expr? a) a b)
+                    k (if (identical? a c) b a)
+                    c (e/unwrap-const c)]]
+          {:expr exprs
+           :lookup c
+           :key k
+           :indexes (for [index indexes
+                          :let [[i & iexprs] (r/head index)]
+                          :when (some #(= k %) iexprs)]
+                      index)})
+
+        ;; find indexes that satisfy as many expr in a row as possible
+        index-scores
+        (for [index (:indexes (first index-hits))
+              :let [score (count (take-while (fn [{:keys [indexes]}] (some #(= index %) indexes)) (rest index-hits)))]]
+          {:index index
+           :score [score (case (r/head-operator index)
+                           :unique 2
+                           :hash 1
+                           0)]})
+
+        ;; this is the index we should choose
+        best-index (:index (first (sort-by :score #(> (compare %1 %2) 0) index-scores)))
+        use-hits (for [{:keys [indexes] :as hit} index-hits
+                      :when (some #(= best-index %) indexes)]
+                  hit)
+
+        index-keys (some-> best-index r/head rest)
+        index-ord (into {} (map-indexed (fn [i v] [v i])) index-keys)
+        add-or-grow (fn [v i x]
+                      (if (< i (count v))
+                        (assoc v i x)
+                        (recur (conj v nil) i x)))]
+
+    (if (seq use-hits)
+      (let [lookup-seq (reduce #(add-or-grow %1 (index-ord (:key %2)) (:lookup %2)) [nil] use-hits)
+            base [(into [:lookup best-index] lookup-seq)]
+            scan (drop (count use-hits) exprs)]
+        (if (seq scan)
+          (conj base (into [:where*] scan))
+          base))
+      (conj relvar (into [:where*] exprs)))))
+
 (defn to-dataflow* [graph relvar self]
   (let [relvar (r/to-relvar relvar)
         left (r/left relvar)
@@ -1048,6 +1130,12 @@
           (conj relvar [pass]))
 
         :where
+        (let [[_ & exprs] head]
+          (if *no-mat*
+            (optimise-where graph left exprs)
+            (add-implicit-joins #(conj left [where (where-pred exprs)]))))
+
+        :where*
         (let [[_ & exprs] head]
           (add-implicit-joins #(conj left [where (where-pred exprs)])))
 
@@ -1470,13 +1558,14 @@
   ([db relvar opts]
    (if (contains? (::materialized (gg db)) relvar)
      db
-     (let [graph (gg db)
-           graph (inc-generation graph)
-           graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
-           relvar (conj relvar [mat (:query opts false)])
-           graph (add-to-graph graph relvar)
-           graph (init graph relvar)]
-       (sg db graph)))))
+     (binding [*no-mat* (:query opts false)]
+       (let [graph (gg db)
+             graph (inc-generation graph)
+             graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
+             relvar (conj relvar [mat (:query opts false)])
+             graph (add-to-graph graph relvar)
+             graph (init graph relvar)]
+         (sg db graph))))))
 
 (defn dematerialize [db relvar]
   (let [graph (gg db)
@@ -1577,32 +1666,6 @@
 (defn materialized? [db relvar]
   (contains? (::materialized (gg db)) relvar))
 
-(defn index? [relvar] (#{:hash :btree :unique} (r/head-operator relvar)))
-(defn unique? [relvar] (= :unique (r/head-operator relvar)))
-(defn hash? [relvar] (= :hash (r/head-operator relvar)))
-(defn btree? [relvar] (= :btree (r/head-operator relvar)))
-(defn from? [relvar] (= :from (r/head-operator relvar)))
-
-(defn find-indexes
-  ([db relvar] (find-indexes db identity relvar))
-  ([db pred relvar]
-   (let [graph (gg db)
-         relvar (r/unwrap-from (r/to-relvar relvar))
-         id (get-id graph relvar)
-         {:keys [dependents]} (graph id)]
-     (u/iterable-mut-list
-       (reduce
-         (fn !
-           [lst child-id]
-           (let [child-node (graph child-id)
-                 relvar (:relvar child-node)]
-             (cond
-               (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
-               (from? relvar) (reduce ! lst (:dependents child-node))
-               :else lst)))
-         (u/mutable-list)
-         dependents)))))
-
 (defn index [db relvar]
   (let [graph (gg db)
         id (get-id graph relvar)
@@ -1613,7 +1676,7 @@
   (u/raise "Unrecognized transact form" {:tx tx}))
 
 (defn- upsert-base [db table-key f rows]
-  (let [unique-indexes (find-indexes db unique? table-key)
+  (let [unique-indexes (find-indexes (gg db) unique? table-key)
 
         path-fns
         (reduce

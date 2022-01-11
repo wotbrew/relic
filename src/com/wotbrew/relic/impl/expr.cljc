@@ -109,6 +109,10 @@
 
 (defn- to-function [f]
   (cond
+    (identical? clj/< f) <
+    (identical? clj/<= f) <=
+    (identical? clj/> f) >
+    (identical? clj/>= f) >=
     (fn? f) f
     (keyword? f) f
     :else (u/raise "Expected a function in expression prefix position")))

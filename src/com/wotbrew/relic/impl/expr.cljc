@@ -1,6 +1,9 @@
 (ns com.wotbrew.relic.impl.expr
   (:require [com.wotbrew.relic.impl.util :as u]
-            [com.wotbrew.relic.impl.relvar :as r]))
+            [com.wotbrew.relic.impl.relvar :as r]
+            #?(:clj [clojure.core :as clj]
+               :cljs [cljs.core :as clj]))
+  (:refer-clojure :exclude [< <= > >=]))
 
 (def ^:dynamic *env-deps* nil)
 
@@ -54,13 +57,26 @@
 
 ;; not going to use keywords as I do not want
 ;; exfiltration to be possible using edn user input
-(deftype SubSelectFirst [])
-(deftype SubSelect [])
-(deftype Env [])
 
-(defonce sub-select-first (->SubSelectFirst))
-(defonce sub-select (->SubSelect))
-(defonce env (->Env))
+(defonce sub-select-first (fn [& _] (u/raise "Cannot use rel/sel1 outside of relic expressions.")))
+(defonce sub-select (fn [& _] (u/raise "Cannot use rel/sel outside of relic expressions.")))
+(defonce env (fn [& _] (u/raise "Cannot use rel/env outside of relic expressions.")))
+
+(defn <
+  [a b]
+  (clj/< (compare a b) 0))
+
+(defn <=
+  [a b]
+  (clj/<= (compare a b) 0))
+
+(defn >
+  [a b]
+  (clj/> (compare a b) 0))
+
+(defn >=
+  [a b]
+  (clj/>= (compare a b) 0))
 
 (defn- safe-expr-str [expr]
   (cond
@@ -199,13 +215,56 @@
 (defn eq-expr? [expr]
   (= = (operator expr)))
 
+(defn- binary-dyn-const?
+  ([expr]
+   (when (and (call-expr? expr) (= 3 (count expr)))
+     (let [[_ a b] expr]
+       (binary-dyn-const? a b))))
+  ([a b]
+   (and (or (const-expr? a)
+            (const-expr? b))
+        (or (not (const-expr? a))
+            (not (const-expr? b))))))
+
 (defn eq-to-const?
   "True if [= a b] where either a or b is const (but not both)"
   [expr]
   (and (eq-expr? expr)
-       (= 3 (count expr))
-       (let [[_ a b] expr]
-         (and (or (const-expr? a)
-                  (const-expr? b))
-              (or (not (const-expr? a))
-                  (not (const-expr? b)))))))
+       (binary-dyn-const? expr)))
+
+(defn destructure-const-test
+  "If expr is a simple test, [op const-expr expr] or [op expr const-expr].
+
+  Where op is =,<,>,>=,<=.
+
+  Return a map :test (:=, :< :<= :>= :>), :const (expr), :row (expr).
+
+  Test should always be applied in the following order (test row const), (test is flipped if operands in different order)
+
+  Used for choosing :where plans according to indexes."
+  [expr]
+  (when (binary-dyn-const? expr)
+    (let [[op a b] expr
+          c (if (const-expr? a) (unwrap-const a) (unwrap-const b))
+          d (if (const-expr? a) b a)
+          t (fn [t]
+              {:test t
+               :const c
+               :row d})
+          ab (not (identical? d b))]
+      (condp identical? op
+        clj/< (t (if ab :< :>))
+        < (t (if ab :< :>))
+
+        clj/<= (t (if ab :<= :>=))
+        <= (t (if ab :<= :>=))
+
+        clj/> (t (if ab :> :<))
+        > (t (if ab :> :<))
+
+        clj/>= (t (if ab :>= :<=))
+        >= (t (if ab :>= :<=))
+
+        = (t :=)
+
+        nil))))

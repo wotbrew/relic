@@ -972,9 +972,10 @@
       (u/raise ":lookup used but index is not materialized" {:index index}))
     (when-not (= (count path) (dec (count (r/head index))))
       (u/raise ":lookup path length must currently match indexed expressions"))
-    {:provide (fn [db]
-                (when-some [i (iget db)]
-                  (get-in i path)))}))
+    {:provide
+     (fn [db]
+       (when-some [i (iget db)]
+         (get-in i path)))}))
 
 (defn- require-set
   "Certain functions will require that an intermediate relvar is materialized as a set.
@@ -1060,59 +1061,261 @@
          (u/mutable-list)
          dependents)))))
 
-(defn- optimise-where
+(defn where-plans
   [graph relvar exprs]
   (let [indexes (find-indexes graph relvar)
+        init [{:relvar relvar}]]
+    (if (empty? indexes)
+      [{:type :scan
+        :relvar relvar
+        :exprs exprs}]
+      (letfn [(indexed-expr? [index expr]
+                (let [[_ & iexprs] (r/head index)]
+                  (some #(= expr %) iexprs)))
 
-        ;; for each expr while you can find indexes
-        ;; that might satisfy the lookup
-        ;; return data about those indexes
-        index-hits
-        (for [expr exprs
-              :while (e/eq-to-const? expr)
-              :let [[_ a b] expr
-                    c (if (e/const-expr? a) a b)
-                    k (if (identical? a c) b a)
-                    c (e/unwrap-const c)]]
-          {:expr exprs
-           :lookup c
-           :key k
-           :indexes (for [index indexes
-                          :let [[i & iexprs] (r/head index)]
-                          :when (some #(= k %) iexprs)]
-                      index)})
+              (with-expr [expr] (filter #(indexed-expr? % expr) indexes))
 
-        ;; find indexes that satisfy as many expr in a row as possible
-        index-scores
-        (for [index (:indexes (first index-hits))
-              :let [score (count (take-while (fn [{:keys [indexes]}] (some #(= index %) indexes)) (rest index-hits)))]]
-          {:index index
-           :score [score (case (r/head-operator index)
-                           :unique 2
-                           :hash 1
-                           0)]})
+              (init? [alts] (= alts init))
 
-        ;; this is the index we should choose
-        best-index (:index (first (sort-by :score #(> (compare %1 %2) 0) index-scores)))
-        use-hits (for [{:keys [indexes] :as hit} index-hits
-                      :when (some #(= best-index %) indexes)]
-                  hit)
+              (same-index? [a b] (= (:index a) (:index b)))
 
-        index-keys (some-> best-index r/head rest)
-        index-ord (into {} (map-indexed (fn [i v] [v i])) index-keys)
-        add-or-grow (fn [v i x]
-                      (if (< i (count v))
-                        (assoc v i x)
-                        (recur (conj v nil) i x)))]
+              (test->expr [test row-expr const-expr]
+                (case test
+                  := [= row-expr const-expr]
+                  :< [e/< row-expr const-expr]
+                  :> [e/> row-expr const-expr]
+                  :<= [e/<= row-expr const-expr]
+                  :>= [e/>= row-expr const-expr]))
 
-    (if (seq use-hits)
-      (let [lookup-seq (reduce #(add-or-grow %1 (index-ord (:key %2)) (:lookup %2)) [nil] use-hits)
-            base [(into [:lookup best-index] lookup-seq)]
-            scan (drop (count use-hits) exprs)]
-        (if (seq scan)
-          (conj base (into [:where*] scan))
-          base))
-      (conj relvar (into [:where*] exprs)))))
+              (multi-test->or [test row-expr cases]
+                (into [:or] (map #(test->expr test row-expr %)) cases))
+
+              (lookup-key->exprs [lk]
+                (for [[t m] lk
+                      [k vs] m]
+                  (if (= 1 (count vs))
+                    (test->expr t k (first vs))
+                    (multi-test->or t k vs))))
+
+              (merge-test [l1 test m]
+                (case test
+                  := (update-in l1 [:key test] (partial merge-with set/intersection) m)
+                  (:< :<=)
+                  (reduce-kv (fn [l1 row-expr vs]
+                               (assert (= 1 (count vs)))
+                               (let [v (first vs)
+                                     key (:key l1)
+                                     ov (first (get (get key test) row-expr))
+                                     lowest (if (nil? ov) v (if (e/< v ov) v ov))]
+                                 (assoc-in l1 [:key test row-expr] #{lowest})))
+                             l1 m)
+                  (:> :>=)
+                  (reduce-kv (fn [l1 row-expr vs]
+                               (assert (= 1 (count vs)))
+                               (let [v (first vs)
+                                     key (:key l1)
+                                     ov (first (get (get key test) row-expr))
+                                     highest (if (nil? ov) v (if (e/< ov v) v ov))]
+                                 (assoc-in l1 [:key test row-expr] #{highest})))
+                             l1 m)))
+
+              (merge-tests [l1 l2]
+                (reduce-kv merge-test l1 (:key l2)))
+
+              (merge-lookup [l1 l2]
+                (if (same-index? l1 l2)
+                  (-> l1
+                      (merge-tests l2)
+                      (merge-scan l2))
+                  (merge-scan l1 {:type :scan
+                                  :relvar relvar
+                                  :exprs (into [] cat [(lookup-key->exprs (:key l2))
+                                                       (:exprs l2)])})))
+
+              (merge-scan [s1 s2]
+                (update s1 :exprs (fnil into []) (:exprs s2)))
+
+              (merge-fn [t t2]
+                (case [t t2]
+                  [:scan :scan] merge-scan
+                  [:scan :lookup] (fn [s l] (update l :exprs (fn [e] (into (or e []) (:exprs s)))))
+                  [:lookup :lookup] merge-lookup
+                  [:lookup :scan] #(update %1 :exprs (fnil into []) (:exprs %2))
+                  (if (nil? t)
+                    (fn [a b] b)
+                    merge-scan)))
+
+              (merge-op [op1 op2]
+                ((merge-fn (:type op1) (:type op2)) op1 op2))
+
+              (contains-const [expr]
+                (let [[_ c _] expr]
+                  (e/unwrap-const c)))
+
+              (merge-with-alts [alts ops]
+                (for [i ops
+                      alt alts
+                      :let [o (merge-op alt i)]
+                      :when o]
+                  o))
+
+              (optimise [alts expr]
+                (cond
+
+                  (e/destructure-const-test expr)
+                  (let [{t :test
+                         row-expr :row
+                         const-expr :const} (e/destructure-const-test expr)
+                        indexes (with-expr row-expr)
+
+                        ops (if (seq indexes)
+                              (for [i indexes]
+                                {:type :lookup
+                                 :index i
+                                 :key {t {row-expr #{const-expr}}}})
+                              [{:type :scan
+                                :relvar relvar
+                                :exprs [expr]}])]
+                    ops)
+
+                  (= :and (e/operator expr))
+                  (let [[_ & exprs] expr]
+                    (reduce optimise alts exprs))
+
+                  (and (= contains? (e/operator expr))
+                       (init? alts)
+                       (set? (contains-const expr)))
+                  (let [[_ _ d] expr
+                        indexes (with-expr d)
+                        c (contains-const expr)
+                        c-set (set c)]
+                    (if (seq indexes)
+                      (for [i indexes]
+                        {:type :lookup
+                         :index i
+                         :key {:= {d c-set}}})
+                      [{:type :scan
+                        :relvar relvar
+                        :exprs [expr]}]))
+
+                  :else [{:type :scan
+                          :relvar relvar
+                          :exprs [expr]}]))]
+        (reduce #(merge-with-alts %1 (optimise %1 %2)) init exprs)))))
+
+(defn plan-score [plan]
+  (case (:type plan)
+    :lookup
+    (let [{:keys [index key]} plan
+          index-type (r/head-operator index)
+
+          eq-mul (case index-type
+                   :unique 2.01
+                   :hash 2.0
+                   :btree 1.0)
+
+          sort-mul (case index-type
+                     :btree 3.0
+                     1.0)
+
+          test-term-score
+          (fn [test]
+            (case test
+              := eq-mul
+              :< sort-mul
+              :<= sort-mul
+              :> sort-mul
+              :>= sort-mul))
+
+          indexed-term-score
+          (reduce-kv (fn [n test m]
+                       (+ n (* (test-term-score test) (count m))))
+                     0.0 key)]
+      indexed-term-score)
+    0.0))
+
+(defn choose-plan [alts]
+  (let [best (reduce (fn [a b]
+                       (if (< (plan-score a) (plan-score b))
+                         b
+                         a))
+                     (first alts) (rest alts))]
+    best))
+
+(defn compile-plan [graph plan]
+  (case (:type plan)
+    nil (:relvar plan)
+    :scan (conj (:relvar plan) (into [:where*] (:exprs plan)))
+    :lookup
+    (let [{:keys [index, key, exprs]} plan
+          [itype & iexprs] (r/head index)
+          row-expr-idx (into {} (map-indexed (fn [i x] [x i])) iexprs)
+          u (= :unique itype)
+          df {:xf (mapcat (fn [x] (vals x)))}
+          dfe (if u df {:xf (comp (:xf df) cat)})
+          v (vec (repeat (count iexprs) df))
+          v (assoc v (dec (count iexprs)) dfe)
+
+
+          ;; compile :key to walks
+          walks
+          (reduce-kv
+              (fn [v test m]
+                (reduce-kv
+                  (fn [v row-expr const-exprs]
+                    (let [i (row-expr-idx row-expr)
+                          lst (= i (dec (count iexprs)))
+                          nxt (if lst
+                                (if u
+                                  #(some-> % vector)
+                                  identity)
+                                vector)
+                          card (count const-exprs)
+                          st (fn [test]
+                               (let [e (first const-exprs)
+                                     vxf (mapcat (comp nxt val))]
+                                 (if (contains? #{df dfe} (v i))
+                                   {:xf (mapcat (fn [m] (eduction vxf (subseq m test e))))}
+                                   (update
+                                     (v i)
+                                     :post
+                                     (fnil conj [])
+                                     [test row-expr e]))))]
+                      (->>
+                        (case test
+                          := (case card
+                               1 (let [e (first const-exprs)]
+                                   {:xf (mapcat (fn [m] (nxt (m e))))})
+                               {:xf (mapcat (fn [m] (eduction (mapcat (comp nxt m)) const-exprs)))})
+                          :< (case card
+                               1 (st e/<))
+                          :> (case card
+                               1 (st e/>))
+                          :>= (case card
+                                1 (st e/>=))
+                          :<= (case card
+                                1 (st e/<=)))
+                        (assoc v i))))
+                  v
+                  m))
+              v
+              key)
+          xf (apply comp (map :xf walks))
+          post-exprs (mapcat :post walks)
+          exprs (concat exprs post-exprs)
+          id (get-id graph index)
+          provide [[provide (fn [db] (let [{:keys [mem]} (db id)]
+                                       (when-some [idx mem]
+                                         (eduction xf [idx]))))]]]
+      (if (seq exprs)
+        (conj provide (into [:where*] exprs))
+        provide))))
+
+(defn optimise-where
+  [graph relvar exprs]
+  (let [plans (where-plans graph relvar exprs)
+        plan (choose-plan plans)]
+    (compile-plan graph plan)))
 
 (defn to-dataflow* [graph relvar self]
   (let [relvar (r/to-relvar relvar)
@@ -1312,7 +1515,8 @@
          (let [head (r/head relvar)
                op (r/operator head)]
            (case op
-             :lookup (let [[_ i] head] (dependencies i))
+             :from (let [[_ i] head] (rf s i))
+             :lookup (let [[_ i] head] (rf s i))
              (let [{:keys [deps]} (to-dataflow {} relvar)]
                (reduce rf s deps)))))))
    #{} relvar))
@@ -1351,6 +1555,17 @@
       (update graph id dissoc :linked)
       graph)))
 
+(defn- enumerate-used-tables
+  [graph nid]
+  ((fn rf [s nid]
+     (let [node (graph nid)
+           table (:table node)
+           deps (:deps node)]
+       (if table
+         (conj s table)
+         (transduce (map #(get-id graph %)) (completing rf) s deps))))
+   #{} nid))
+
 (defn- add-to-graph* [graph relvar]
   (cond
     (empty? relvar) graph
@@ -1363,7 +1578,7 @@
           graph (reduce add-to-graph* graph deps)
           graph (reduce #(depend %1 (id %2) nid) graph deps)
           graph (tag-generation graph nid (::generation graph 0))
-          graph (reduce unlink graph (dependencies relvar))]
+          graph (reduce unlink graph (enumerate-used-tables graph nid))]
       graph)))
 
 (defn add-to-graph [graph relvar]
@@ -1391,7 +1606,7 @@
               graph (reduce #(undepend %1 (id %2) nid) graph deps)
               graph (reduce del-from-graph* graph deps)
               _ (set! *ids* (dissoc *ids* relvar))
-              graph (reduce unlink graph (dependencies relvar))]
+              graph (reduce unlink graph (enumerate-used-tables graph nid))]
           graph)))))
 
 (defn del-from-graph [graph relvar]

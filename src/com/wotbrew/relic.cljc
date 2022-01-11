@@ -524,22 +524,18 @@
   [rel/env :now]"
   e/env)
 
-(defn <
+(def <
   "Like < in clojure, but works with compare. So you can use it on objects like strings and dates."
-  [a b]
-  (clj/< (compare a b) 0))
+  e/<)
 
-(defn <=
+(def <=
   "Like <= in clojure, but works with compare. So you can use it on objects like strings and dates."
-  [a b]
-  (clj/<= (compare a b) 0))
+  e/<=)
 
-(defn >
+(def >
   "Like > in clojure, but works with compare. So you can use it on objects like strings and dates."
-  [a b]
-  (clj/> (compare a b) 0))
+  e/>)
 
-(defn >=
+(def >=
   "Like >= in clojure, but works with compare. So you can use it on objects like strings and dates."
-  [a b]
-  (clj/>= (compare a b) 0))
+  e/>=)

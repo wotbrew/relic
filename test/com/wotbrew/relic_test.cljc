@@ -1197,5 +1197,32 @@
     (is (= (take 10 aseq) (rel/q db [[:from :A] [:sort-limit 10 [:a]]])))
     (is (= (take 10 (sort-by :a > aseq)) (rel/q db [[:from :A] [:sort-limit 10 [:a :desc]]])))))
 
+(deftest index-selection-test
+  (let [db (rel/materialize
+             {}
+
+             [[:from :A]
+              [:hash :a]]
+
+             [[:from :A]
+              [:hash :b]]
+
+             [[:from :A]
+              [:hash :a :b]]
+
+             [[:from :A]
+              [:btree :a :b :c]]
+
+             [[:from :A]
+              [:unique :b]])
+        g (dataflow/gg db)
+        plan #(dataflow/choose-plan (dataflow/where-plans g :A %&))]
+
+    (is (= [[:from :A] [:unique :b]] (:index (plan [= :b 42]))))
+    (is (= [[:from :A] [:btree :a :b :c]] (:index (plan [< :b 42]))))
+    (is (= [[:from :A] [:btree :a :b :c]] (:index (plan [= :a 41] [< :b 42]))))
+    (is (= :scan (:type (plan [= :d 42]))))
+    (is (= :lookup (:type (plan [= :d 42] [even? :a] [< :a 42]))))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

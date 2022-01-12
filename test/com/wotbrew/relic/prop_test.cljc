@@ -4,7 +4,8 @@
             [clojure.test.check.properties :as prop]
             [com.wotbrew.relic :as rel]
             [clojure.test.check :as tc]
-            [com.wotbrew.relic.impl.util :as u]))
+            [com.wotbrew.relic.impl.util :as u]
+            [clojure.set :as set]))
 
 (defn- available-mat-types [model]
   (cond->
@@ -43,15 +44,22 @@
 (defn data-slice [model]
   (gen/let [table (gen/elements (keys (:tables model)))
             data (gen/vector (rowgen (get (:tables model) table)))]
-    {table data}))
+    (into [:insert table] data)))
+
+(defn data-delete [model]
+  (gen/let [table (gen/elements (keys (:tables model)))
+            data (gen/vector (rowgen (get (:tables model) table)))]
+    (into [:delete-exact table] data)))
 
 (defn mut [model]
-  (gen/one-of
-    [(gen/tuple (gen/return :mat) (mat model))
-     (gen/tuple (gen/return :demat) (mat model))
-     (gen/tuple (gen/return :watch) (mat model))
-     (gen/tuple (gen/return :unwatch) (mat model))
-     (gen/tuple (gen/return :deliver-data) (data-slice model))]))
+  (letfn [(mg [t payload] (gen/tuple (gen/return t) payload))]
+    (gen/one-of
+      [(mg :mat (mat model))
+       (mg :demat (mat model))
+       (mg :watch (mat model))
+       (mg :unwatch (mat model))
+       (mg :insert-data (data-slice model))
+       (mg :delete-data (data-delete model))])))
 
 (defn mutseq [model]
   (gen/vector (mut model)))
@@ -62,15 +70,19 @@
     :demat (rel/dematerialize db payload)
     :watch (rel/watch db payload)
     :unwatch (rel/unwatch db payload)
-    :deliver-data (rel/transact db payload)))
+    :insert-data (rel/transact db payload)
+    :delete-data (rel/transact db payload)))
 
 (defn- domuts [db muts]
   (reduce domut db muts))
 
 (defn- muttx [muts]
-  (reduce (fn [m [t d]]
-            (if (= t :deliver-data)
-              (merge-with (fn [a b] (into (set a) (set b))) m d)
+  (reduce (fn [m [t payload]]
+            (case t
+              :insert-data
+              (let [[_ t & rows] payload] (update m t #(set/union (set %1) (set rows))))
+              :delete-data
+              (let [[_ t & rows] payload] (update m t #(set/difference (set %1) (set rows))))
               m)) {} muts))
 
 (defn hinted-db-always-yields-same-result-as-non-hinted
@@ -93,7 +105,6 @@
            [[:from :a] [:btree :b :a]]]
    :queries [:a
              [[:from :a]]
-
 
              [[:from :a]
               [:agg [:b]

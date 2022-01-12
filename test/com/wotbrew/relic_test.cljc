@@ -1042,7 +1042,58 @@
     (is (= expected result))))
 
 ;; check.md
-;; todo ?!
+(deftest check-example-test
+  (let [cerr (fn [person relvar]
+               (try
+                 (rel/what-if {} relvar [:insert :Person person])
+                 nil
+                 (catch #?(:clj Throwable :cljs js/Error) e
+                   #?(:clj (.getMessage e) :cljs (.message e)))))]
+
+    (is (nil?
+          (cerr
+            {:name "fred"}
+            [[:from :Person]
+             [:check [string? :name]]])))
+
+    (is (= "Check constraint violation"
+           (cerr
+             {:name 42}
+             [[:from :Person]
+              [:check [string? :name]]])))
+
+
+    (is (= "All people must have a string :name"
+           (cerr
+             {:name 42}
+             [[:from :Person]
+              [:check {:pred [string? :name]
+                       :error "All people must have a string :name"}]])))
+
+    (is (= "Check constraint violation"
+           (cerr
+             {:name "Fred"}
+             [[:from :Person]
+              [:check [string? :name] [nat-int? :age]]])))
+
+    (is (= "Check constraint violation"
+           (cerr
+             {:age 42}
+             [[:from :Person]
+              [:check [string? :name] [nat-int? :age]]])))
+
+    (is (nil?
+           (cerr
+             {:age 42, :name "Fred"}
+             [[:from :Person]
+              [:check [string? :name] [nat-int? :age]]])))
+
+    (is (= (str "Expected a string :name, got " (type 42))
+           (cerr
+             {:name 42}
+             [[:from :Person]
+              [:check {:pred [string? :name]
+                       :error [str "Expected a string :name, got " [type :name]]}]])))))
 
 ;; const.md
 

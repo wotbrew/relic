@@ -39,7 +39,7 @@
                     b
                     reduced
                     combined
-                    (combine-reduced reduced combined)))
+                    (combine-reduced combined reduced)))
                 (let [combined (combine-results a b)]
                   (->AggIndexNode
                     (+ size cache-size)
@@ -49,7 +49,7 @@
                     b
                     reduced
                     combined
-                    (combine-reduced reduced combined))))))
+                    (combine-reduced combined reduced))))))
 
           (add [tree row]
             (let [{:keys [size, rm, cache, a, b, reduced, combined] :or {size 0, cache {}}} tree]

@@ -1550,7 +1550,7 @@
 <li>A query is always a vector</li>
 <li>queries are made up of operations, themselves vectors of the form <code>[operator &amp; args]</code>.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; example query from the tcp-h benchmark suite</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; example query from the tpc-h benchmark suite</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:lineitem</span><span class="p">]</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="ss">:l_shipdate</span> <span class="o">#</span><span class="nv">inst</span> <span class="s">&quot;1998-09-02&quot;</span><span class="p">]]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a> <span class="p">[</span><span class="ss">:agg</span>

@@ -1,6 +1,6 @@
 # Query
 
-Relic query language, or RelicQL. In relic queries are your primitive for describing the data in a domain, and views on it.
+Programming relic is mostly about defining queries.
 
 - A query is always a vector
 - queries are made up of operations, themselves vectors of the form `[operator & args]`.
@@ -8,7 +8,7 @@ Relic query language, or RelicQL. In relic queries are your primitive for descri
 ```clojure 
 ;; example query from the tcp-h benchmark suite
 [[:from :lineitem]
- [:where [<= [compare :l_shipdate #inst "1998-09-02"] 0]]
+ [:where [<= :l_shipdate #inst "1998-09-02"]]
  [:agg
    [:l_returnflag
     :l_linestatus]

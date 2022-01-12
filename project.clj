@@ -12,7 +12,8 @@
                                   [thheller/shadow-cljs "2.15.13"]
                                   [datascript "1.2.10"]
                                   [reagent "1.1.0"]
-                                  [io.airlift.tpch/tpch "0.10"]]
+                                  [io.airlift.tpch/tpch "0.10"]
+                                  [org.clojure/test.check "1.1.0"]]
                    :repl-options {:nrepl-middleware [shadow.cljs.devtools.server.nrepl/middleware]}
                    :injections [(try
                                   (println "Loading dev.clj")

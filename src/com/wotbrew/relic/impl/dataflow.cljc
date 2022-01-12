@@ -126,12 +126,11 @@
 (defn id [relvar]
   (or (get *ids* relvar)
       (if-not *idn*
-        relvar
-        (let [n *idn*
-              nid n]
-          (set! *ids* (assoc *ids* relvar nid))
+        (u/raise "*idn* not bound adding to graph")
+        (let [n *idn*]
+          (set! *ids* (assoc *ids* relvar n))
           (set! *idn* (inc n))
-          nid))))
+          n))))
 
 (defn mem
   [relvar]
@@ -325,62 +324,30 @@
    (let [hash (conj left (into [:hash] exprs))]
      [hash (index-seek-from-exprs row-exprs)])))
 
-(defn join
-  "Set join dataflow node, uses the best indexes available (or creates missing indexes if necessary).
-
-  Emits (Joined left right) rows."
-  [graph self left seekl right seekr]
-  (let [[mgetl] (mem left)
-        [mgetr] (mem right)]
-    {:deps [right left]
-     :flow (flow left (fn [db inserted deleted forward]
-                        (let [ridx (mgetr db {})
-                              xf (fn [rf]
-                                   (fn
-                                     ([acc] (rf acc))
-                                     ([acc row]
-                                      (reduce
-                                        (fn [acc rrow]
-                                          (rf acc (->Joined row rrow)))
-                                        acc
-                                        (seekr ridx row)))))]
-                          (forward db (eduction xf inserted) (eduction xf deleted))))
-                 right (fn [db inserted deleted forward]
-                         (let [lidx (mgetl db {})
-                               xf (fn [rf]
-                                    (fn
-                                      ([acc] (rf acc))
-                                      ([acc rrow]
-                                       (reduce
-                                         (fn [acc row]
-                                           (rf acc (->Joined row rrow)))
-                                         acc
-                                         (seekl lidx rrow)))))]
-                           (forward db (eduction xf inserted) (eduction xf deleted)))))}))
-
 (defrecord JoinColl [left coll])
 
 (defn join-coll
   "Emits (JoinColl row rrows) nodes, like join but always emits a row (e.g for left-join) and the right rows are grouped."
   [graph self left seekl right seekr]
   (let [[mget mset] (mem self)
+        [mgetr] (mem right)
         [mgetl] (mem left)
-        [mgetr] (mem right)]
+        realise (fn [s] (if (set? s) s (set s)))]
     {:deps [right left]
      :flow (flow
              left (fn [db inserted deleted forward]
                     (let [idx (mget db {})
                           ridx (mgetr db {})
 
-                          adds (u/mutable-set)
-                          dels (u/mutable-set)
+                          adds (u/mutable-list)
+                          dels (u/mutable-list)
 
                           nidx
                           (reduce
                             (fn [idx row]
                               (let [j (idx row)]
                                 (if j
-                                  (do (u/add-to-mutable-set dels j)
+                                  (do (u/add-to-mutable-list dels j)
                                       (dissoc idx row))
                                   idx)))
                             idx
@@ -391,15 +358,15 @@
                             (fn [idx row]
                               (let [j (idx row)]
                                 (when j
-                                  (u/add-to-mutable-set dels j))
-                                (let [nj (->JoinColl row (seekr ridx row))]
-                                  (u/add-to-mutable-set adds nj)
+                                  (u/add-to-mutable-list dels j))
+                                (let [nj (->JoinColl row (realise (seekr ridx row)))]
+                                  (u/add-to-mutable-list adds nj)
                                   (assoc idx row nj))))
                             nidx
                             inserted)
 
-                          adds (u/iterable-mut-set adds)
-                          dels (u/iterable-mut-set dels)
+                          adds (u/iterable-mut-list adds)
+                          dels (u/iterable-mut-list dels)
 
                           db (mset db nidx)]
                       (forward db adds dels)))
@@ -408,8 +375,8 @@
                            lidx (mgetl db {})
                            ridx (mgetr db {})
 
-                           adds (u/mutable-set)
-                           dels (u/mutable-set)
+                           adds (u/mutable-list)
+                           dels (u/mutable-list)
 
                            lrows (into #{} (comp cat (mapcat #(seekl lidx %))) [inserted deleted])
 
@@ -417,20 +384,27 @@
                            (reduce
                              (fn [idx row]
                                (let [j (idx row)
-                                     nj (->JoinColl row (seekr ridx row))]
-                                 (u/add-to-mutable-set dels j)
-                                 (u/add-to-mutable-set adds nj)
+                                     nj (->JoinColl row (realise (seekr ridx row)))]
+                                 (when j (u/add-to-mutable-list dels j))
+                                 (u/add-to-mutable-list adds nj)
                                  (assoc idx row nj)))
                              idx
                              lrows)
 
-                           adds (u/iterable-mut-set adds)
-                           dels (u/iterable-mut-set dels)
+                           adds (u/iterable-mut-list adds)
+                           dels (u/iterable-mut-list dels)
 
                            db (mset db nidx)]
                        (forward db adds dels))))
 
      :provide (fn [db] (some-> db mget vals))}))
+
+(defn join [graph self left seekl right seekr]
+  (conj
+    left
+    [join-coll seekl right seekr]
+    [expand (fn [{:keys [left coll]}] coll)]
+    [transform-unsafe #(update % :left :left)]))
 
 (defn left-join [graph self left seekl right seekr]
   (conj
@@ -598,7 +572,7 @@
 
           without-cols (into without-cols joins)]
 
-      (if (or (seq joins) env-join)
+      (if (or (seq join-statements) env-join)
         (let [left (r/left relvar)
               head (r/head relvar)
               left (if env-join (conj left env-join) left)
@@ -937,7 +911,10 @@
                      (eduction
                        (keep (partial get-row nidx))
                        ks)]
-                 (forward db new-rows old-rows))))}))
+                 (forward db new-rows old-rows))))
+     :provide (fn [db]
+                (when-some [idx (mget db)]
+                  (eduction (map (fn [{:keys [indexed-row]}] @indexed-row)) (vals idx))))}))
 
 (defn- get-custom-agg-node [left cols [_ expr :as agg]]
   (when-some [n (:custom-node (agg-expr-agg expr))]
@@ -1242,6 +1219,14 @@
                      (first alts) (rest alts))]
     best))
 
+(defn- hash-index-range-iterable
+  "clojure.core/subseq but works on hashmaps, yeah yeah its linear, but if you
+  have a map of k to n rows then it can still be faster to scan keys than all rows."
+  [m test v]
+  (eduction
+    (filter (fn [entry] (test (key entry) v)))
+    m))
+
 (defn compile-plan [graph plan]
   (case (:type plan)
     nil (:relvar plan)
@@ -1272,10 +1257,13 @@
                                 vector)
                           card (count const-exprs)
                           st (fn [test]
-                               (let [e (first const-exprs)
+                               (let [subseq-fn (if (= :btree itype)
+                                                 subseq
+                                                 hash-index-range-iterable)
+                                     e (first const-exprs)
                                      vxf (mapcat (comp nxt val))]
                                  (if (contains? #{df dfe} (v i))
-                                   {:xf (mapcat (fn [m] (eduction vxf (subseq m test e))))}
+                                   {:xf (mapcat (fn [m] (eduction vxf (subseq-fn m test e))))}
                                    (update
                                      (v i)
                                      :post
@@ -1365,7 +1353,8 @@
 
         :join
         (let [[_ & joins] head]
-          (reduce (fn [left [right clause]] (add-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
+          (reduce (fn [left [right clause]]
+                    (add-join left (r/to-relvar right) clause graph)) left (partition-all 2 joins)))
 
         :left-join
         (let [[_ & joins] head]
@@ -1571,8 +1560,8 @@
     (empty? relvar) graph
     (contains? graph (*ids* relvar)) graph
     :else
-    (let [{:keys [deps table] :as node} (to-dataflow graph relvar)
-          nid (id relvar)
+    (let [nid (id relvar)
+          {:keys [deps table] :as node} (to-dataflow graph relvar)
           graph (assoc graph nid (assoc node :relvar relvar))
           graph (if table (update graph ::tables assoc table nid) graph)
           graph (reduce add-to-graph* graph deps)
@@ -1585,7 +1574,7 @@
   (binding [*ids* (::ids graph {})
             *idn* (::idn graph 0)]
     (let [graph (add-to-graph* graph relvar)
-          graph (assoc graph ::ids *ids* ::idn *idn*)]
+          graph (assoc graph ::ids *ids* ::idn (inc *idn*))]
       graph)))
 
 (defn del-from-graph* [graph relvar]
@@ -1597,16 +1586,16 @@
     :else
     (let [{:keys [dependents
                   deps
-                  table]} (graph (id relvar))]
+                  table]} (graph (get-id graph relvar))]
       (if (seq dependents)
         graph
         (let [nid (id relvar)
+              graph (reduce unlink graph (enumerate-used-tables graph nid))
               graph (dissoc graph nid)
               graph (if table (update graph ::tables dissoc table) graph)
               graph (reduce #(undepend %1 (id %2) nid) graph deps)
               graph (reduce del-from-graph* graph deps)
-              _ (set! *ids* (dissoc *ids* relvar))
-              graph (reduce unlink graph (enumerate-used-tables graph nid))]
+              _ (set! *ids* (dissoc *ids* relvar))]
           graph)))))
 
 (defn del-from-graph [graph relvar]
@@ -1633,7 +1622,7 @@
   (fn tracking-flow [db inserted deleted]
     (track id inserted deleted)
     (f db inserted deleted)))
-
+#_
 (defn link
   [graph table-key]
   (letfn [(forward-fn [graph dependents]
@@ -1645,7 +1634,8 @@
                   (let [inserted (u/realise-coll inserted)
                         deleted (u/realise-coll deleted)]
                     (reduce
-                      (fn flow-step [db f] (f db inserted deleted))
+                      (fn flow-step [db f]
+                        (f db inserted deleted))
                       db
                       fns))))))
           (build-fn [graph edge id]
@@ -1659,6 +1649,44 @@
               (assoc graph id (assoc node :linked linked))))]
     (if-some [table-id (-> graph ::tables (get table-key))]
       (build-fn graph nil table-id)
+      graph)))
+
+(defn link
+  [graph table-key]
+  (letfn [(forward-fn [graph dep dependents]
+            (case (count dependents)
+              0 flow-noop
+              1 (get (:flow (graph (first dependents))) dep)
+              (let [fns (mapv (comp :linked graph) dependents)]
+                (fn flow-fan-out [db inserted deleted]
+                  (let [inserted (u/realise-coll inserted)
+                        deleted (u/realise-coll deleted)]
+                    (reduce
+                      (fn flow-step [db f]
+                        (f db inserted deleted))
+                      db
+                      fns))))))
+          (build-fn [graph edge id]
+            (let [{:keys [dependents
+                          flow]} (graph id)
+                  flow-fn (get flow edge flow-noop)
+                  forward-fn (case (count dependents)
+                               0 flow-noop
+                               1 (build-fn graph id (first dependents))
+                               (let [fns (mapv #(build-fn graph id %) dependents)]
+                                 (fn flow-fan-out [db inserted deleted]
+                                   (let [inserted (u/realise-coll inserted)
+                                         deleted (u/realise-coll deleted)]
+                                     (reduce
+                                       (fn flow-step [db f]
+                                         (f db inserted deleted))
+                                       db
+                                       fns)))))
+                  forward (tracked-flow id forward-fn)
+                  linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
+              linked))]
+    (if-some [table-id (-> graph ::tables (get table-key))]
+      (assoc-in graph [table-id :linked] (build-fn graph nil table-id))
       graph)))
 
 ;; d1, d2* d3
@@ -1723,10 +1751,11 @@
                     already-fired (contains? @provided (id relvar))
 
                     rs (when-not already-fired
-                         (or results (when (and provide
-                                                (or (not= generation new-generation)
-                                                    (empty? deps)))
-                                       (provide graph))))]
+                         (or results
+                             (when (and provide
+                                        (or (not= generation new-generation)
+                                            (empty? deps)))
+                               (provide graph))))]
 
                 (cond
                   already-fired graph
@@ -1749,7 +1778,6 @@
     {:deps [left]
      :flow (flow left (fn [db inserted deleted _]
                         (let [node (db left-id)
-                              v (:view node)
                               s (:results node)
                               rs (:result-set node)]
                           (if s
@@ -1759,20 +1787,20 @@
                                   s (persistent! s)]
                               (update db left-id assoc
                                       :results s
-                                      :view v,
                                       :result-set (delay s)))
                             (let [inserted (if is-query inserted (u/realise-coll inserted))]
                               (update db left-id assoc
                                       :results inserted,
-                                      :view v,
                                       :result-set (delay (set inserted))))))))
-     :provide (fn [db] (some-> (db left) :result-set deref))}))
+     :provide (fn [db] (some-> (db left-id) :result-set deref))}))
 
 (defn materialize
   ([db relvar] (materialize db relvar {}))
   ([db relvar opts]
-   (if (contains? (::materialized (gg db)) relvar)
-     db
+   (cond
+     (keyword? relvar) db
+     (contains? (::materialized (gg db)) relvar) db
+     :else
      (binding [*no-mat* (:query opts false)]
        (let [graph (gg db)
              graph (inc-generation graph)
@@ -1783,11 +1811,16 @@
          (sg db graph))))))
 
 (defn dematerialize [db relvar]
-  (let [graph (gg db)
-        graph (update graph ::materialized disj relvar)
-        relvar (conj relvar [mat false])
-        graph (del-from-graph graph relvar)]
-    (sg db graph)))
+  (cond
+    (keyword? relvar) db
+    :else
+    (let [graph (gg db)
+          graph (update graph ::materialized disj relvar)
+          nid (get-id graph relvar)
+          graph (if nid (update graph nid dissoc :results :result-set) graph)
+          mat-relvar (conj relvar [mat false])
+          graph (del-from-graph graph mat-relvar)]
+      (sg db graph))))
 
 (defn qraw
   "A version of query who's return type is undefined, just some seqable/reducable collection of rows."

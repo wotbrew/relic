@@ -52,7 +52,7 @@
   Delete rows (exact match) (faster)
   [:delete-exact table rows]
 
-  Delete by predicates with :delete vectors (slower)
+  Delete by predicates with :delete vectors
   [:delete table expr1 expr2 ..]
   e.g [:delete Customer [< :age 42]]
 

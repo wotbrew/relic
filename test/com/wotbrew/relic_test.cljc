@@ -379,7 +379,7 @@
    (is (= #{{:a 42}} (-> db dataflow/gg (dataflow/get-node A1) result-set)))
    (is (= #{{:a 43}} (-> db dataflow/gg (dataflow/get-node A2) result-set)))
    (is (some? (-> db (rel/dematerialize A2) dataflow/gg (dataflow/get-node A1))))
-   (is (= #{{:a 42}} (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) result-set)))
+   (is (-> db (rel/dematerialize A1) dataflow/gg (dataflow/get-node A1) some?))
    (is (nil? (-> db (rel/dematerialize A2 A1) dataflow/gg (dataflow/get-node A1))))))
 
 (deftest watch-table-test
@@ -1222,7 +1222,13 @@
     (is (= [[:from :A] [:btree :a :b :c]] (:index (plan [< :b 42]))))
     (is (= [[:from :A] [:btree :a :b :c]] (:index (plan [= :a 41] [< :b 42]))))
     (is (= :scan (:type (plan [= :d 42]))))
-    (is (= :lookup (:type (plan [= :d 42] [even? :a] [< :a 42]))))))
+    (is (= :lookup (:type (plan [= :d 42] [even? :a] [< :a 42]))))
+    (is (= :lookup (:type (plan [contains? #{42, 43} :a]))))))
+
+(deftest no-crash-on-hash-index-as-only-option-for-seq-test
+  (let [db (rel/materialize {} [[:from :a] [:hash :a]])
+        db (rel/transact db {:a [{:a 42}]})]
+    (is (= [{:a 42}] (rel/q db [[:from :a] [:where [< 41 :a]]])))))
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

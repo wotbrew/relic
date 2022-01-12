@@ -13,7 +13,7 @@
     
     
       
-        <title>min - relic</title>
+        <title>:sort-limit - relic</title>
       
     
     
@@ -58,7 +58,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#min" class="md-skip">
+        <a href="#sort-limit" class="md-skip">
           Skip to content
         </a>
       
@@ -91,7 +91,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              min
+              :sort-limit
             
           </span>
         </div>
@@ -270,12 +270,14 @@
               
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_3" type="checkbox" id="__nav_2_3" >
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_3" type="checkbox" id="__nav_2_3" checked>
       
       
       
@@ -492,11 +494,21 @@
               
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="../sort-limit/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         :sort-limit
       </a>
+      
     </li>
   
 
@@ -672,14 +684,12 @@
               
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" >
       
       
       
@@ -700,14 +710,12 @@
               
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6_1" type="checkbox" id="__nav_2_6_1" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6_1" type="checkbox" id="__nav_2_6_1" >
       
       
       
@@ -756,21 +764,11 @@
               
   
   
-    
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../min/" class="md-nav__link">
         min
       </a>
-      
     </li>
   
 
@@ -1455,23 +1453,15 @@
             <article class="md-content__inner md-typeset">
               
                 
-<a href="https://github.com/wotbrew/relic/edit/master/doc/min.md" title="Edit this page" class="md-content__button md-icon">
+<a href="https://github.com/wotbrew/relic/edit/master/doc/sort-limit.md" title="Edit this page" class="md-content__button md-icon">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
 </a>
 
 
-<h1 id="min">min</h1>
-<p>The <code>min</code> <a href="../aggregates/">aggregate</a> function allows you to find the lowest value across a set of rows.</p>
-<p>In this example, we take the minimum <code>:id</code> across the entire <code>:Customer</code> table.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; QUERY</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span> 
-<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:agg</span> <span class="p">[]</span> <span class="p">[</span><span class="ss">:min-id</span> <span class="p">[</span><span class="nb">min </span><span class="ss">:id</span><span class="p">]]]]</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="c1">;; STATE </span>
-<a id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="p">{</span><span class="ss">:Customer</span> <span class="o">#</span><span class="p">{{</span><span class="ss">:id</span> <span class="mi">0</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:id</span> <span class="mi">1</span><span class="p">}</span>, <span class="p">{</span><span class="ss">:id</span> <span class="mi">2</span><span class="p">}}}</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7"></a>
-<a id="__codelineno-0-8" name="__codelineno-0-8"></a><span class="c1">;; RESULT</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="p">({</span><span class="ss">:min-id</span> <span class="mi">0</span><span class="p">})</span>
+<h1 id="sort-limit">:sort-limit</h1>
+<p>Like <a href="../sort/"><code>:sort</code></a> but takes a limit param, for asking a query like the last 1000 events by timestamp.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Event</span><span class="p">]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a> <span class="p">[</span><span class="ss">:sort-limit</span> <span class="mi">1000</span> <span class="p">[</span><span class="ss">:ts</span> <span class="ss">:desc</span><span class="p">]</span> <span class="p">[</span><span class="ss">:event-type</span> <span class="ss">:asc</span><span class="p">]]]</span>
 </code></pre></div>
 
               
@@ -1486,7 +1476,7 @@
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../max-by/" class="md-footer__link md-footer__link--prev" aria-label="Previous: max-by" rel="prev">
+        <a href="../sort/" class="md-footer__link md-footer__link--prev" aria-label="Previous: :sort" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -1495,20 +1485,20 @@
               <span class="md-footer__direction">
                 Previous
               </span>
-              max-by
+              :sort
             </div>
           </div>
         </a>
       
       
         
-        <a href="../min-by/" class="md-footer__link md-footer__link--next" aria-label="Next: min-by" rel="next">
+        <a href="../union/" class="md-footer__link md-footer__link--next" aria-label="Next: :union" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              min-by
+              :union
             </div>
           </div>
           <div class="md-footer__button md-icon">

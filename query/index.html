@@ -542,6 +542,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../sort/" class="md-nav__link">
+        :sort
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sort-limit/" class="md-nav__link">
+        :sort-limit
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../union/" class="md-nav__link">
         :union
       </a>
@@ -1517,14 +1545,14 @@
 
 
 <h1 id="query">Query</h1>
-<p>Relic query language, or RelicQL. In relic queries are your primitive for describing the data in a domain, and views on it.</p>
+<p>Programming relic is mostly about defining queries.</p>
 <ul>
 <li>A query is always a vector</li>
 <li>queries are made up of operations, themselves vectors of the form <code>[operator &amp; args]</code>.</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; example query from the tcp-h benchmark suite</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:lineitem</span><span class="p">]</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="p">[</span><span class="nv">compare</span> <span class="ss">:l_shipdate</span> <span class="o">#</span><span class="nv">inst</span> <span class="s">&quot;1998-09-02&quot;</span><span class="p">]</span> <span class="mi">0</span><span class="p">]]</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3"></a> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="ss">:l_shipdate</span> <span class="o">#</span><span class="nv">inst</span> <span class="s">&quot;1998-09-02&quot;</span><span class="p">]]</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a> <span class="p">[</span><span class="ss">:agg</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a>   <span class="p">[</span><span class="ss">:l_returnflag</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6"></a>    <span class="ss">:l_linestatus</span><span class="p">]</span>
@@ -1559,6 +1587,8 @@ delimited form, and so you can create new queries with <code>conj</code>, split 
 <li><a href="../without/"><code>:without</code></a> drop columns</li>
 <li><a href="../expand/"><code>:expand</code></a> flatten nested sequences</li>
 <li><a href="../agg/"><code>:agg</code></a> apply aggregates over rows in groups</li>
+<li><a href="../sort/"><code>:sort</code></a> sort rows </li>
+<li><a href="../sort-limit/"><code>:sort-limit</code></a> sort with a limit</li>
 <li><a href="../const/"><code>:const</code></a> provide a constant relation</li>
 <li><a href="../difference/"><code>:difference</code></a> set diff</li>
 <li><a href="../intersection/"><code>:intersection</code></a> set intersection</li>

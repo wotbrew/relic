@@ -6,7 +6,7 @@ Programming relic is mostly about defining queries.
 - queries are made up of operations, themselves vectors of the form `[operator & args]`.
 
 ```clojure 
-;; example query from the tcp-h benchmark suite
+;; example query from the tpc-h benchmark suite
 [[:from :lineitem]
  [:where [<= :l_shipdate #inst "1998-09-02"]]
  [:agg

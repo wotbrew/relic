@@ -63,20 +63,48 @@
 (defonce env (fn [& _] (u/raise "Cannot use rel/env outside of relic expressions.")))
 
 (defn <
-  [a b]
-  (clj/< (compare a b) 0))
+  ([x] true)
+  ([x y]
+   (clj/< (compare x y) 0))
+  ([x y & more]
+   (if (< x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (< y (first more)))
+     false)))
 
 (defn <=
-  [a b]
-  (clj/<= (compare a b) 0))
+  ([x] true)
+  ([x y]
+   (clj/<= (compare x y) 0))
+  ([x y & more]
+   (if (<= x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (<= y (first more)))
+     false)))
 
 (defn >
-  [a b]
-  (clj/> (compare a b) 0))
+  ([x] true)
+  ([x y]
+   (clj/> (compare x y) 0))
+  ([x y & more]
+   (if (> x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (> y (first more)))
+     false)))
 
 (defn >=
-  [a b]
-  (clj/>= (compare a b) 0))
+  ([x] true)
+  ([x y]
+   (clj/>= (compare x y) 0))
+  ([x y & more]
+   (if (>= x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (>= y (first more)))
+     false)))
 
 (defn- safe-expr-str [expr]
   (cond

@@ -772,10 +772,8 @@
 (deftest min-max-test
   (let [db (rel/transact {} {:A (for [n (range 1000)] {:a n})})]
     (is (= [{:mina 0}] (rel/q db [[:from :A] [:agg [] [:mina [min :a]]]])))
-    (is (= [{:mina 0}] (rel/q db [[:from :A] [:agg [] [:mina [rel/min :a]]]])))
     (is (= [{:mina {:a 0}}] (rel/q db [[:from :A] [:agg [] [:mina [rel/min-by :a]]]])))
     (is (= [{:maxa 999}] (rel/q db [[:from :A] [:agg [] [:maxa [max :a]]]])))
-    (is (= [{:maxa 999}] (rel/q db [[:from :A] [:agg [] [:maxa [rel/max :a]]]])))
     (is (= [{:maxa {:a 999}}] (rel/q db [[:from :A] [:agg [] [:maxa [rel/max-by :a]]]])))))
 
 (deftest into-test

@@ -88,9 +88,15 @@ The goal is to avoid quote/unquote template shenanigans, and help make programmi
 ;; you can issue sub queries with rel/sel1 (first row) and rel/sel (all rows) (see sub-queries.md)
 [[:from :A] [:where [rel/sel1 :B {:a-id :a-id}]]]
 
-;; nil safe calls with :?
+;; nil safe calls with :?, which will check all column arguments are non-nil before applying the function 
+;; (returning nil if any dependent col is nil)
 [[:from :A] [:where [:? str/includes? :foo :bar]]]
 
-;; expressions have extra exception handling logic, if you cannot afford this, use the unsafe modifier.
-[[:from :A] [:where [:! str/includes? :foo :bar]]]
+;; comparison functions are overwritten by in relic expressions to use comparables
+;; this causes btree index optimised queries to have consistent behaviour with non-indexed queries.
+;; e.g the below will work
+[[:from :A] [:where [< :foo "abc"]]]
+[[:from :A] [:where [>= :bar 42]]]
+[[:from :A] [:where [<= :baz #inst "2022-01-13"]]]
+
 ```

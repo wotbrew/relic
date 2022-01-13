@@ -13,9 +13,7 @@
 
   I like to alias :as rel. @wotbrew"
   (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
-            [com.wotbrew.relic.impl.expr :as e]
-            #?(:clj [clojure.core :as clj]
-               :cljs [cljs.core :as clj]))
+            [com.wotbrew.relic.impl.expr :as e])
   (:refer-clojure :exclude [min max < <= > >=]))
 
 (defn transact
@@ -523,19 +521,3 @@
 
   [rel/env :now]"
   e/env)
-
-(def <
-  "Like < in clojure, but works with compare. So you can use it on objects like strings and dates."
-  e/<)
-
-(def <=
-  "Like <= in clojure, but works with compare. So you can use it on objects like strings and dates."
-  e/<=)
-
-(def >
-  "Like > in clojure, but works with compare. So you can use it on objects like strings and dates."
-  e/>)
-
-(def >=
-  "Like >= in clojure, but works with compare. So you can use it on objects like strings and dates."
-  e/>=)

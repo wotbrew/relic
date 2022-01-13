@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is are testing]]
             [com.wotbrew.relic :as rel]
             [com.wotbrew.relic.impl.relvar :as r]
-            [com.wotbrew.relic.impl.dataflow :as dataflow]))
+            [com.wotbrew.relic.impl.dataflow :as dataflow]
+            [com.wotbrew.relic.impl.expr :as e]))
 
 (defn- result-set [node] (some-> node :result-set deref))
 
@@ -1196,32 +1197,32 @@
 
 (deftest comparison-test
   (testing "<"
-    (is (true? (rel/< 3 4)))
-    (is (false? (rel/< 3 3)))
-    (is (false? (rel/< 4 3)))
-    (is (true? (rel/< "a" "b")))
-    (is (false? (rel/< "b" "a"))))
+    (is (true? (e/< 3 4)))
+    (is (false? (e/< 3 3)))
+    (is (false? (e/< 4 3)))
+    (is (true? (e/< "a" "b")))
+    (is (false? (e/< "b" "a"))))
 
   (testing "<="
-    (is (true? (rel/<= 3 4)))
-    (is (true? (rel/<= 3 3)))
-    (is (false? (rel/<= 4 3)))
-    (is (true? (rel/<= "a" "b")))
-    (is (false? (rel/<= "b" "a"))))
+    (is (true? (e/<= 3 4)))
+    (is (true? (e/<= 3 3)))
+    (is (false? (e/<= 4 3)))
+    (is (true? (e/<= "a" "b")))
+    (is (false? (e/<= "b" "a"))))
 
   (testing ">"
-    (is (false? (rel/> 3 4)))
-    (is (false? (rel/> 3 3)))
-    (is (true? (rel/> 4 3)))
-    (is (false? (rel/> "a" "b")))
-    (is (true? (rel/> "b" "a"))))
+    (is (false? (e/> 3 4)))
+    (is (false? (e/> 3 3)))
+    (is (true? (e/> 4 3)))
+    (is (false? (e/> "a" "b")))
+    (is (true? (e/> "b" "a"))))
 
   (testing ">="
-    (is (false? (rel/>= 3 4)))
-    (is (true? (rel/>= 3 3)))
-    (is (true? (rel/>= 4 3)))
-    (is (false? (rel/>= "a" "b")))
-    (is (true? (rel/>= "b" "a")))))
+    (is (false? (e/>= 3 4)))
+    (is (true? (e/>= 3 3)))
+    (is (true? (e/>= 4 3)))
+    (is (false? (e/>= "a" "b")))
+    (is (true? (e/>= "b" "a")))))
 
 (deftest sort-test
   (let [aseq (map array-map (repeat :a) (range 100))

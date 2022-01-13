@@ -1593,11 +1593,16 @@ provides better ergonmics as you are working with rows 100% of the time, and all
 <a id="__codelineno-1-30" name="__codelineno-1-30"></a><span class="c1">;; you can issue sub queries with rel/sel1 (first row) and rel/sel (all rows) (see sub-queries.md)</span>
 <a id="__codelineno-1-31" name="__codelineno-1-31"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nv">rel/sel1</span> <span class="ss">:B</span> <span class="p">{</span><span class="ss">:a-id</span> <span class="ss">:a-id</span><span class="p">}]]]</span>
 <a id="__codelineno-1-32" name="__codelineno-1-32"></a>
-<a id="__codelineno-1-33" name="__codelineno-1-33"></a><span class="c1">;; nil safe calls with :?</span>
-<a id="__codelineno-1-34" name="__codelineno-1-34"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:?</span> <span class="nv">str/includes?</span> <span class="ss">:foo</span> <span class="ss">:bar</span><span class="p">]]]</span>
-<a id="__codelineno-1-35" name="__codelineno-1-35"></a>
-<a id="__codelineno-1-36" name="__codelineno-1-36"></a><span class="c1">;; expressions have extra exception handling logic, if you cannot afford this, use the unsafe modifier.</span>
-<a id="__codelineno-1-37" name="__codelineno-1-37"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:!</span> <span class="nv">str/includes?</span> <span class="ss">:foo</span> <span class="ss">:bar</span><span class="p">]]]</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33"></a><span class="c1">;; nil safe calls with :?, which will check all column arguments are non-nil before applying the function </span>
+<a id="__codelineno-1-34" name="__codelineno-1-34"></a><span class="c1">;; (returning nil if any dependent col is nil)</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:?</span> <span class="nv">str/includes?</span> <span class="ss">:foo</span> <span class="ss">:bar</span><span class="p">]]]</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36"></a>
+<a id="__codelineno-1-37" name="__codelineno-1-37"></a><span class="c1">;; comparison functions are overwritten by in relic expressions to use comparables</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38"></a><span class="c1">;; this causes btree index optimised queries to have consistent behaviour with non-indexed queries.</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39"></a><span class="c1">;; e.g the below will work</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt; </span><span class="ss">:foo</span> <span class="s">&quot;abc&quot;</span><span class="p">]]]</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&gt;= </span><span class="ss">:bar</span> <span class="mi">42</span><span class="p">]]]</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42"></a><span class="p">[[</span><span class="ss">:from</span> <span class="ss">:A</span><span class="p">]</span> <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="nb">&lt;= </span><span class="ss">:baz</span> <span class="o">#</span><span class="nv">inst</span> <span class="s">&quot;2022-01-13&quot;</span><span class="p">]]]</span>
 </code></pre></div>
 
               

@@ -1,4 +1,4 @@
-(defproject com.wotbrew/relic "0.1.0"
+(defproject com.wotbrew/relic "0.1.1-SNAPSHOT"
   :description "Functional relational programming for Clojure/Script"
   :url "https://github.com/wotbrew/relic"
   :license {:name "MIT"

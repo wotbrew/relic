@@ -47,6 +47,9 @@
   (s.api/watch :browser)
   (s.api/repl :browser))
 
+(defn cljs-test []
+  (s.api/compile :test))
+
 (defmacro bench [expr]
   `(criterium/quick-bench ~expr))
 

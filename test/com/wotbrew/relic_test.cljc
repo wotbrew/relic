@@ -1055,7 +1055,7 @@
                  (rel/what-if {} relvar [:insert :Person person])
                  nil
                  (catch #?(:clj Throwable :cljs js/Error) e
-                   #?(:clj (.getMessage e) :cljs (.message e)))))]
+                   #?(:clj (.getMessage e) :cljs (.-message e)))))]
 
     (is (nil?
           (cerr

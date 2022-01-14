@@ -1305,6 +1305,19 @@
         plan (choose-plan plans)]
     (compile-plan graph plan)))
 
+(defn- setop [left head n]
+  (let [[_ & relvars] head]
+    (cond
+      (seq left)
+      (reduce conj (require-set left) (mapv (fn [r] [n (require-set (r/to-relvar r))]) relvars))
+      (empty? relvars) [[:const]]
+      :else
+      (let [left (r/to-relvar (first relvars))
+            relvars (rest relvars)]
+        (if (seq relvars)
+          (reduce conj (require-set left) (mapv (fn [r] [n (require-set (r/to-relvar r))]) relvars))
+          [[:from left]])))))
+
 (defn to-dataflow* [graph relvar self]
   (let [relvar (r/to-relvar relvar)
         left (r/left relvar)
@@ -1439,19 +1452,11 @@
         (let [[_ coll] head]
           [[provide (constantly coll)]])
 
-        :intersection
-        (let [[_ & relvars] head]
-          (reduce conj (require-set left) (mapv (fn [r] [intersection (require-set (r/to-relvar r))]) relvars)))
+        :intersection (setop left head intersection)
 
-        :union
-        (let [[_ & relvars] head
-              left (require-set left)]
-          (reduce conj left (mapv (fn [r] [union (require-set (r/to-relvar r))]) relvars)))
+        :union (setop left head union)
 
-        :difference
-        (let [[_ & relvars] head
-              left (require-set left)]
-          (reduce conj left (mapv (fn [r] [difference (require-set (r/to-relvar r))]) relvars)))
+        :difference (setop left head difference)
 
         :table
         (let [[_ table-key] head]
@@ -1622,51 +1627,10 @@
   (fn tracking-flow [db inserted deleted]
     (track id inserted deleted)
     (f db inserted deleted)))
-#_
-(defn link
-  [graph table-key]
-  (letfn [(forward-fn [graph dependents]
-            (case (count dependents)
-              0 flow-noop
-              1 (:linked (graph (first dependents)))
-              (let [fns (mapv (comp :linked graph) dependents)]
-                (fn flow-fan-out [db inserted deleted]
-                  (let [inserted (u/realise-coll inserted)
-                        deleted (u/realise-coll deleted)]
-                    (reduce
-                      (fn flow-step [db f]
-                        (f db inserted deleted))
-                      db
-                      fns))))))
-          (build-fn [graph edge id]
-            (let [{:keys [dependents
-                          flow]
-                   :as node} (graph id)
-                  flow-fn (get flow edge flow-noop)
-                  graph (reduce #(build-fn %1 id %2) graph dependents)
-                  forward (tracked-flow id (forward-fn graph dependents))
-                  linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
-              (assoc graph id (assoc node :linked linked))))]
-    (if-some [table-id (-> graph ::tables (get table-key))]
-      (build-fn graph nil table-id)
-      graph)))
 
 (defn link
   [graph table-key]
-  (letfn [(forward-fn [graph dep dependents]
-            (case (count dependents)
-              0 flow-noop
-              1 (get (:flow (graph (first dependents))) dep)
-              (let [fns (mapv (comp :linked graph) dependents)]
-                (fn flow-fan-out [db inserted deleted]
-                  (let [inserted (u/realise-coll inserted)
-                        deleted (u/realise-coll deleted)]
-                    (reduce
-                      (fn flow-step [db f]
-                        (f db inserted deleted))
-                      db
-                      fns))))))
-          (build-fn [graph edge id]
+  (letfn [(build-fn [graph edge id]
             (let [{:keys [dependents
                           flow]} (graph id)
                   flow-fn (get flow edge flow-noop)
@@ -1686,7 +1650,7 @@
                   linked (fn flow [db inserted deleted] (flow-fn db inserted deleted forward))]
               linked))]
     (if-some [table-id (-> graph ::tables (get table-key))]
-      (assoc-in graph [table-id :linked] (build-fn graph nil table-id))
+      (update graph table-id assoc :linked (build-fn graph nil table-id))
       graph)))
 
 ;; d1, d2* d3
@@ -1804,10 +1768,10 @@
      (binding [*no-mat* (:query opts false)]
        (let [graph (gg db)
              graph (inc-generation graph)
+             matrelvar (conj relvar [mat (:query opts false)])
+             graph (add-to-graph graph matrelvar)
              graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
-             relvar (conj relvar [mat (:query opts false)])
-             graph (add-to-graph graph relvar)
-             graph (init graph relvar)]
+             graph (init graph matrelvar)]
          (sg db graph))))))
 
 (defn dematerialize [db relvar]
@@ -1874,7 +1838,8 @@
   (let [relvar (r/to-relvar relvar)
         db (materialize db relvar {:ephemeral true})
         graph (gg db)
-        graph (update graph ::watched u/set-conj (get-id graph relvar))]
+        id (get-id graph relvar)
+        graph (update graph ::watched u/set-conj id)]
     (sg db graph)))
 
 (defn unwatch [db relvar]

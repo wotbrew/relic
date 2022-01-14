@@ -124,6 +124,10 @@
       ;; =>
       #{{:a 42}}
 
+      [[:intersection [[:const [{:a 42}]]] [[:const [{:a 42} {:b 1}]]]]]
+      ;; =>
+      #{{:a 42}}
+
       [[:const [{:a 42}]]
        [:union [[:const [{:a 42} {:b 1}]]]]]
       ;; =>
@@ -136,6 +140,10 @@
 
       [[:const [{:a 42}]]
        [:difference [[:const [{:a 43} {:b 1}]]]]]
+      ;; =>
+      #{{:a 42}}
+
+      [[:difference [[:const [{:a 42}]]] [[:const [{:a 43} {:b 1}]]]]]
       ;; =>
       #{{:a 42}})))
 
@@ -1279,6 +1287,13 @@
   (let [db (rel/materialize {} [[:from :a] [:hash :a]])
         db (rel/transact db {:a [{:a 42}]})]
     (is (= [{:a 42}] (rel/q db [[:from :a] [:where [< 41 :a]]])))))
+
+(deftest incompatible-index-scans-test
+  (let [i [[:from :a] [:hash :a]]
+        db (rel/materialize {} i)
+        q [[:from :a]
+           [:where [= :a 42] [< :a 42] [> :a 42] [> :a 43] [< :a 41]]]]
+    (is (empty? (rel/what-if db q {:a [{:a 42} {:a 43} {:a 41}]})))))
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

@@ -153,6 +153,43 @@
               [:join :b {:b :b} :c {:b :b}]
               [:agg [:c] [:bsum [rel/sum :b]]]]]})
 
+(def model3
+  {:name "model3"
+   :tables {:a {:a :integer
+                :b :integer}
+            :b {:b :integer
+                :c :integer}
+            :c {:b :integer
+                :c :integer}}
+   :hints [[[:from :c] [:btree :c]]
+           [[:from :b] [:hash :c :b]]
+           [[:from :a] [:hash :b]]]
+   :queries [:a
+             :b
+             [[:union :a :b]]
+             [[:union :a]]
+             [[:union :b]]
+             [[:union :c]]
+             [[:union :a :b :c]]
+             [[:union :c :a]]
+             [[:union :c :b]]
+             [[:union :b :a]]
+             [[:union :c [[:from :a] [:join :b {:b :b}]]]]
+
+             [[:difference
+               [[:from :a] [:select :a]]
+               [[:from :b] [:select :b]]]]
+
+             [[:intersection
+               [[:from :a] [:select :a]]
+               [[:from :b] [:select :b]]]]
+
+             [[:from :b]
+              [:select :c]
+              [:intersection [[:from :c] [:select :c]]]]
+
+             [[:intersection :a [[:select [:a 0]]]]]]})
+
 (defn- qc [model p]
   (println "QC:" (:name model "???") "|" (u/best-effort-fn-name p))
   (let [num-tests 10000
@@ -160,7 +197,9 @@
     ret))
 
 (deftest props-test
-  (doseq [model [model1 model2]
+  (doseq [model [model1
+                 model2
+                 model3]
           prop [hinted-db-always-yields-same-result-as-non-hinted]
           :let [res (qc model prop)]]
     (when-not (:pass? res)

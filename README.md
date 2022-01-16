@@ -10,7 +10,7 @@
 
 `relic` is an experimental Clojure/Script in-memory database and data processing library.
 
-It was built in a lockdown induced _strange mood_ to deliver in memory a clojure flavoured version of the functional relational model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+It was built in a lockdown induced _strange mood_ to deliver a clojure flavoured version of the functional relational model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 
 ```clojure 

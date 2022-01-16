@@ -1299,7 +1299,8 @@
   (let [data {:a [{:a nil}]
               :b [{:b nil, :c "foo"}]}]
     (is (= nil (rel/what-if {} [[:from :a] [:join :b {:a :b}]] data)))
-    (is (= nil (rel/what-if {} [[:from :b] [:join :a {:c :c}]] data)))))
+    (is (= nil (rel/what-if {} [[:from :b] [:join :a {:c :c}]] data)))
+    (is (= [{:a nil, :b nil, :c "foo"}] (rel/what-if {} [[:from :a] [:join :b {[:or :a "foo"] :c}]] data)))))
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

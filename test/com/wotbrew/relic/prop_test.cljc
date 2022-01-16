@@ -5,7 +5,8 @@
             [com.wotbrew.relic :as rel]
             [clojure.test.check :as tc]
             [com.wotbrew.relic.impl.util :as u]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [com.wotbrew.relic.impl.dataflow :as dataflow]))
 
 (defn- available-mat-types [model]
   (cond->
@@ -93,6 +94,29 @@
     ;;
     (= (sort-by hash (rel/what-if {} q (muttx muts)))
        (sort-by hash (rel/q (domuts {} muts) q)))))
+
+(defn- delete-all [db] (reduce-kv (fn [db t rs] (rel/transact db (into [:delete-exact t] rs))) db db))
+
+(defn delete-all-leaves-all-memory-and-queries-empty-unless-const
+  [model]
+  (prop/for-all [q (gen/elements (:queries model))
+                 muts (mutseq model)]
+    (let [db (-> {} (domuts muts) delete-all)
+          graph (dataflow/gg db)
+          nodemap (::dataflow/ids graph)
+          const? (fn [relvar] (boolean (seq (rel/q {} relvar))))]
+      (if (const? q)
+        true
+        (and (empty? (rel/q db q))
+             (reduce-kv
+               (fn [_ relvar id]
+                 (if (or (and (empty? (rel/q db relvar))
+                              (contains? graph id)
+                              (empty? (::mem (graph id))))
+                         (const? relvar))
+                   true
+                   (reduced false)))
+               true nodemap))))))
 
 (def model1
   "A basic model with one table and some basic agg queries that will
@@ -220,7 +244,8 @@
                  model2
                  model3
                  model4]
-          prop [hinted-db-always-yields-same-result-as-non-hinted]
+          prop [hinted-db-always-yields-same-result-as-non-hinted
+                delete-all-leaves-all-memory-and-queries-empty-unless-const]
           :let [res (qc model prop)]]
     (when-not (:pass? res)
       (println "FAIL seed:" (:seed res)))

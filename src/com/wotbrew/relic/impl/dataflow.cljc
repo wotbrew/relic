@@ -307,7 +307,7 @@
                    (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn- index-seek-from-exprs [exprs]
-  (let [sentinel (Object.)
+  (let [sentinel #?(:clj (Object.) :cljs (js/Object.))
         lift-nil-behaviour (fn [f] (fn [row] (if-some [ret (f row)] ret sentinel)))
         fns (mapv (comp lift-nil-behaviour e/row-fn) exprs)
         path (if (empty? fns) (constantly []) (apply juxt fns))]

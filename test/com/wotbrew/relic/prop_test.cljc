@@ -225,13 +225,12 @@
               [:agg [:a] [:ntop [rel/top 5 :b]]]]
              [[:from :b]
               [:join :a {:b :b}]
-              [:agg [] [:nbotrows [rel/bottom-by 5 :a]]]]
+              [:agg [] [:nbotrows [rel/bottom 5 :a]]]]
              [[:from :a]
               [:agg []
                [:amax [max :a]]
                [:abot [rel/bottom 32 :a]]
-               [:bmin [max [inc :b]]]
-               [:bmaxinvr [rel/max-by [- :b]]]]]]})
+               [:bmin [max [inc :b]]]]]]})
 
 (defn- qc [model p]
   (println "QC:" (:name model "???") "|" (u/best-effort-fn-name p))

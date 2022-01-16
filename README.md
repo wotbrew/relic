@@ -2,7 +2,7 @@
 
 ![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg)
 
-`STATUS: Early alpha, use at own risk`
+`STATUS: Early alpha, will eat your homework, set laptop on fire, use at own risk`
 
 ```clojure 
 [com.wotbrew/relic "0.1.0"]

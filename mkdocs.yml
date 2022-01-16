@@ -5,7 +5,7 @@ nav:
   - Query:
     - Overview: query.md
     - Expressions: expr.md
-    - Query statements:
+    - Operators:
       - :agg: agg.md
       - :const: const.md
       - :from: from.md

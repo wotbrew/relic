@@ -5,7 +5,7 @@
 `STATUS: Early alpha, will eat your homework, set laptop on fire, use at own risk`
 
 ```clojure 
-[com.wotbrew/relic "0.1.0"]
+[com.wotbrew/relic "0.1.1"]
 ```
 
 `relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra.

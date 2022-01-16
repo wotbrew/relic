@@ -192,6 +192,17 @@
 
              [[:intersection :a [[:select [:a 0]]]]]]})
 
+(def model4
+  {:name "model4"
+   :tables {:a {:a :integer, :b :integer}
+            :b {:b :integer, :c :integer}}
+   :hints [[[:from :a] [:btree :b]]]
+   :queries [[[:from :a]
+              [:agg [:a] [:ntop [rel/top 5 :b]]]]
+             [[:from :b]
+              [:join :a {:b :b}]
+              [:agg [] [:nbotrows [rel/bottom-by 5 :a]]]]]})
+
 (defn- qc [model p]
   (println "QC:" (:name model "???") "|" (u/best-effort-fn-name p))
   (let [num-tests 10000
@@ -201,7 +212,8 @@
 (deftest props-test
   (doseq [model [model1
                  model2
-                 model3]
+                 model3
+                 model4]
           prop [hinted-db-always-yields-same-result-as-non-hinted]
           :let [res (qc model prop)]]
     (when-not (:pass? res)

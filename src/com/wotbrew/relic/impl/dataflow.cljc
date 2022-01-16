@@ -738,7 +738,7 @@
                     (if (identical? ev nv)
                       idx
                       (do
-                        (u/del-from-mutable-set changed group)
+                        (u/add-to-mutable-set changed group)
                         (if (empty? nv)
                           (dissoc idx group)
                           (assoc idx group nv))))))

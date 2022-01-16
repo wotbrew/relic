@@ -1569,7 +1569,7 @@
 <p>In relic, data always flows top-to-bottom.</p>
 <p>The super-power is that relic allows you to materialize the query. This will convert the query into a
 DAG to support incremental re-computation as data in tables changes.</p>
-<p>With few exceptions (direct index lookup) you can materialize any query with <code>rel/materialize</code>.</p>
+<p>With few exceptions (direct index lookup) you can materialize any query with <code>rel/mat</code>.</p>
 <h2 id="rationale-of-form">Rationale of form</h2>
 <p>In the tar pit paper, the language used to express its 'relvars' was a traditional expression tree (e.g <code>union(a, b)</code>).</p>
 <p>I wanted a data-first clojure dsl that met two goals, like any good data dsl I wanted to compose using regular clojure functions,

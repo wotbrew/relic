@@ -1455,7 +1455,7 @@
 
 
 <h1 id="materialization">Materialization</h1>
-<p>One of the key value propositions of relic, or at least a major super-power is the ability to materialize queries.</p>
+<p>One of the key value propositions of relic, or at least a major super-power is the ability to materialize (<code>mat</code>) queries.</p>
 <p>By materializing a query, the results are cached, and further more transactions that would change the results automatically invalidate 
 the cache. <code>relic</code> does this incrementally, it knows how to flow only necessary changes, 
 and minimize the work done on change by using a bunch of different internal indexes.</p>
@@ -1464,11 +1464,11 @@ any custom data structures or custom code to maintain the various indexes and st
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; a query like this can change when segments change for orders, orders are changed. </span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="c1">;; relic will know how to change the sum without recomputing the whole query, it does this with a custom index for the sum that allows </span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="c1">;; relic not to re-sum rows that haven&#39;t been touched.</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="p">(</span><span class="nf">rel/materialize</span> <span class="nv">db</span> <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5"></a>                     <span class="p">[</span><span class="ss">:join</span> <span class="nv">CustomerSegment</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6"></a>                     <span class="p">[</span><span class="ss">:agg</span> <span class="p">[</span><span class="ss">:segment</span><span class="p">]</span> <span class="p">[</span><span class="ss">:revenue</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="ss">:total</span><span class="p">]]]])</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="p">(</span><span class="nf">rel/mat</span> <span class="nv">db</span> <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Order</span><span class="p">]</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5"></a>             <span class="p">[</span><span class="ss">:join</span> <span class="nv">CustomerSegment</span> <span class="p">{</span><span class="ss">:customer-id</span> <span class="ss">:customer-id</span><span class="p">}]</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6"></a>             <span class="p">[</span><span class="ss">:agg</span> <span class="p">[</span><span class="ss">:segment</span><span class="p">]</span> <span class="p">[</span><span class="ss">:revenue</span> <span class="p">[</span><span class="nv">rel/sum</span> <span class="ss">:total</span><span class="p">]]]])</span>
 </code></pre></div>
-<p>As you are trading memory for time by materializing queries, you might want to dematerialize them. <code>(rel/dematerialize db query)</code></p>
+<p>As you are trading memory for time by materializing queries, you might want to dematerialize them. <code>(rel/demat db query)</code></p>
 <p>See also: <a href="../constraints/">constraints</a>, <a href="../change-tracking/">change tracking</a>, <a href="../query/">query</a>.</p>
 
               

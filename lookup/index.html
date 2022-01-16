@@ -1460,9 +1460,9 @@
 
 <h1 id="lookup">:lookup</h1>
 <p>The <code>:lookup</code> operation is used for queries against <a href="../indexes/">indexes</a>, when you need to be explicit.</p>
-<p>One thing to know about <code>:lookup</code> is you cannot <code>materialize</code> it, it is fairly unique in that regard.</p>
+<p>One thing to know about <code>:lookup</code> is you cannot <code>mat</code> it, it is fairly unique in that regard.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">(</span><span class="k">def </span><span class="nv">CustomerByName</span> <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span> <span class="p">[</span><span class="ss">:hash</span> <span class="ss">:firstname</span><span class="p">]])</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/materialize</span> <span class="p">{}</span> <span class="nv">CustomerByName</span><span class="p">))</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/mat</span> <span class="p">{}</span> <span class="nv">CustomerByName</span><span class="p">))</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/transact</span> <span class="p">{}</span> <span class="p">[</span><span class="ss">:insert</span> <span class="ss">:Customer</span> <span class="p">{</span><span class="ss">:firstname</span> <span class="s">&quot;bob&quot;</span><span class="p">}]))</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="p">(</span><span class="nf">rel/q</span> <span class="nv">db</span> <span class="p">[[</span><span class="ss">:lookup</span> <span class="nv">CustomerByName</span> <span class="s">&quot;bob&quot;</span><span class="p">]])</span> 
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="c1">;; =&gt;</span>

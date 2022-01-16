@@ -1507,7 +1507,7 @@
 instead merge the new row into the old one.</p>
 <p>Takes a binding form that lets you specialise which cols you want to merge.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; I want to merge by-id.</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/materialize</span> <span class="p">{}</span> <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span> <span class="p">[</span><span class="ss">:unique</span> <span class="ss">:id</span><span class="p">]])</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">db</span> <span class="p">(</span><span class="nf">rel/mat</span> <span class="p">{}</span> <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span> <span class="p">[</span><span class="ss">:unique</span> <span class="ss">:id</span><span class="p">]])</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="c1">;; lets insert a customer, if you do not have a conflict, this is the </span>
 <a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="c1">;; same as insert</span>

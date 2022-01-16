@@ -307,7 +307,8 @@
                    (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn- index-seek-from-exprs [exprs]
-  (let [fns (mapv e/row-fn exprs)
+  (let [lift-nil-behaviour (fn [f] (fn [row] (if-some [ret (f row)] ret ::nil)))
+        fns (mapv (comp lift-nil-behaviour e/row-fn) exprs)
         path (if (empty? fns) (constantly []) (apply juxt fns))]
     (if (seq fns)
       (fn [idx row] (get-in idx (path row)))

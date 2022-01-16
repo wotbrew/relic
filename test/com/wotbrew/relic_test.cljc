@@ -1295,5 +1295,11 @@
            [:where [= :a 42] [< :a 42] [> :a 42] [> :a 43] [< :a 41]]]]
     (is (empty? (rel/what-if db q {:a [{:a 42} {:a 43} {:a 41}]})))))
 
+(deftest nil-join-test
+  (let [data {:a [{:a nil}]
+              :b [{:b nil, :c "foo"}]}]
+    (is (= nil (rel/what-if {} [[:from :a] [:join :b {:a :b}]] data)))
+    (is (= nil (rel/what-if {} [[:from :b] [:join :a {:c :c}]] data)))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

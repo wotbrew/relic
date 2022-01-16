@@ -135,7 +135,11 @@
 (defn mem
   [relvar]
   (if-some [table-key (r/unwrap-table-key relvar)]
-    [(fn mget ([db] (db table-key)) ([db default] (db table-key default)))
+    [(fn mget
+       ([db]
+        (db table-key))
+       ([db default]
+        (db table-key default)))
      (fn mset [& _] (u/raise "Cannot call mset on table memory"))]
     (let [id (id relvar)]
       [(fn mget
@@ -307,7 +311,9 @@
                    (forward db (eduction exf inserted) (eduction exf deleted))))}))
 
 (defn- index-seek-from-exprs [exprs]
-  (let [fns (mapv e/row-fn exprs)
+  (let [sentinel #?(:clj (Object.) :cljs (js/Object.))
+        lift-nil-behaviour (fn [f] (fn [row] (if-some [ret (f row)] ret sentinel)))
+        fns (mapv (comp lift-nil-behaviour e/row-fn) exprs)
         path (if (empty? fns) (constantly []) (apply juxt fns))]
     (if (seq fns)
       (fn [idx row] (get-in idx (path row)))
@@ -1309,13 +1315,13 @@
   (let [[_ & relvars] head]
     (cond
       (seq left)
-      (reduce conj (require-set left) (mapv (fn [r] [n (require-set (r/to-relvar r))]) relvars))
+      (reduce (fn [left r] (conj (require-set left) [n (require-set (r/to-relvar r))])) left relvars)
       (empty? relvars) [[:const]]
       :else
       (let [left (r/to-relvar (first relvars))
             relvars (rest relvars)]
         (if (seq relvars)
-          (reduce conj (require-set left) (mapv (fn [r] [n (require-set (r/to-relvar r))]) relvars))
+          (reduce (fn [left r] (conj (require-set left) [n (require-set (r/to-relvar r))])) left relvars)
           [[:from left]])))))
 
 (defn to-dataflow* [graph relvar self]

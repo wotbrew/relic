@@ -171,6 +171,8 @@
              [[:union :b]]
              [[:union :c]]
              [[:union :a :b :c]]
+             [[:intersection :a :b :c]]
+             [[:difference :a :b :c]]
              [[:union :c :a]]
              [[:union :c :b]]
              [[:union :b :a]]
@@ -205,3 +207,12 @@
     (when-not (:pass? res)
       (println "FAIL seed:" (:seed res)))
     (is (:pass? res))))
+
+(deftest regression-union1-test
+  (let [q [[:union :a :b :c]]
+        muts [[:insert-data [:insert :b {:b 1, :c 0}]]
+              [:mat [[:union :a :b :c]]]
+              [:delete-data [:delete-exact :c {:b 1, :c 0}]]]
+        db1 (domuts {} muts)
+        db2 (rel/transact {} (muttx muts))]
+    (is (= (rel/q db1 q) (rel/q db2 q)))))

@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.1.2
+
+### Fixed
+
+- fixed glitches with materialized sorted-group deletes
+- `(index)` now returns nil for non-index operators (keep it secret, keep it safe.)
+
 ## 0.1.1 
 
 ### Fixed

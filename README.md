@@ -5,7 +5,7 @@
 `STATUS: Early alpha, will eat your homework, may set laptop on fire, new versions may break your code. Use at own risk`
 
 ```clojure 
-[com.wotbrew/relic "0.1.1"]
+[com.wotbrew/relic "0.1.2"]
 ```
 
 `relic` is an experimental Clojure/Script in-memory database and data processing library.

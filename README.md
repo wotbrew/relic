@@ -2,17 +2,15 @@
 
 ![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg)
 
-`STATUS: Early alpha, will eat your homework, set laptop on fire, use at own risk`
+`STATUS: Early alpha, will eat your homework, may set laptop on fire, new versions may break your code. Use at own risk`
 
 ```clojure 
 [com.wotbrew/relic "0.1.1"]
 ```
 
-`relic` is a Clojure/Script in-memory database and data processing library, inspired by Codd's relational algebra.
+`relic` is an experimental Clojure/Script in-memory database and data processing library.
 
-It has materialized views (with incremental maintenance), change tracking, constraints and SQL-like query DSL.
-
-It is an attempt to deliver in memory the programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+It was built in a lockdown induced _strange mood_ to deliver in memory a clojure flavoured version of the functional relational model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 
 ```clojure 
@@ -26,6 +24,27 @@ It is an attempt to deliver in memory the programming model described by the [ta
 ;; =>
 ({:lib/name "relic", :author/github "wotbrew", :url "https://github.com/wotbrew/relic"})
 ```
+
+## Features / Anti-Features
+
+- Clojure-y database, immutable, _it's just data™_.
+- Materialized views with incremental maintenance, even for aggregates and sorts.
+- Use normal clojure functions in queries to filter and compute column values.
+- Works on the maps you already have, and returns maps, no pull/eav.
+- Apply constraints to any table or query, particularly useful during development. Can integrate with spec/malli.
+- Apply indexes and `:where` clauses will use them, hash-eq, skip scans, composite range queries - some gnarly stuff under the hood.
+- Transaction DSL includes higher level operations than just put/delete, various flavours of upsert, SQL style delete/update by condition, and room to add more.
+
+### Against
+
+- Requires memory to book-keep materialized views.
+- Materialized views imply a lot of implicit computation that will seem magical.
+- Somewhat slower than your hand-written sequence processing code.
+- Less IDE support as queries are written as data structures.
+- Tuning will require thinking about the dataflow DAG in extreme cases, but hey in that case - just drop-out to clojure.
+- No recursive queries (e.g CTE's) __yet__, so no friend-of-a-friend type graph queries.
+- DAG uses stack space relative to the size and depth of the query, so if you do crazy stuff you might run out of stack.
+- Just memory, no durability, spooling to disk or distribution of queries.
 
 ## Documentation
 
@@ -44,11 +63,6 @@ Did you try [meander](https://github.com/noprompt/meander), [core.logic](https:/
 Are you tired of writing mechanical wiring and glue? That has *nothing* to do with your actual business logic?
 
 `relic` might help, but it's not a medical professional. It's a functional relational programming library.
-
-- like SQL for clojure data.
-- join with joy with the glorious relational open access information model.
-- laugh at cache invalidation problems with __incremental materialized views__ and dataflow sorcery.
-- __constraints__ a-la-carte, gain confidence. I'm not talking just types, say things like [order can have at most 10 items if its associated customer is called bob and its tuesday](https://wotbrew.github.io/relic/constraints).
 
 Definitely not at all like the other in-memory databases in clojure. this time its different, really.
 

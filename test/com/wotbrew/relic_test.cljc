@@ -1302,5 +1302,22 @@
     (is (= nil (rel/what-if {} [[:from :b] [:join :a {:c :c}]] data)))
     (is (= [{:a nil, :b nil, :c "foo"}] (rel/what-if {} [[:from :a] [:join :b {[:or :a "foo"] :c}]] data)))))
 
+(deftest index-only-returns-for-approved-operators-test
+  (let [a [[:from :a] [:hash :a]]
+        b [[:from :a] [:btree :a]]
+        c [[:from :a] [:unique :a]]
+        d [[:from :a] [:set]]
+        e [[:from :a]]
+        f [[:from :a] [:where true]]
+        db (rel/materialize {} a b c d e f)
+        db (rel/transact db {:a [{:a 1}]})]
+
+    (is (some? (rel/index db a)))
+    (is (some? (rel/index db b)))
+    (is (some? (rel/index db c)))
+    (is (some? (rel/index db d)))
+    (is (nil? (rel/index db e)))
+    (is (nil? (rel/index db f)))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

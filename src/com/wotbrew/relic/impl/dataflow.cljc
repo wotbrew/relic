@@ -1886,10 +1886,13 @@
   (contains? (::materialized (gg db)) relvar))
 
 (defn index [db relvar]
-  (let [graph (gg db)
-        id (get-id graph relvar)
-        {:keys [mem]} (graph id)]
-    mem))
+  (case (r/head-operator relvar)
+    (:hash :btree :unique :set)
+    (let [graph (gg db)
+          id (get-id graph relvar)
+          {:keys [mem]} (graph id)]
+      mem)
+    nil))
 
 (defn transact-error [tx]
   (u/raise "Unrecognized transact form" {:tx tx}))

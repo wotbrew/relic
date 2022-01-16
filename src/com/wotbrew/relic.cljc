@@ -80,8 +80,9 @@
 (defn index
   "Returns the raw index storing rows for the query. ONLY RETURNS IF THE QUERY IS MATERIALIZED.
 
-  Normally a set, but if the last operation in the query is an index operation, you will get a specialised
-  data structure, this can form the basis of using materialized relic indexes in other high-performance work on your data.
+  Supported operators:
+
+  :set will yield a set of rows.
 
   :hash will yield nested maps (path being the expressions in the hash e.g [:hash :a :b :c])
   will yield an index {(a ?row) {(b ?row) {(:c ?row) #{?row}}}
@@ -89,7 +90,9 @@
   :btree is the same as hash but gives you a sorted map (sorted at each level) instead to enable range queries.
 
   :unique will give you an index where the keys map to exactly one row, so [:unique :a :b :c]
-  will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}"
+  will yield an index {(a ?row) {(b ?row) {(:c ?row) ?row}}}
+
+  For all other operators, returns nil."
   [db query]
   (dataflow/index db query))
 

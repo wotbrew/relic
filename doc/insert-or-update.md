@@ -4,7 +4,7 @@ The `:insert-or-update` [`transact`](transact.md) form allow you to insert rows,
 [`:unique`](unique.md) key conflict, apply a function (or SQL style [update map](update.md)) to the old row instead.
 
 ```clojure 
-(def db (rel/materialize {} [[:from :Customer] [:unique :id]]))
+(def db (rel/mat {} [[:from :Customer] [:unique :id]]))
 
 ;; if there is no conflict, its just insert
 (def db (rel/transact db [:insert-or-update :Customer {:updates [inc [:or :updates 0]]} {:id 42, :name "bob", :age 33}}]))

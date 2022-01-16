@@ -7,7 +7,7 @@ Takes a binding form that lets you specialise which cols you want to merge.
 
 ```clojure 
 ;; I want to merge by-id.
-(def db (rel/materialize {} [[:from :Customer] [:unique :id]])
+(def db (rel/mat {} [[:from :Customer] [:unique :id]])
 
 ;; lets insert a customer, if you do not have a conflict, this is the 
 ;; same as insert

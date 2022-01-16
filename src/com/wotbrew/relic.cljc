@@ -8,7 +8,7 @@
 
   - put data in with `transact`, see also `what-if`.
   - get data out with `q`, see also `index`.
-  - go faster maybe with `materialize`, see also `dematerialize`
+  - go faster maybe with `mat`, see also `demat`
   - track changes with `track-transact`, `watch` and `unwatch`.
 
   I like to alias :as rel. @wotbrew"
@@ -96,7 +96,7 @@
   [db query]
   (dataflow/index db query))
 
-(defn materialize
+(defn mat
   "Causes relic to maintain the given queries incrementally as the database changes.
 
   This will make queries effectively free at the cost of decreased write performance.
@@ -146,7 +146,7 @@
   [db & queries]
   (reduce dataflow/materialize db queries))
 
-(defn dematerialize
+(defn demat
   "Dematerializes the query, increasing write performance at the cost of reduced query performance.
 
   Can also be used to remove constraints (e.g queries that throw).

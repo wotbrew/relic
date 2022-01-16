@@ -129,12 +129,12 @@ Ahhhh... but you don't understand, `relic` doesn't just evaluate queries like so
 You can materialize any query such that it will be maintained for you as you modify the database. In other words `relic` has __incremental materialized views__.
 
 ```clojure 
-(rel/materialize db [[:from :Customer] [:where [= :name "bob"]]])
+(rel/mat db [[:from :Customer] [:where [= :name "bob"]]])
 ;; => returns the database, its value will be the same (hint: metadata).
 {:Customer #{{:name "bob"}, {:name "alice"}}}
 ```
 
-`materialize` will return a new _database_, against which materialized queries will be instant, and __as you change data in tables, those changes will flow to materialized queries automatically.__
+`mat` will return a new _database_, against which materialized queries will be instant, and __as you change data in tables, those changes will flow to materialized queries automatically.__
 
 You can do more than query and materialize with relic, you can [react to changes](https://wotbrew.github.io/relic/change-tracking), use [constraints](https://wotbrew.github.io/relic/constraints) and [more](https://wotbrew.github.io/relic).
 

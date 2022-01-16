@@ -67,8 +67,8 @@
 
 (defn- domut [db [t payload]]
   (case t
-    :mat (rel/materialize db payload)
-    :demat (rel/dematerialize db payload)
+    :mat (rel/mat db payload)
+    :demat (rel/demat db payload)
     :watch (rel/watch db payload)
     :unwatch (rel/unwatch db payload)
     :insert-data (rel/transact db payload)

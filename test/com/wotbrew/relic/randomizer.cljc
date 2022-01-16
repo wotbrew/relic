@@ -41,8 +41,8 @@
 
 (defn- domut [db data {:keys [mat demat insert]}]
   (cond-> [db data]
-          mat (update 0 rel/materialize mat)
-          demat (update 0 rel/materialize demat)
+          mat (update 0 rel/mat mat)
+          demat (update 0 rel/mat demat)
           insert ((fn [[db data]]
                     (let [db (rel/transact db insert)
                           data (reduce-kv #(update %1 %2 set/difference (set %3)) data insert)]

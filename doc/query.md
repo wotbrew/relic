@@ -29,7 +29,7 @@ In relic, data always flows top-to-bottom.
 The super-power is that relic allows you to materialize the query. This will convert the query into a
 DAG to support incremental re-computation as data in tables changes.
 
-With few exceptions (direct index lookup) you can materialize any query with `rel/materialize`.
+With few exceptions (direct index lookup) you can materialize any query with `rel/mat`.
 
 ## Rationale of form
 

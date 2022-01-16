@@ -197,7 +197,7 @@
             :error "No single bidder can submit more than 10 offers on a property."}]])
 
 (defn constrain [db]
-  (rel/materialize
+  (rel/mat
     db
     PropertyKey
     OfferKey
@@ -220,7 +220,7 @@
 (defn new-database []
   (-> {}
       (constrain)
-      (rel/materialize PropertyInfo)))
+      (rel/mat PropertyInfo)))
 
 (def data
   (let [address1 "abc def 55"

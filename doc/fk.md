@@ -8,7 +8,7 @@ Like other [constraints](constraints.md), `:fk` can be applied to any query, not
 (def OrderMustReferToACustomer
   [[:from :Order] [:fk :Customer {:customer-id :customer-id}]])
   
-(def db (rel/materialize {} OrderMustReferToACustomer))
+(def db (rel/mat {} OrderMustReferToACustomer))
 
 ;; this is fine
 (rel/transact db [:insert :Customer {:customer-id 42}] [:insert :Order {:customer-id 42}])

@@ -10,14 +10,24 @@ _status: alpha, breaking changes unlikely but possible_
 
 `relic` is an experimental Clojure/Script in-memory database and data processing library.
 
-It was built in a lockdown induced _strange mood_ to deliver a clojure flavoured version of the functional relational model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+Built in a lockdown induced _strange mood_, the goal is a clojure flavoured version of the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
+## Why
+
+When working on boring $business_problems, too much energy is spent on the machine like bits of programs,
+data structures, transformations via chains of functions, layout, ordering, access path etc.
+
+I would prefer to just focus on data, and the relationships between the data.
+
+industrial SQL databases seem to solve machine like problems by providing planners and optimisers, and ultimately making decisions on behalf of the programmer such that the programmer can get their work done and go home at 5pm.
+
+`relic` can take care of many of the machine like bits of data query & processing, just as databases do.
 
 - fully featured in-memory database with indexed SQL style [query](https://wotbrew.github.io/relic/query).
 - integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/expr) in queries, build queries with clojure.
 - [materialized views](https://wotbrew.github.io/materialization) with incremental maintenance.
 - make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
-- [reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, use materialized views to keep ui's responsive at 60fps.
+- [reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
 
 ## Documentation
 

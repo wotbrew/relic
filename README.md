@@ -15,9 +15,9 @@ Built in a lockdown induced _strange mood_, the goal is a clojure flavoured vers
 ## Why
 
 When working on boring $business_problems, too much energy is spent on the machine like bits of programs,
-data structures, transformations via chains of functions, layout, ordering, access path etc.
+data structures, threading the data to where it is needed, layout, ordering, access path etc.
 
-I would prefer to just focus on data, and the relationships between the data.
+I would prefer to just focus on the data itself, and the relationships between the data.
 
 industrial SQL databases seem to solve machine like problems by providing planners and optimisers, and ultimately making decisions on behalf of the programmer such that the programmer can get their work done and go home at 5pm.
 

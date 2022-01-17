@@ -2,7 +2,7 @@
 
 ![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg)
 
-`STATUS: Early alpha, will eat your homework, may set laptop on fire, new versions may break your code. Use at own risk`
+_status: alpha, breaking changes unlikely but possible_
 
 ```clojure 
 [com.wotbrew/relic "0.1.2"]
@@ -13,44 +13,17 @@
 It was built in a lockdown induced _strange mood_ to deliver a clojure flavoured version of the functional relational model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 
-```clojure 
-(rel/q db [[:from :Library]
-           [:where [contains? :lib/tags "relational"] [str/starts-with? :lib/name "rel"]]
-           [:join :Author {:lib/author :author/id}]
-           [:select
-             :lib/name
-             :author/github
-             [:url [str "https://github.com/" :author/github "/" :lib/name]]]])
-;; =>
-({:lib/name "relic", :author/github "wotbrew", :url "https://github.com/wotbrew/relic"})
-```
-
-## Features / Anti-Features
-
-- Clojure-y database, immutable, _it's just data™_.
-- Materialized views with incremental maintenance, even for aggregates and sorts.
-- Use normal clojure functions in queries to filter and compute column values.
-- Works on the maps you already have, and returns maps, no pull/eav.
-- Apply constraints to any table or query, particularly useful during development. Can integrate with spec/malli.
-- Apply indexes and `:where` clauses will use them, hash-eq, skip scans, composite range queries - some gnarly stuff under the hood.
-- Transaction DSL includes higher level operations than just put/delete, various flavours of upsert, SQL style delete/update by condition, and room to add more.
-
-### Against
-
-- Requires memory to book-keep materialized views.
-- Materialized views imply a lot of implicit computation that will seem magical.
-- Somewhat slower than your hand-written sequence processing code.
-- Less IDE support as queries are written as data structures.
-- Tuning will require thinking about the dataflow DAG in extreme cases, but hey in that case - just drop-out to clojure.
-- No recursive queries (e.g CTE's) __yet__, so no friend-of-a-friend type graph queries.
-- DAG uses stack space relative to the size and depth of the query, so if you do crazy stuff you might run out of stack.
-- Just memory, no durability, spooling to disk or distribution of queries.
+- fully featured in-memory database with indexed SQL style [query](https://wotbrew.github.io/relic/query).
+- integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/expr) in queries, build queries with clojure.
+- [materialized views](https://wotbrew.github.io/materialization) with incremental maintenance.
+- make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
+- [reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, use materialized views to keep ui's responsive at 60fps.
 
 ## Documentation
 
 See [documentation](https://wotbrew.github.io/relic) for a detailed reference.
 
-## Pitch 
+## Pitch
 
 Do you suffer from _map fatigue_? [[1]](http://timothypratley.blogspot.com/2019/01/meander-answer-to-map-fatigue.html)
 
@@ -106,19 +79,22 @@ You manipulate your database with the [`transact`](https://wotbrew.github.io/rel
 db 
 ;; =>
 {:Customer #{{:name "bob"}, {:name "alice"}}}
-
 ```
 
 Now we have some state, we can ask questions of relic, as you would a SQL database.
 
 ```clojure 
+(rel/q db :Customer)
+;; => 
+({:name "bob"}, {:name "alice"})
+
 (rel/q db [[:from :Customer] [:where [= :name "bob"]]]) 
 ;; => 
-#{{:name "bob"}}
+({:name "bob"})
 
-(rel/q db [[:from :Customer] [:where [= :name "alice"]]])
+(rel/q db [[:from :Customer] [:agg [] [:avg-name-len [rel/avg [count :name]]]]])
 ;; => 
-#{{:name "alice"}}
+({:avg-name-len 4})
 ```
 
 Ok ok, neat but not _cool_.

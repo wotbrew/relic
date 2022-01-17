@@ -24,8 +24,8 @@ industrial SQL databases seem to solve machine like problems by providing planne
 `relic` can take care of many of the machine like bits of data query & processing, just as databases do.
 
 - fully featured in-memory database with indexed SQL style [query](https://wotbrew.github.io/relic/query).
-- integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/expr) in queries, build queries with clojure.
-- [materialized views](https://wotbrew.github.io/materialization) with incremental maintenance.
+- integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/relic/expr) in queries, build queries with clojure.
+- [materialized views](https://wotbrew.github.io/relic/materialization) with incremental maintenance.
 - make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
 - [reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
 

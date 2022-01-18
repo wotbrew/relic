@@ -1507,19 +1507,21 @@
 (defn dependencies
   "Returns the (table name) dependencies of the relvar, e.g what tables it could be affected by."
   [relvar]
-  ((fn rf [s relvar]
-     (if (empty? relvar)
-       s
-       (if-some [table (r/unwrap-table-key relvar)]
-         (conj s table)
-         (let [head (r/head relvar)
-               op (r/operator head)]
-           (case op
-             :from (let [[_ i] head] (rf s i))
-             :lookup (let [[_ i] head] (rf s i))
-             (let [{:keys [deps]} (to-dataflow {} relvar)]
-               (reduce rf s deps)))))))
-   #{} relvar))
+  (binding [*idn* 0
+            *ids* {}]
+    ((fn rf [s relvar]
+       (if (empty? relvar)
+         s
+         (if-some [table (r/unwrap-table-key relvar)]
+           (conj s table)
+           (let [head (r/head relvar)
+                 op (r/operator head)]
+             (case op
+               :from (let [[_ i] head] (rf s i))
+               :lookup (let [[_ i] head] (rf s i))
+               (let [{:keys [deps]} (to-dataflow {} relvar)]
+                 (reduce rf s deps)))))))
+     #{} relvar)))
 
 (defn- tag-generation [graph node-id generation]
   (let [{e-gen :generation
@@ -1792,6 +1794,16 @@
           graph (del-from-graph graph mat-relvar)]
       (sg db graph))))
 
+(declare transact)
+
+(defn- create-graph-if-missing [db q]
+  (cond
+    (empty? db) db
+    (::graph (meta db)) db
+    :else
+    (let [deps (dependencies q)]
+      (transact db [(select-keys db deps)]))))
+
 (defn qraw
   "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
   [db query]
@@ -1802,7 +1814,8 @@
         (when-some [node (graph (get-id graph query))]
           (or (:view node)
               (:results node))))
-      (let [db (materialize db query {:query true})
+      (let [db (create-graph-if-missing db query)
+            db (materialize db query {:query true})
             graph (gg db)]
         (when-some [node (graph (get-id graph query))]
           (or (:view node)

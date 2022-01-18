@@ -1319,5 +1319,11 @@
     (is (nil? (rel/index db e)))
     (is (nil? (rel/index db f)))))
 
+(deftest no-meta-no-problem-test
+  (let [db {:foo #{{:foo 42}}}]
+    (is (= [{:foo 42}] (rel/q db :foo)))
+    (is (= [{:foo 42}] (rel/q db [[:from :foo] [:where [= 42 :foo]]])))
+    (is (= nil (rel/q db [[:from :foo] [:where [= 43 :foo]]])))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

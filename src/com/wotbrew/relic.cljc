@@ -47,14 +47,14 @@
   [:insert-ignore :Customer customer1, customer2 ...]
 
   Delete rows (exact match) (faster)
-  [:delete-exact table rows]
+  [:delete-exact table row1 row2 ...]
 
   Delete by predicates with :delete vectors
-  [:delete table expr1 expr2 ..]
+  [:delete table expr1 expr2 ...]
   e.g [:delete Customer [< :age 42]]
 
   Update rows with :update vectors.
-  [:update table fn-or-map expr1 expr2 .. ]
+  [:update table fn-or-map expr1 expr2 ... ]
   e.g [:update Customer {:age inc} [< :age 42]]
 
   You can use a map as terser multi table insert form:

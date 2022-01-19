@@ -207,7 +207,7 @@
        :sort [:a :b] == sort by :a then :b
        :sort [[inc a]] == sort by (inc (:a row))
 
-   Note: indexes are not used yet for ad-hoc sorts, but you can use rel/index and :btree for that if you are brave.
+   Note: indexes are not used (yet) for ad-hoc sorts, you can use the :sort and :sort-limit operators to apply sorts that can be materialized.
 
   ---
 
@@ -341,7 +341,19 @@
 ;; --
 ;; set-concat
 
-(defn set-concat [expr]
+(defn set-concat
+  "Aggregation function that grabs all values for expr over the grouped rows and binds them as a set.
+
+  e.g
+
+  {:Customer [{:name \"alice\"}, {:name \"bob\"}]}
+
+  [[:from :Customer] [:agg [] [:names [rel/set-concat :name]]]]
+
+  ;; =>
+
+  ({:names #{\"alice\", \"bob\"}})"
+  [expr]
   (let [f (e/row-fn expr)]
     {:custom-node (fn [left cols [binding]]
                     (conj left
@@ -351,7 +363,8 @@
 ;; --
 ;; count-distinct
 
-(defn count-distinct [& exprs]
+(defn count-distinct
+  [& exprs]
   (let [expr (if (= 1 (count exprs)) (first exprs) (into [vector] exprs))
         f (e/row-fn expr)]
     {:custom-node (fn [left cols [binding]]

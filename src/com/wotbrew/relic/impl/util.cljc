@@ -85,3 +85,9 @@
         [f] (str/split (str f) #"\@")]
     #?(:clj  (clojure.lang.Compiler/demunge (if show-ns (str ns "/" f) f))
        :cljs (if (empty? f) "fn" (demunge (if show-ns (str ns "/" f) f))))))
+
+(defn vector-if-any-non-nil
+  ([a] (when (some? a) [a]))
+  ([a b] (when (or (some? a) (some? b)) [a b]))
+  ([a b c] (when (or (some? a) (some? b) (some? c)) [a b c]))
+  ([a b c & more] (when (or (some? a) (some? b) (some? c) (some some? more)) (into [a b c] more))))

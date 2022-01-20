@@ -13,7 +13,8 @@
 
   I like to alias :as rel. @wotbrew"
   (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
-            [com.wotbrew.relic.impl.expr :as e]))
+            [com.wotbrew.relic.impl.expr :as e]
+            [com.wotbrew.relic.impl.util :as u]))
 
 (defn transact
   "Return a new relic database, with the transaction applied. Will throw if any constraints are violated at the end of the
@@ -358,14 +359,14 @@
     {:custom-node (fn [left cols [binding]]
                     (conj left
                           [dataflow/group cols f]
-                          [dataflow/transform-unsafe (dataflow/bind-group binding identity)]))}))
+                          [dataflow/transform-unsafe (dataflow/bind-group binding (fn [x] (or x #{})))]))}))
 
 ;; --
 ;; count-distinct
 
 (defn count-distinct
   [& exprs]
-  (let [expr (if (= 1 (count exprs)) (first exprs) (into [vector] exprs))
+  (let [expr (if (= 1 (count exprs)) (first exprs) (into [u/vector-if-any-non-nil] exprs))
         f (e/row-fn expr)]
     {:custom-node (fn [left cols [binding]]
                     (conj left

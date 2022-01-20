@@ -1325,5 +1325,36 @@
     (is (= [{:foo 42}] (rel/q db [[:from :foo] [:where [= 42 :foo]]])))
     (is (= nil (rel/q db [[:from :foo] [:where [= 43 :foo]]])))))
 
+(deftest set-concat-nil-test
+  (let [sc (fn [expr & rows]
+              (-> (rel/what-if {} [[:from :a] [:agg [] [:s [rel/set-concat expr]]]] {:a rows})
+                  first
+                  :s))]
+    (is (= nil (sc :a)))
+    (is (= #{} (sc :a {})))
+    (is (= #{42} (sc :a {:a 42})))
+    (is (= #{42, 43} (sc :a {:a 42} {:a nil} {:a 43} {:a 43})))))
+
+(deftest count-distinct-nil-test
+  (let [cd* (fn [exprs rows]
+              (-> (rel/what-if {} [[:from :a] [:agg [] [:n (into [rel/count-distinct] exprs)]]] {:a rows})
+                  first
+                  :n))
+        cd (fn [expr & rows] (cd* [expr] rows))]
+    (is (= nil (cd :a)))
+    (is (= 0 (cd :a {})))
+    (is (= 0 (cd :a {:a nil})))
+    (is (= 1 (cd :a {:a 42})))
+    (is (= 1 (cd :a {:a 42} {:a 42})))
+    (is (= 1 (cd :a {:a 42} {:a nil})))
+    (is (= 2 (cd :a {:a 42} {:a 43})))
+    (is (= 0 (cd* [:a :b] [{}])))
+    (is (= 1 (cd* [:a :b] [{:a 42}])))
+    (is (= 1 (cd* [:a :b] [{:a 42} {}])))
+    (is (= 2 (cd* [:a :b] [{:a 42} {:a 42, :b 2}])))
+    (is (= 2 (cd* [:a :b ] [{:a 42} {:a 42, :b 2} {:c 1}])))
+    (is (= 3 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1}])))
+    (is (= 4 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1} {:c 2}])))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

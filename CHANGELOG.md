@@ -1,6 +1,6 @@
 # Change Log
 
-## unreleasd
+## 0.1.3
 
 - [#47](https://github.com/wotbrew/relic/issues/45) db without meta is acceptable to queries
 - fixed nil behaviour on multi-expr count-distinct

@@ -2,7 +2,7 @@
 
 ## 0.1.3
 
-- [#47](https://github.com/wotbrew/relic/issues/45) db without meta is acceptable to queries
+- [#47](https://github.com/wotbrew/relic/issues/47) db without meta is acceptable to queries
 - fixed nil behaviour on multi-expr count-distinct
 - set-concat returns empty-set if no non-nil values
 

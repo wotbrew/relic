@@ -49,7 +49,7 @@ Are you tired of writing mechanical wiring and glue? That has *nothing* to do wi
 
 `relic` might help, but it's not a medical professional. It's a functional relational programming library.
 
-Definitely not at all like the other in-memory databases in clojure. this time its different, really.
+Definitely not at all like the other in-memory databases in clojure. This time its different, really.
 
 ## Brief tour
 

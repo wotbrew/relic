@@ -1441,7 +1441,7 @@
               (let [references (r/to-relvar right)
                     origin left
                     _ (when (and (:cascade opts) (not (r/unwrap-table origin)))
-                        (u/raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
+                        (u/raise "Cascading :fk constraints are only allowed on tables" {:relvar origin, :references references, :clause clause}))
                     [left seekl] (find-hash-index graph left (keys clause) (vals clause))
                     [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
@@ -1495,7 +1495,9 @@
         :sort-limit
         (let [[_ n & sorts] head
               [btree view-fn] (find-sort-btree graph left sorts)]
-          (conj btree [save-view (comp #(take n %) view-fn)]))))))
+          (conj btree [save-view (comp #(take n %) view-fn)]))
+
+        (u/raise "Unknown dataflow operator, check for typos.")))))
 
 (defn to-dataflow [graph relvar]
   (let [ret (to-dataflow* graph relvar relvar)]

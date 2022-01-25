@@ -1356,5 +1356,16 @@
     (is (= 3 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1}])))
     (is (= 4 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1} {:c 2}])))))
 
+(deftest row-test
+  (let [db {:a #{{:a 42}, {:a 43}}}]
+    (is (= {:a 42} (rel/row db :a [= :a 42])))
+    (is (= nil (rel/row db :a [= :a 44])))
+    (is (= {:a 42} (rel/row db :a [:or [= :a 43] [even? :a]])))
+    (is (= nil (rel/row db :a [= :a 42] [odd? :a])))
+    (is (= {:a 42} (rel/row db :a [= :a 42] [even? :a])))))
+
+(deftest transaction-function-test
+  (is (= {:a #{{:a 42}}} (rel/transact {} (fn [_] {:a [{:a 42}]})))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

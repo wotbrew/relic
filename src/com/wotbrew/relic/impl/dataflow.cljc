@@ -1975,6 +1975,7 @@
     (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
     (seq? tx) (reduce transact* db tx)
     (nil? tx) db
+    (fn? tx) (transact* db (tx db))
     :else
     (let [[op table & args] tx
           table-key (to-table-key table)]

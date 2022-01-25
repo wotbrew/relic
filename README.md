@@ -29,7 +29,7 @@ Industrial SQL databases seem to solve machine like problems by providing planne
 - Make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
 - [Reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
 
-relic is about in-memory clojure integrated relational programming, for this kind of thing at scale consider: [materialize](https://github.com/MaterializeInc/materialize)
+relic is about in memory computation, for this kind of thing at scale consider: [materialize](https://github.com/MaterializeInc/materialize).
 
 ## Documentation
 

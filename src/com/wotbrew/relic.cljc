@@ -15,7 +15,8 @@
   (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
             [com.wotbrew.relic.impl.expr :as e]
             [com.wotbrew.relic.impl.util :as u]
-            [com.wotbrew.relic.impl.relvar :as r]))
+            [com.wotbrew.relic.impl.relvar :as r])
+  #?(:cljs (:refer-clojure :exclude [exists?])))
 
 (defn transact
   "Return a new relic database, with the transaction applied. Will throw if any constraints are violated at the end of the

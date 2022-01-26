@@ -1,5 +1,12 @@
 # Change Log
 
+## UNRELEASED
+
+- fixed no results when using `[:_ kw]` with indexed `:where` queries
+- added `rel/row`
+- added `rel/exists?`
+- `rel/transact` can now take a function of db to tx op, i.e a transaction function.
+
 ## 0.1.3
 
 - [#47](https://github.com/wotbrew/relic/issues/47) db without meta is acceptable to queries

@@ -1367,5 +1367,10 @@
 (deftest transaction-function-test
   (is (= {:a #{{:a 42}}} (rel/transact {} (fn [_] {:a [{:a 42}]})))))
 
+(deftest optimised-const-expr-test
+  (let [db (rel/mat {} [[:from :a] [:unique :a]])
+        db (rel/transact db {:a [{:a :a} {:a :b}]})]
+    (is (= {:a :a} (rel/row db :a [= :a [:_ :a]])))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

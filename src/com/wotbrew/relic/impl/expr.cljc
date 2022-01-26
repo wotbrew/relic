@@ -239,10 +239,11 @@
 
 (defn unwrap-const
   [expr]
-  (when (const-expr? expr)
+  (if (const-expr? expr)
     (if (vector? expr)
       (recur (nth expr 1 nil))
-      expr)))
+      expr)
+    expr))
 
 (defn eq-expr? [expr]
   (= = (operator expr)))

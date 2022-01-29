@@ -570,16 +570,22 @@
     (is (nil? (meta (rel/strip-meta db))))
     (is (= {:foo 42} (meta (rel/strip-meta (vary-meta db assoc :foo 42)))))))
 
+(defn- error-type [f]
+  (try
+    (do (f) nil)
+    (catch #?(:clj Throwable :cljs js/Error) e (::rel/error (ex-data e)))))
+
 (deftest unique-violation-test
   (let [db (rel/transact {} {:A [{:a 42}]})
         db (rel/mat db [[:from :A] [:unique :a]])]
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/what-if db :A [:insert :A {:a 42, :b 1}])))
+    (is (= :unique-key-violation (error-type #(rel/what-if db :A [:insert :A {:a 42, :b 1}]))))
     (is (= [{:a 42}] (rel/what-if db :A [:insert :A {:a 42}])))))
 
 (deftest delayed-fk-check-test
   (let [db (rel/mat {} [[:from :A] [:fk [[:from :B]] {:a :a}]])]
     (is (= [{:a 1}] (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 1}]})))
     (is (= [{:a 1}] (rel/what-if db :A {:B [{:a 1}]} {:A [{:a 1}]})))
+    (is (= :foreign-key-violation (error-type #(rel/what-if db :A {:A [{:a 1}]}))))
     (is (thrown? #?(:clj Throwable :cljs js/Error) #"Foreign key violation" (rel/what-if db :A {:A [{:a 1}]})))
     (is (thrown? #?(:clj Throwable :cljs js/Error) #"Foreign key violation" (rel/what-if db :A {:A [{:a 1}]} {:B [{:a 2}]})))))
 
@@ -681,7 +687,7 @@
   (let [A [[:from :A]]
         B [[:from A] [:check [= :a 1]]]
         db (rel/mat {} B)]
-    (is (thrown? #?(:clj Throwable :cljs js/Error) (rel/transact db  {:A [{:a 2}]})))
+    (is (= :check-violation (error-type #(rel/transact db {:A [{:a 2}]}))))
     (is (= {:A #{{:a 1}}} (rel/transact db  {:A [{:a 2}]} [:update :A {:a 1}])))
     (is (= {:A #{}} (rel/transact db  {:A [{:a 2}]} [:delete :A])))))
 

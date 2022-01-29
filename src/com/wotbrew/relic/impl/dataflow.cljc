@@ -493,7 +493,9 @@
 
 (defn save-unique [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        raise-violation (fn [old-row new-row] (u/raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
+        raise-violation (fn [old-row new-row] (u/raise "Unique constraint violation"
+                                                       {:com.wotbrew.relic/error :unique-key-violation
+                                                        :relvar left, :old-row old-row, :new-row new-row}))
         on-collision (fn on-collision [old-row new-row] (raise-violation old-row new-row))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
@@ -2012,7 +2014,8 @@
 
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
         (when (seq rows)
-          (u/raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+          (u/raise "Foreign key violation" {:com.wotbrew.relic/error :foreign-key-violation
+                                            :relvar relvar, :references references, :clause clause, :rows rows})))
 
       (doseq [[[relvar check] rows] *check-violations*
               :let [graph (gg db)
@@ -2023,7 +2026,8 @@
                     rows (seq (filter idx rows))]]
         (when-some [row (first rows)]
           (let [error (e/row-fn (:error check "Check violation"))]
-            (u/raise (error row) {:relvar relvar, :check check, :rows rows}))))
+            (u/raise (error row) {:com.wotbrew.relic/error :check-violation
+                                  :relvar relvar, :check check, :rows rows}))))
 
       db)))
 

@@ -13,7 +13,11 @@
                                   [datascript "1.2.10"]
                                   [reagent "1.1.0"]
                                   [io.airlift.tpch/tpch "0.10"]
-                                  [org.clojure/test.check "1.1.0"]]
+                                  [org.clojure/test.check "1.1.0"]
+                                  [ring "1.9.4"]
+                                  [ring-middleware-format "0.7.4"]
+                                  [ring-cors "0.1.13"]
+                                  [compojure "1.6.2"]]
                    :repl-options {:nrepl-middleware [shadow.cljs.devtools.server.nrepl/middleware]}
                    :injections [(try
                                   (println "Loading dev.clj")

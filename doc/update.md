@@ -26,8 +26,8 @@ e.g
 {:Counter #{{:n 42}}}
 
 ;; additional expresssions can be passed as args to filter updated rows
-(rel/transact db [:update :Counter {:n inc} [even? :n]])
+(rel/transact db [:update :Counter {:n [inc :n]} [even? :n]])
 ;; => {:Counter #{{:n 1}}}
-(rel/transact db [:update :Counter {:n inc} [odd? :n]])
+(rel/transact db [:update :Counter {:n [inc :n]} [odd? :n]])
 ;; => {:Counter #{{:n 0}}}  
 ```

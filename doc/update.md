@@ -11,12 +11,12 @@ e.g
   (rel/transact {} {:Counter [{:n 0}]}))
   
 ;; functions can be used
-(rel/transact db [:update :Counter #(update % :n 
+(rel/transact db [:update :Counter #(update % :n inc)])
 ;; =>
 {:Counter #{{:n 1}}}
 
 ;; a set map can be terser, it takes functions/relic-expressions in value position.
-(rel/transact db [:update :Counter {:n inc}])
+(rel/transact db [:update :Counter {:n [inc :n]}])
 ;; =>
 {:Counter #{{:n 1}}}
 

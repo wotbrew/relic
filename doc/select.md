@@ -14,4 +14,4 @@ col-or-binding = col | [binding expr]
 ```clojure
 [[:from :Customer]
  [:select :firstname :lastname [:fullname [str :firstname " " :lastname]]]]
- ```
+```

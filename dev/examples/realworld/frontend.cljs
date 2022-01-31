@@ -56,13 +56,19 @@
   (t! (route-tx page))
   false)
 
-(defn api-url [& path]
+(defn api-url [query-params & path]
   ;; encoding bah
-  (str "http://localhost:6003/api/" (str/join "/" path)))
+  (str "http://localhost:6003/api/" (str/join "/" (map js/encodeURIComponent path))
+       (when (seq query-params)
+         (str "?"
+              (str/join "&" (for [[k v] query-params
+                                  :when (some? v)]
+                              (str (js/encodeURIComponent k) "=" (js/encodeURIComponent v))))))))
 
 (defn api [{:keys [path
                    method
                    params
+                   query-params
                    err-origin
                    err-map
                    on-success]
@@ -79,7 +85,7 @@
         token (:token (rel/row (:db @state) :User))]
     (t! [:delete :Error])
     (-> (js/fetch
-          (apply api-url path)
+          (apply api-url query-params path)
           (clj->js
             (cond->
               {:method method
@@ -127,7 +133,9 @@
   (t! [:delete :Article]
       [:delete :Error [:where [= :origin [:_ :load-profile-feed]]]])
   ;; yea i know, no url encoding
-  (api {:path [(str "articles?author=" username (when favorited "&favorited=1"))]
+  (api {:path ["articles"]
+        :query-params {"author" username
+                       "favorited" (when favorited "1")}
         :method "GET"
         :err-origin :load-profile-feed
         :on-success #(t! (into [:replace-all :Article] (:articles %)))}))
@@ -231,10 +239,28 @@
   (load-profile! username)
   (route :profile))
 
+(defn- favorite! [{:keys [slug]}]
+  ;; optimistic update
+  (t! [:update :Article {:favorited true
+                         :favoritesCount [inc [:or :favoritesCount 0]]}
+       [= :slug slug]])
+  (api {:path ["articles" slug "favorite"]
+        :method "POST"
+        :params {}}))
+
+(defn- unfavorite! [{:keys [slug]}]
+  (t! [:update :Article {:favorited false
+                         :favoritesCount [:? dec :favoritesCount]}
+       [= :slug slug]])
+  (api {:path ["articles" slug "favorite"]
+        :method "DELETE"
+        :params {}}))
+
 (defn article-preview [{:keys [title
                                description
                                slug
                                author
+                               favorited
                                favoritesCount
                                createdAt
                                tagList]}]
@@ -245,6 +271,7 @@
      [:a.author {:href "#" :on-click #(goto-profile (:username author))} (:username author)]
      [:span.date createdAt]]
     [:button.btn.btn-outline-primary.btn-sm.pull-xs-right
+     {:on-click (if favorited #(unfavorite! {:slug slug}) #(favorite! {:slug slug}))}
      [:i.ion-heart] favoritesCount]]
    [:a.preview-link {:href "#"}
     [:h1 title]
@@ -253,6 +280,16 @@
     [:ul.tag-list
      (for [tag tagList]
        ^{:key (str slug "-tag-" tag)} [:li.tag-default.tag-pill.tag-outline tag])]]])
+
+(defn- follow! [{:keys [username]}]
+  (t! [:update :Profile {:following true} [= :username username]])
+  (api {:path ["profiles" username "follow"]
+        :method "POST"}))
+
+(defn- unfollow! [{:keys [username]}]
+  (t! [:update :Profile {:following false} [= :username username]])
+  (api {:path ["profiles" username "follow"]
+        :method "DELETE"}))
 
 (defn profile []
   (let [profile (q! :Profile first)
@@ -268,8 +305,13 @@
            [:img.user-img {:src (:image @profile)}]
            [:h4 (:username @profile)]
            [:p (:bio @profile)]
-           [:button.btn.btn-sm.btn-outline-secondary.action-btn
-            [:i.ion-plus-round] "Follow " (:username @profile)]]]]]
+           (if (:following @profile)
+             [:button.btn.btn-sm.btn-outline-secondary.action-btn
+              {:on-click #(unfollow! {:username (:username @profile)})}
+              [:i.ion-minus-round] "Following " (:username @profile)]
+             [:button.btn.btn-sm.btn-outline-secondary.action-btn
+              {:on-click #(follow! {:username (:username @profile)})}
+              [:i.ion-plus-round] "Follow " (:username @profile)])]]]]
        [:div.container
         [:div.row
          [:div.col-xs-12.col-md-10.offset-md-1
@@ -503,17 +545,29 @@
       [:div
        [nav]
        (case (:page @global)
-         :home [home (:feed @global)]
+         :home [home]
          :new-article [new-article]
          :settings [settings]
          :sign-in [sign-in]
          :sign-up [sign-up]
          :profile [profile]
-         [home (:feed @global)])
+         [home])
        [footer]])))
 
-(load-global-feed!)
+(defn init []
+  (load-global-feed!)
+  (rdom/render
+    [app]
+    (js/document.getElementById "app")))
 
-(rdom/render
-  [app]
-  (js/document.getElementById "app"))
+(init)
+
+(comment
+  (reset! state {:db (empty-db)})
+  (init)
+
+  :cljs/quit
+
+  (defn q [qry] (rel/q (:db @state) qry))
+
+  )

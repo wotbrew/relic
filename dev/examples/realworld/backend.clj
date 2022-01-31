@@ -6,8 +6,7 @@
             [ring.middleware.format :as format]
             [ring.middleware.cors :as cors]
             [ring.middleware.params :as params])
-  (:import (java.time Instant)
-           (org.eclipse.jetty.server Server)))
+  (:import (java.time Instant)))
 
 ;; model
 
@@ -27,7 +26,9 @@
     [:article/author [rel/sel1 :User {:article/user :user/id}]]
     [:article/slug [slugify :article/title]]
     [:article/tag-set [tag-set :article/tag-list]]
-    [[:article/favorite-count] [rel/sel1 FavoriteCount {:article/id :favorite/article}]]]])
+
+    [[:article/favorite-count] [rel/sel1 FavoriteCount {:article/id :favorite/article}]]
+    [:article/favorite-count [:or :article/favorite-count 0]]]])
 
 (def Tag
   [[:from Article]
@@ -41,23 +42,29 @@
 
 ;; queries
 
-(defn list-article-query [{:keys [uid tag author favorited]}]
-  (let [filtered
+(defn list-article-query [{:keys [tag author favorited]}]
+  (let [base (cond
+               (and author favorited)
+               [[:from :User]
+                [:where [= :user/username [:_ author]]]
+                [:join
+                 :Favorite {:user/id :favorite/user }
+                 Article {:favorite/article :article/id}]]
+
+               author
+               [[:from Article]
+                [:where [= [:user/username :article/author] author]]]
+
+               :else Article)
+
+        filtered
         (cond->
-          [[:from Article]]
-
-          author
-          (conj [:where [= [:user/username :article/author] author]])
-
+          base
           ;; this is where I would like to
           ;; demo an optimisation if we are running lots of articles
           ;; e.g create index on tag article author
           tag
-          (conj [:where [contains? :article/tag-set tag]])
-
-          favorited
-          (conj [:where [rel/sel1 :Favorite {:article/id :favorite/article
-                                             uid :favorite/user}]]))
+          (conj [:where [contains? :article/tag-set tag]]))
 
         counted
         (conj filtered [:agg [] [:article-count count]])
@@ -124,7 +131,7 @@
               :article/updated-at created-at}]})
 
 (defn- slug->article-id [db slug]
-  (:article/id (rel/row db :Article [= :article/slug slug])))
+  (:article/id (rel/row db Article [= :article/slug slug])))
 
 (defn update-article [{:keys [slug title description body updated-at]
                        :or {title :article/title
@@ -185,7 +192,7 @@
 
 (defn- following? [db follower-uid followed-uid]
   (let [idx (rel/index db FollowedIndex)]
-    (get-in idx [follower-uid followed-uid])))
+    (some? (get-in idx [follower-uid followed-uid]))))
 
 (def FavoritedIndex
   [[:from :Favorite]
@@ -193,7 +200,7 @@
 
 (defn- favorited? [db aid uid]
   (let [idx (rel/index db FavoritedIndex)]
-    (get-in idx [uid aid])))
+    (some? (get-in idx [uid aid]))))
 
 (defn profile-response [user authed-uid db]
   {:status 200
@@ -580,15 +587,13 @@
 (defn start-server []
   (jetty/run-jetty #'handler {:port 6003, :join? false}))
 
-(defonce default-server
-  (delay (start-server)))
+(comment
 
-(defn stop []
-  (alter-var-root #'default-server
-                  (fn [d] (when (realized? d)
-                            (.stop ^Server @d))
-                    (delay (start-server)))))
+  (def s (start-server))
+  (.stop s)
 
-(defn restart []
-  (stop)
-  @default-server)
+  (dev/cljs-repl)
+  :cljs/quit
+
+  ,
+  )

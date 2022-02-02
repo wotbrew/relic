@@ -1362,6 +1362,15 @@
     (is (= 3 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1}])))
     (is (= 4 (cd* [:a :b :c] [{:a 42} {:a 42, :b 2} {:c 1} {:c 2}])))))
 
+(deftest exists-test
+  (let [db {:a #{{:a 42}}}]
+    (is (= true (rel/exists? db :a)))
+    (is (= false (rel/exists? db :b)))
+    (is (rel/exists? db :a [= :a 42]))
+    (is (rel/exists? db :a [= :a 42] [even? :a]))
+    (is (false? (rel/exists? db :a [= :a 43])))
+    (is (false? (rel/exists? db :a [= :a 42] [odd? :a])))))
+
 (deftest row-test
   (let [db {:a #{{:a 42}, {:a 43}}}]
     (is (= {:a 42} (rel/row db :a [= :a 42])))

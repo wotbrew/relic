@@ -13,7 +13,7 @@
    :Project [{:name "Install Clojure", :base-reward 10.0 :base-difficulty 10}]})
 
 (def projects
-  "The list of possible projects, an element is selected from random every time you complete a project."
+  "The list of possible projects, an element is selected at random every time you complete a project."
   [{:name "Bug fix", :base-difficulty 10, :base-reward 10}
    {:name "Feature Request", :base-difficulty 15, :base-reward 20}
    {:name "Demo", :base-difficulty 25, :base-reward 15}

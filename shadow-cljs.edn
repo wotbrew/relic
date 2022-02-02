@@ -3,6 +3,13 @@
                     :output-dir "target/js"
                     :asset-path "/target/js"
                     :modules {:main {:entries [com.wotbrew.relic]}}}
+
+          :cljidle {:target :browser
+                    :output-dir "target/js"
+                    :asset-path "/js"
+                    :compiler-options {:optimizations :advanced}
+                    :modules {:cljidle {:entries [examples.cljidle]}}}
+
           :test {:target :node-test
                  :output-to "target/node-tests.js"
                  :ns-regexp "-test$"

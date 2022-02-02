@@ -42,10 +42,12 @@
   @profiler-server
   (clojure.java.browse/browse-url (str "http://localhost:" profiler-port)))
 
-(defn cljs-repl []
-  (s.server/start!)
-  (s.api/watch :browser)
-  (s.api/repl :browser))
+(defn cljs-repl
+  ([] (cljs-repl :browser))
+  ([build-id]
+   (s.server/start!)
+   (s.api/watch build-id)
+   (s.api/repl build-id)))
 
 (defn cljs-test []
   (s.api/compile :test))

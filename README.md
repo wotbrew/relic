@@ -5,7 +5,7 @@
 _status: alpha, breaking changes unlikely but possible_
 
 ```clojure 
-[com.wotbrew/relic "0.1.3"]
+[com.wotbrew/relic "0.1.4"]
 ```
 
 `relic` is an experimental Clojure/Script in-memory database and data processing library.

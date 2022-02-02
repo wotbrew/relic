@@ -1,6 +1,6 @@
 # Change Log
 
-## UNRELEASED
+## 0.1.4
 
 - fixed no results when using `[:_ kw]` with indexed `:where` queries
 - added `rel/row`

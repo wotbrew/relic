@@ -106,7 +106,7 @@
        (>= y (first more)))
      false)))
 
-(defn- safe-expr-str [expr]
+(defn safe-expr-str [expr]
   (cond
     (fn? expr) (demunge-expr expr)
 

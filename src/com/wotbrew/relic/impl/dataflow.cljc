@@ -5,7 +5,8 @@
             [com.wotbrew.relic.impl.util :as u]
             [com.wotbrew.relic.impl.expr :as e]
             [com.wotbrew.relic.impl.relvar :as r]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [clojure.string :as str]))
 
 (defn where-pred [exprs]
   (case (count exprs)
@@ -491,11 +492,18 @@
     (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
       (eduction xf (vals m)))))
 
-(defn save-unique [graph self left fns]
+(defn ukey-error [left exprs]
+  (let [table (r/unwrap-table-key left)]
+    (str "Unique constraint violation: " (str/join ", " (map e/safe-expr-str exprs))
+         (when table (str " (table: " table ")")))))
+
+(defn save-unique [graph self left fns exprs]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        raise-violation (fn [old-row new-row] (u/raise "Unique constraint violation"
+        raise-violation (fn [old-row new-row] (u/raise (ukey-error left exprs)
                                                        {:com.wotbrew.relic/error :unique-key-violation
-                                                        :relvar left, :old-row old-row, :new-row new-row}))
+                                                        :relvar left,
+                                                        :old-row old-row,
+                                                        :new-row new-row}))
         on-collision (fn on-collision [old-row new-row] (raise-violation old-row new-row))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
@@ -1027,6 +1035,20 @@
 (defn btree? [relvar] (= :btree (r/head-operator relvar)))
 (defn from? [relvar] (= :from (r/head-operator relvar)))
 
+(defn pass-through?
+  "If the operator represents pass-through, e.g does not modify the set of rows at all.
+
+  Useful to know if you want to check whether indexes apply."
+  [relvar]
+  (or (from? relvar)
+      (case (r/head-operator relvar)
+        :check true
+        :req true
+        :hash true
+        :btree true
+        :unique true
+        false)))
+
 (defn find-indexes
   ([graph relvar] (find-indexes graph identity relvar))
   ([graph pred relvar]
@@ -1041,7 +1063,7 @@
                  relvar (:relvar child-node)]
              (cond
                (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
-               (from? relvar) (reduce ! lst (:dependents child-node))
+               (pass-through? relvar) (reduce ! lst (:dependents child-node))
                :else lst)))
          (u/mutable-list)
          dependents)))))
@@ -1450,11 +1472,15 @@
 
         :unique
         (let [[_ & exprs] head]
-          (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs)])))
+          (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs) exprs])))
 
         :constrain
-        (let [[_ & constraints] head]
-          (reduce conj left constraints))
+        (let [[_ & constraints] head
+              each (mapv #(conj left %) constraints)]
+          {:deps each
+           :flow (apply flow (for [e each
+                                   kv [e flow-pass]]
+                               kv))})
 
         :const
         (let [[_ coll] head]

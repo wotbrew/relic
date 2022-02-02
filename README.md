@@ -128,6 +128,8 @@ You can do more than query and materialize with relic, you can [react to changes
 
 If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
 
+Another example demonstrating usage in the browser can be found in [cljidle](https://github.com/wotbrew/relic/blob/master/dev/examples/cljidle).
+
 For further reading, see the [docs](https://wotbrew.github.io/relic)
 
 ## Related work

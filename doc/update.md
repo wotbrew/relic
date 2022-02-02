@@ -11,12 +11,12 @@ e.g
   (rel/transact {} {:Counter [{:n 0}]}))
   
 ;; functions can be used
-(rel/transact db [:update :Counter #(update % :n 
+(rel/transact db [:update :Counter #(update % :n inc)])
 ;; =>
 {:Counter #{{:n 1}}}
 
 ;; a set map can be terser, it takes functions/relic-expressions in value position.
-(rel/transact db [:update :Counter {:n inc}])
+(rel/transact db [:update :Counter {:n [inc :n]}])
 ;; =>
 {:Counter #{{:n 1}}}
 
@@ -26,8 +26,8 @@ e.g
 {:Counter #{{:n 42}}}
 
 ;; additional expresssions can be passed as args to filter updated rows
-(rel/transact db [:update :Counter {:n inc} [even? :n]])
+(rel/transact db [:update :Counter {:n [inc :n]} [even? :n]])
 ;; => {:Counter #{{:n 1}}}
-(rel/transact db [:update :Counter {:n inc} [odd? :n]])
+(rel/transact db [:update :Counter {:n [inc :n]} [odd? :n]])
 ;; => {:Counter #{{:n 0}}}  
 ```

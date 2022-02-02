@@ -1,4 +1,4 @@
-(ns examples.cljidle
+(ns examples.cljidle.app
   "Clojure Idle is a meme idle game to demonstrate the use of relic in the browser."
   (:require [com.wotbrew.relic :as rel]
             [reagent.dom :as rdom]
@@ -22,28 +22,40 @@
 
 (def improvements
   "The list of possible improvements, to generate parens and $$$."
-  [{:name "Keyboard macros"
+  [{:name "Mechanical key grease"
     :clicks 1
     :base-cost 10}
-   {:name "(repeatedly (write-code))"
+   {:name "(repeatedly #(write-code))"
     :pps 0.1
     :base-cost 30}
-   {:name "Buy a macbook pro"
+   {:name "(repeatedly #(future (write-code)))"
     :pps 1.0
     :base-cost 400}
    {:name "Write a component library"
     :pps 2.0
     :base-cost 1500}
-   {:name "Create SaaS"
-    :base-cost 10000
+   {:name "Encourage coffee donations"
+    :base-cost 25000
     :passive-income 100.0}
-   {:name "Macros that write macros"
+   {:name "Babashka lambda functions"
     :pps 20.0
-    :base-cost 700000}])
+    :base-cost 100000}
+   {:name "Invest in a startup"
+    :base-cost 500000
+    :passive-income 1000.0}
+   {:name "Buy Nubank"
+    :base-cost 3000000
+    :pps 200.0}
+   {:name "Rich Hickey cloning vats"
+    :base-cost 90000000
+    :pps 2000.0}])
 
 (def upgrades
   "The list of possible upgrades, to improve your improvements."
-  [{:name "Rewatch simple made easy"
+  [{:name "Switch color theme"
+    :cost 1
+    :pps-mul 2.0}
+   {:name "Re-watch simple made easy"
     :cost 100
     :pps-mul 2.0}
    {:name "Fresh init.el"
@@ -51,7 +63,16 @@
     :pps-mul 2.0}
    {:name "Go to the conj"
     :cost 10000
-    :pps-mul 4.0}])
+    :pps-mul 4.0}
+   {:name "Switch editor"
+    :cost 20000
+    :pps-mul 4.0}
+   {:name "Learn transducers"
+    :pps-mul 8.0
+    :cost 400000}
+   {:name "Macros that write macros"
+    :pps-mul 16.0
+    :cost 8000000}])
 
 ;; -----
 ;; essential state and constraints
@@ -181,7 +202,7 @@
 
 (defn- improvement-description [im]
   (cond
-    (:pps im) (str "+" (:unit-pps im) " parens per second")
+    (:pps im) (str "+" (.toFixed (:unit-pps im) 2) " parens per second")
     (:clicks im) (str "+" (:clicks im) " parens per click")
     (:passive-income im) (str "+$" (:passive-income im) " per second")))
 

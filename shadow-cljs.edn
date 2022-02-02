@@ -5,10 +5,10 @@
                     :modules {:main {:entries [com.wotbrew.relic]}}}
 
           :cljidle {:target :browser
-                    :output-dir "target/js"
+                    :output-dir "dev/examples/cljidle/js"
                     :asset-path "/js"
                     :compiler-options {:optimizations :advanced}
-                    :modules {:cljidle {:entries [examples.cljidle]}}}
+                    :modules {:cljidle {:entries [examples.cljidle.app]}}}
 
           :test {:target :node-test
                  :output-to "target/node-tests.js"

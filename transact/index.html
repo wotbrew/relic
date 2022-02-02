@@ -1104,6 +1104,13 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#additional-support" class="md-nav__link">
+    Additional support
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1452,6 +1459,21 @@
   
 
     
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../demos/" class="md-nav__link">
+        Demos
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1481,6 +1503,13 @@
         <li class="md-nav__item">
   <a href="#ops" class="md-nav__link">
     Ops
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#additional-support" class="md-nav__link">
+    Additional support
   </a>
   
 </li>
@@ -1520,6 +1549,11 @@
 <li><a href="../insert-or-update/"><code>:insert-or-update</code></a></li>
 <li><a href="../replace-all/"><code>:replace-all</code></a></li>
 <li><a href="../terse-insert/">terse insert</a></li>
+</ul>
+<h2 id="additional-support">Additional support</h2>
+<ul>
+<li>A seq of ops is a valid op, this can sometimes save some boilerplate.</li>
+<li>A function from db -&gt; op is a valid op, you can use this for gnarly dependent writes where pure data doesn't cut it.</li>
 </ul>
 <p>See also <a href="../change-tracking/">change tracking</a>, <a href="../constraints/">constraints</a>.</p>
 

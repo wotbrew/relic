@@ -13,7 +13,7 @@
     
     
       
-        <title>:difference - relic</title>
+        <title>Demos - relic</title>
       
     
     
@@ -58,7 +58,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#difference" class="md-skip">
+        <a href="#demo-applications" class="md-skip">
           Skip to content
         </a>
       
@@ -91,7 +91,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              :difference
+              Demos
             
           </span>
         </div>
@@ -214,14 +214,12 @@
 
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" >
       
       
       
@@ -270,14 +268,12 @@
               
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_3" type="checkbox" id="__nav_2_3" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_3" type="checkbox" id="__nav_2_3" >
       
       
       
@@ -340,52 +336,11 @@
               
   
   
-    
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          :difference
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../difference/" class="md-nav__link">
         :difference
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    Examples
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1460,11 +1415,52 @@
 
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="../demos/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Demos
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         Demos
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cljidle" class="md-nav__link">
+    cljidle
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1496,8 +1492,8 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    Examples
+  <a href="#cljidle" class="md-nav__link">
+    cljidle
   </a>
   
 </li>
@@ -1514,23 +1510,18 @@
             <article class="md-content__inner md-typeset">
               
                 
-<a href="https://github.com/wotbrew/relic/edit/master/doc/difference.md" title="Edit this page" class="md-content__button md-icon">
+<a href="https://github.com/wotbrew/relic/edit/master/doc/demos.md" title="Edit this page" class="md-content__button md-icon">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
 </a>
 
 
-<h1 id="difference">:difference</h1>
-<p>Set difference, returns rows in the left relations that are not in the right. Accepts multiple tables/queries as parameters.
-Same kind of thing as <code>clojure.set/difference</code>.</p>
-<h2 id="examples">Examples</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="p">(</span><span class="k">def </span><span class="nv">GoodCustomer</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span> 
-<a id="__codelineno-0-3" name="__codelineno-0-3"></a>   <span class="p">[</span><span class="ss">:where</span> <span class="p">[</span><span class="ss">:&lt;=</span> <span class="mi">100</span> <span class="ss">:score</span><span class="p">]]])</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="p">(</span><span class="k">def </span><span class="nv">BadCustomers</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6"></a>  <span class="p">[[</span><span class="ss">:from</span> <span class="ss">:Customer</span><span class="p">]</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7"></a>   <span class="p">[</span><span class="ss">:difference</span> <span class="nv">GoodCustomer</span><span class="p">]])</span>
-</code></pre></div>
+<h1 id="demo-applications">Demo applications</h1>
+<h2 id="cljidle">cljidle</h2>
+<p>A clojurescript idle game. Demonstrates a minimalistic integration with reagent.</p>
+<ul>
+<li><a href="https://github.com/wotbrew/relic/blob/master/dev/examples/cljidle/app.cljs">view the code</a></li>
+<li><a href="https://cljidle.wotbrew.com">play in the browser</a></li>
+</ul>
 
               
             </article>
@@ -1544,7 +1535,7 @@ Same kind of thing as <code>clojure.set/difference</code>.</p>
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../from/" class="md-footer__link md-footer__link--prev" aria-label="Previous: :from" rel="prev">
+        <a href="../extension/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Extension" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -1553,26 +1544,11 @@ Same kind of thing as <code>clojure.set/difference</code>.</p>
               <span class="md-footer__direction">
                 Previous
               </span>
-              :from
+              Extension
             </div>
           </div>
         </a>
       
-      
-        
-        <a href="../expand/" class="md-footer__link md-footer__link--next" aria-label="Next: :expand" rel="next">
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              :expand
-            </div>
-          </div>
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4z"/></svg>
-          </div>
-        </a>
       
     </nav>
   

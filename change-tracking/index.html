@@ -1419,6 +1419,21 @@
   
 
     
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../demos/" class="md-nav__link">
+        Demos
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1456,7 +1471,7 @@
 
 <h1 id="change-tracking">Change Tracking</h1>
 <p>One of the key features of relic is discrete change tracking, this enables integration with other reactive or signal graph
-systems such as react or reagent.</p>
+systems such as react.</p>
 <p>Any query can be watched so that you can ask what rows were added or deleted by a transaction with <code>track-transact</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1">;; given a query we are interested in watching</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="p">(</span><span class="k">def </span><span class="nv">ViewModel</span> 
@@ -1494,6 +1509,7 @@ systems such as react or reagent.</p>
 </code></pre></div>
 <p>You can <code>watch</code> any <a href="../query/">query</a> or table.
 To enable change tracking <code>watch</code> <a href="../materialization/">materializes</a> queries so the same memory/performance trade-offs apply.</p>
+<p>See the <a href="../demos/">cljidle</a> demo for an example of change tracking with reagent.</p>
 
               
             </article>

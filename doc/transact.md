@@ -24,4 +24,10 @@ You basic operations mirror the SQL ones, see the linked docs for more info.
 - [terse insert](terse-insert.md)
 
 
+## Additional support
+
+- A seq of ops is a valid op, this can sometimes save some boilerplate.
+- A function from db -> op is a valid op, you can use this for gnarly dependent writes where pure data doesn't cut it.
+
+
 See also [change tracking](change-tracking.md), [constraints](constraints.md).

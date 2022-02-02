@@ -5,7 +5,8 @@
             [com.wotbrew.relic.impl.util :as u]
             [com.wotbrew.relic.impl.expr :as e]
             [com.wotbrew.relic.impl.relvar :as r]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [clojure.string :as str]))
 
 (defn where-pred [exprs]
   (case (count exprs)
@@ -491,9 +492,18 @@
     (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
       (eduction xf (vals m)))))
 
-(defn save-unique [graph self left fns]
+(defn ukey-error [left exprs]
+  (let [table (r/unwrap-table-key left)]
+    (str "Unique constraint violation: " (str/join ", " (map e/safe-expr-str exprs))
+         (when table (str " (table: " table ")")))))
+
+(defn save-unique [graph self left fns exprs]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
-        raise-violation (fn [old-row new-row] (u/raise "Unique constraint violation" {:relvar left, :old-row old-row, :new-row new-row}))
+        raise-violation (fn [old-row new-row] (u/raise (ukey-error left exprs)
+                                                       {:com.wotbrew.relic/error :unique-key-violation
+                                                        :relvar left,
+                                                        :old-row old-row,
+                                                        :new-row new-row}))
         on-collision (fn on-collision [old-row new-row] (raise-violation old-row new-row))
         replace-fn (fn [old-row row] (cond (nil? old-row) row
                                            (= old-row row) row
@@ -1025,6 +1035,20 @@
 (defn btree? [relvar] (= :btree (r/head-operator relvar)))
 (defn from? [relvar] (= :from (r/head-operator relvar)))
 
+(defn pass-through?
+  "If the operator represents pass-through, e.g does not modify the set of rows at all.
+
+  Useful to know if you want to check whether indexes apply."
+  [relvar]
+  (or (from? relvar)
+      (case (r/head-operator relvar)
+        :check true
+        :req true
+        :hash true
+        :btree true
+        :unique true
+        false)))
+
 (defn find-indexes
   ([graph relvar] (find-indexes graph identity relvar))
   ([graph pred relvar]
@@ -1039,7 +1063,7 @@
                  relvar (:relvar child-node)]
              (cond
                (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
-               (from? relvar) (reduce ! lst (:dependents child-node))
+               (pass-through? relvar) (reduce ! lst (:dependents child-node))
                :else lst)))
          (u/mutable-list)
          dependents)))))
@@ -1441,18 +1465,22 @@
               (let [references (r/to-relvar right)
                     origin left
                     _ (when (and (:cascade opts) (not (r/unwrap-table origin)))
-                        (u/raise "Cascading :fk constraints are only allowed on table relvars" {:relvar origin, :references references, :clause clause}))
+                        (u/raise "Cascading :fk constraints are only allowed on tables" {:relvar origin, :references references, :clause clause}))
                     [left seekl] (find-hash-index graph left (keys clause) (vals clause))
                     [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
 
         :unique
         (let [[_ & exprs] head]
-          (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs)])))
+          (add-implicit-joins #(conj left [save-unique (mapv e/row-fn exprs) exprs])))
 
         :constrain
-        (let [[_ & constraints] head]
-          (reduce conj left constraints))
+        (let [[_ & constraints] head
+              each (mapv #(conj left %) constraints)]
+          {:deps each
+           :flow (apply flow (for [e each
+                                   kv [e flow-pass]]
+                               kv))})
 
         :const
         (let [[_ coll] head]
@@ -1495,7 +1523,9 @@
         :sort-limit
         (let [[_ n & sorts] head
               [btree view-fn] (find-sort-btree graph left sorts)]
-          (conj btree [save-view (comp #(take n %) view-fn)]))))))
+          (conj btree [save-view (comp #(take n %) view-fn)]))
+
+        (u/raise "Unknown dataflow operator, check for typos.")))))
 
 (defn to-dataflow [graph relvar]
   (let [ret (to-dataflow* graph relvar relvar)]
@@ -1975,6 +2005,7 @@
     (map? tx) (reduce-kv (fn [db table rows] (change-table db (to-table-key table) rows nil)) db tx)
     (seq? tx) (reduce transact* db tx)
     (nil? tx) db
+    (fn? tx) (transact* db (tx db))
     :else
     (let [[op table & args] tx
           table-key (to-table-key table)]
@@ -2009,7 +2040,8 @@
 
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
         (when (seq rows)
-          (u/raise "Foreign key violation" {:relvar relvar, :references references, :clause clause, :rows rows})))
+          (u/raise "Foreign key violation" {:com.wotbrew.relic/error :foreign-key-violation
+                                            :relvar relvar, :references references, :clause clause, :rows rows})))
 
       (doseq [[[relvar check] rows] *check-violations*
               :let [graph (gg db)
@@ -2020,7 +2052,8 @@
                     rows (seq (filter idx rows))]]
         (when-some [row (first rows)]
           (let [error (e/row-fn (:error check "Check violation"))]
-            (u/raise (error row) {:relvar relvar, :check check, :rows rows}))))
+            (u/raise (error row) {:com.wotbrew.relic/error :check-violation
+                                  :relvar relvar, :check check, :rows rows}))))
 
       db)))
 

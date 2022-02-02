@@ -14,7 +14,9 @@
   I like to alias :as rel. @wotbrew"
   (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
             [com.wotbrew.relic.impl.expr :as e]
-            [com.wotbrew.relic.impl.util :as u]))
+            [com.wotbrew.relic.impl.util :as u]
+            [com.wotbrew.relic.impl.relvar :as r])
+  #?(:cljs (:refer-clojure :exclude [exists?])))
 
 (defn transact
   "Return a new relic database, with the transaction applied. Will throw if any constraints are violated at the end of the
@@ -527,3 +529,13 @@
 
   [rel/env :now]"
   e/env)
+
+(defn row [db q & where-clauses]
+  (if (seq where-clauses)
+    (first (dataflow/q db (conj (r/to-relvar q) (into [:where] where-clauses))))
+    (first (dataflow/q db q))))
+
+(defn exists?
+  "Returns true if the query returns at least one row."
+  [db q & where-clauses]
+  (some? (apply row db q where-clauses)))

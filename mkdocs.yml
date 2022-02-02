@@ -75,6 +75,7 @@ nav:
     - :constrain: constrain.md
   - Security: security.md
   - Extension: extension.md
+  - Demos: demos.md
 theme:
   name: material
   icon:

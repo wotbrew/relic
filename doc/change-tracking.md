@@ -1,7 +1,7 @@
 # Change Tracking
 
 One of the key features of relic is discrete change tracking, this enables integration with other reactive or signal graph
-systems such as react or reagent.
+systems such as react.
 
 Any query can be watched so that you can ask what rows were added or deleted by a transaction with `track-transact`.
 
@@ -43,3 +43,5 @@ Any query can be watched so that you can ask what rows were added or deleted by 
 
 You can `watch` any [query](query.md) or table.
 To enable change tracking `watch` [materializes](materialization.md) queries so the same memory/performance trade-offs apply.
+
+See the [cljidle](demos.md) demo for an example of change tracking with reagent.

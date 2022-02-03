@@ -1,27 +1,31 @@
 # relic
 
-![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg) [![Clojars Project](https://img.shields.io/clojars/v/com.wotbrew/relic.svg)](https://clojars.org/com.wotbrew/relic)
 
 _status: alpha, breaking changes unlikely but possible_
 
-```clojure 
-[com.wotbrew/relic "0.1.4"]
-```
-
-`relic` is an experimental Clojure/Script in-memory database and data processing library.
-
-Built in a lockdown induced _strange mood_, the goal is a clojure flavoured version of the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+`relic` is an experimental Clojure/Script data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 ## Why
 
-When working on boring $business_problems, too much energy is spent on the machine like bits of programs,
-data structures, threading the data to where it is needed, layout, ordering, access path etc.
+Fatigue with over-fitted functions, and over-fitted maps for information work. 
 
-I would prefer to focus more on the data itself, and the relationships between the data.
+> The relational view (or model) of data ... appears to be superior in several respects to the graph or network model .... It provides a means of describing data with its natural structure only-that is, without superimposing any additional structure for machine representation
+purposes - Codd, A Relational Model of Data for
+Large Shared Data Banks
 
-Industrial SQL databases seem to solve machine like problems by providing planners and optimisers, and ultimately making decisions on behalf of the programmer such that the programmer can get their work done and go home at 5pm.
+Here we are after many decades of dominance of such a model (with the traditional SQL RDMS) for information work.
 
-`relic` can take care of many of the machine like bits of data query & processing, just as databases do.
+Programming with maps becomes less ergonomic as soon as you have to deal with more than one collection of them at a time, so often they are over structured to fit only one use case.
+
+> Our main aim for state in the ideal world is to get rid of it (state) — i.e. we are
+hoping that most state will turn out to be accidental state. - Moseley & Marks, Out of the Tar Pit
+>
+`relic` asks the question, if I calculate a value from input data using a function, and store it in a map, and then take responsibility for its maintenance and conveyance to downstream functions as inputs change - is that accidental complexity?
+
+Let `relic` take care of it, the performance is good enough, go home at 5pm and have a beer.
+
+## Features
 
 - Fully featured in-memory database with indexed SQL style [query](https://wotbrew.github.io/relic/query).
 - Integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/relic/expr) in queries, build queries with clojure.
@@ -29,7 +33,19 @@ Industrial SQL databases seem to solve machine like problems by providing planne
 - Make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
 - [Reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
 
-relic is about in memory computation, for this kind of thing at scale consider: [materialize](https://github.com/MaterializeInc/materialize).
+`relic` only targets in-memory use cases, for this kind of thing at scale consider: [materialize](https://github.com/MaterializeInc/materialize).
+
+## Installation
+
+With `leiningen`
+```clojure
+[com.wotbrew/relic "0.1.4"]
+```
+
+With `clojure` (`deps.edn`)
+```clojure 
+com.wotbrew/relic {:mvn/version "0.1.4"}
+```
 
 ## Documentation
 
@@ -132,7 +148,7 @@ Another example demonstrating usage in the browser can be found in [cljidle](htt
 
 For further reading, see the [docs](https://wotbrew.github.io/relic)
 
-## Related work
+## Related libraries
 
 - [core.logic](https://github.com/clojure/core.logic) 
 - [datascript](https://github.com/tonsky/datascript)
@@ -142,8 +158,6 @@ For further reading, see the [docs](https://wotbrew.github.io/relic)
 - [meander](https://github.com/noprompt/meander)
 - [doxa](https://github.com/ribelo/doxa)
 - [clj-3df](https://github.com/sixthnormal/clj-3df)
-
-Any many, many more, sorry if I forgot you, give me a PR.
 
 ## Thanks 
 

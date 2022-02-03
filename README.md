@@ -10,13 +10,13 @@ _status: alpha, breaking changes unlikely but possible_
 
 Fatigue with over-fitted functions, and over-fitted maps for information work. 
 
+Programming with maps becomes less ergonomic as soon as you have to deal with more than one collection of them at a time, so often they are over structured to fit only one use case.
+
 > The relational view (or model) of data ... appears to be superior in several respects to the graph or network model .... It provides a means of describing data with its natural structure only-that is, without superimposing any additional structure for machine representation
 purposes - Codd, A Relational Model of Data for
 Large Shared Data Banks
 
 Here we are after many decades of dominance of such a model (with the traditional SQL RDMS) for information work.
-
-Programming with maps becomes less ergonomic as soon as you have to deal with more than one collection of them at a time, so often they are over structured to fit only one use case.
 
 > Our main aim for state in the ideal world is to get rid of it (state) — i.e. we are
 hoping that most state will turn out to be accidental state. - Moseley & Marks, Out of the Tar Pit

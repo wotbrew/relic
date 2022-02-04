@@ -88,7 +88,10 @@
       row)
     (let [{:keys [error]} check
           error-fn (e/row-fn (or error "Check constraint violation"))]
-      (u/raise (error-fn row) {:check check, :row row, :relvar relvar}))))
+      (u/raise (error-fn row) {:com.wotbrew.relic/error :check-violation
+                               :check check,
+                               :row row,
+                               :relvar relvar}))))
 
 (defn- good-check [relvar check row]
   row)

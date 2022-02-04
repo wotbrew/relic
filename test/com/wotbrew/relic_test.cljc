@@ -224,7 +224,7 @@
 
         db (rel/mat {} R)]
 
-    (is (= nil (rel/q db R)))
+    (is (= [{:n 0}] (rel/q db R)))
     (is (= [{:n 3}] (rel/what-if db R {A [a0 a1 a2]})))
     (is (= [{:n 2}] (rel/what-if db R {A [a0 a1 a2]} [:delete-exact A a0])))
     (is (= [{:n 1}] (rel/what-if db R {A [a1]} [:delete-exact A a1] [:insert A a1])))
@@ -1336,7 +1336,7 @@
               (-> (rel/what-if {} [[:from :a] [:agg [] [:s [rel/set-concat expr]]]] {:a rows})
                   first
                   :s))]
-    (is (= nil (sc :a)))
+    (is (= #{} (sc :a)))
     (is (= #{} (sc :a {})))
     (is (= #{42} (sc :a {:a 42})))
     (is (= #{42, 43} (sc :a {:a 42} {:a nil} {:a 43} {:a 43})))))
@@ -1347,7 +1347,7 @@
                   first
                   :n))
         cd (fn [expr & rows] (cd* [expr] rows))]
-    (is (= nil (cd :a)))
+    (is (= 0 (cd :a)))
     (is (= 0 (cd :a {})))
     (is (= 0 (cd :a {:a nil})))
     (is (= 1 (cd :a {:a 42})))
@@ -1386,6 +1386,22 @@
   (let [db (rel/mat {} [[:from :a] [:unique :a]])
         db (rel/transact db {:a [{:a :a} {:a :b}]})]
     (is (= {:a :a} (rel/row db :a [= :a [:_ :a]])))))
+
+(deftest empty-agg-default-test
+
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n count]]])))
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [count false]]]])))
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [count true]]]])))
+  (is (= [{:n 0}] (rel/q {:foo #{{}}} [[:from :foo] [:agg [] [:n [count false]]]])))
+
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/sum :a]]]])))
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/avg :a]]]])))
+  (is (= [{:n false}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/any :a]]]])))
+  (is (= [{:n true}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/not-any :a]]]])))
+  (is (= [{:n #{}}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/set-concat :a]]]])))
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/count-distinct :a]]]])))
+
+  )
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

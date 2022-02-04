@@ -793,13 +793,15 @@
 (defn row-count
   "A relic agg function that can be used in :agg expressions to calculate the number of rows in a relation."
   ([]
-   {:custom-node (fn [left cols [binding]]
+   {:default 0
+    :custom-node (fn [left cols [binding]]
                    (conj left
                          [group cols identity]
                          [transform-unsafe (bind-group binding count)]))})
   ([expr]
    (let [f (e/row-fn [:if expr :%])]
-     {:custom-node (fn [left cols [binding]]
+     {:default 0
+      :custom-node (fn [left cols [binding]]
                      (conj left
                            [group cols f]
                            [transform-unsafe (bind-group binding count)]))})))
@@ -873,11 +875,14 @@
 ;; --
 ;;
 
+(defn- assert-agg-binding [binding]
+  (assert (keyword? binding) "Only keyword bindings are not permitted for agg forms")
+  (assert (keyword? binding) "* bindings are not permitted for agg forms"))
+
 (defn- agg-form-fn [form]
   (let [[binding expr] form
         {:keys [combiner reducer complete]} (agg-expr-agg expr)]
-    (assert (keyword? binding) "Only keyword bindings are not permitted for agg forms")
-    (assert (keyword? binding) "* bindings are not permitted for agg forms")
+    (assert-agg-binding binding)
     {:complete (if complete (fn [m] (update m binding complete)) identity)
      :combiner
      (fn [m a b] (assoc m binding (combiner (binding a) (binding b))))
@@ -936,7 +941,7 @@
   (when-some [n (:custom-node (agg-expr-agg expr))]
     (n left cols agg)))
 
-(defn agg [graph self left cols aggs]
+(defn agg* [graph self left cols aggs]
   (if (empty? aggs)
     (conj left [transform (project-fn (vec (set cols)))])
     (let [col-set (set cols)
@@ -957,6 +962,17 @@
               left (conj left (into [:select] cols))
               left (reduce conj left joins)]
           left)))))
+
+(defn agg [graph self left cols aggs]
+  (if (empty? cols)
+    (let [agg (conj left [agg* cols aggs])
+          bind-default (fn [m [binding expr]]
+                         (assert-agg-binding binding)
+                         (let [d (:default (agg-expr-agg expr))]
+                           (assoc m binding d)))
+          default-row (reduce bind-default {} aggs)]
+      [[:const [default-row]] [:left-join agg]])
+    (conj left [agg* cols aggs])))
 
 (defn lookup [graph self _ index path]
   (let [path (vec path)

@@ -328,17 +328,19 @@
   e.g [rel/sum :a] will return the sum of (:a row) applied to each row in the aggregation."
   [& exprs]
   (case (count exprs)
-    0 {:combiner (constantly 0) :reducer (constantly 0)}
+    0 {:default 0, :combiner (constantly 0) :reducer (constantly 0)}
     1
     (let [expr (first exprs)
           f (e/row-fn expr)
           xf (keep f)]
-      {:combiner sum-add-fn
+      {:default 0
+       :combiner sum-add-fn
        :reducer #(transduce xf sum-add-fn %)})
     (let [fns (map e/row-fn exprs)
           nums (apply juxt fns)
           xf (comp (mapcat nums) (remove nil?))]
-      {:combiner sum-add-fn
+      {:default 0
+       :combiner sum-add-fn
        :reducer #(transduce xf sum-add-fn %)})))
 
 ;; --
@@ -358,7 +360,8 @@
   ({:names #{\"alice\", \"bob\"}})"
   [expr]
   (let [f (e/row-fn expr)]
-    {:custom-node (fn [left cols [binding]]
+    {:default #{}
+     :custom-node (fn [left cols [binding]]
                     (conj left
                           [dataflow/group cols f]
                           [dataflow/transform-unsafe (dataflow/bind-group binding (fn [x] (or x #{})))]))}))
@@ -370,7 +373,8 @@
   [& exprs]
   (let [expr (if (= 1 (count exprs)) (first exprs) (into [u/vector-if-any-non-nil] exprs))
         f (e/row-fn expr)]
-    {:custom-node (fn [left cols [binding]]
+    {:default 0
+     :custom-node (fn [left cols [binding]]
                     (conj left
                           [dataflow/group cols f]
                           [dataflow/transform-unsafe (dataflow/bind-group binding count)]))}))
@@ -384,7 +388,8 @@
 
   You might get a Ratio, like clojure."
   [expr]
-  {:custom-node
+  {:default 0
+   :custom-node
    (fn [left cols [binding]]
      (conj left
            [:agg cols [:s [sum expr]] [:n count]]
@@ -397,7 +402,8 @@
   "An aggregate function that binds true if any row has a truthy value of expr, false if not."
   [expr]
   (let [f (e/row-fn expr)]
-    {:reducer #(some f %)
+    {:default false
+     :reducer #(some f %)
      :combiner #(and %1 %2)
      :complete boolean}))
 
@@ -405,7 +411,8 @@
   "An aggregate function that binds false if any row has a truthy value of expr, true if not."
   [expr]
   (let [f (e/row-fn expr)]
-    {:reducer #(not-any? f %)
+    {:default true
+     :reducer #(not-any? f %)
      :combiner #(and %1 %2)
      :complete boolean}))
 

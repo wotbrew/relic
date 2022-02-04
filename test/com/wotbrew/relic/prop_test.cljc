@@ -6,7 +6,8 @@
             [clojure.test.check :as tc]
             [com.wotbrew.relic.impl.util :as u]
             [clojure.set :as set]
-            [com.wotbrew.relic.impl.dataflow :as dataflow]))
+            [com.wotbrew.relic.impl.dataflow :as dataflow]
+            [com.wotbrew.relic.impl.relvar :as r]))
 
 (defn- available-mat-types [model]
   (cond->
@@ -104,7 +105,10 @@
     (let [db (-> {} (domuts muts) delete-all)
           graph (dataflow/gg db)
           nodemap (::dataflow/ids graph)
-          const? (fn [relvar] (boolean (seq (rel/q {} relvar))))]
+          unmat (fn [relvar] (if (= @#'dataflow/mat (r/head-operator relvar))
+                               (pop relvar)
+                               relvar))
+          const? (fn [relvar] (boolean (seq (rel/q {} (unmat relvar)))))]
       (if (const? q)
         true
         (and (empty? (rel/q db q))

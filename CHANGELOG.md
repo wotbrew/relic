@@ -1,5 +1,15 @@
 # Change Log
 
+## Unreleased
+
+### `:agg` behaviour change (minor breaking)
+
+`:agg` with over all rows now always returns a row with default values instead of nil.
+
+e.g `[[:const] [:agg [] [:n count]]]` will return `[{:n 0}]` instead of `nil`.
+
+This is closer to SQL and will mean a constraint like `[[:from :a] [:agg [] [:n count]] [:check [= 1 :n]]]` will throw if there are no rows, instead of just if there are more than 1.
+
 ## 0.1.4
 
 - fixed no results when using `[:_ kw]` with indexed `:where` queries

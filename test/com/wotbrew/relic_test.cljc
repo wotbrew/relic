@@ -1388,7 +1388,6 @@
     (is (= {:a :a} (rel/row db :a [= :a [:_ :a]])))))
 
 (deftest empty-agg-default-test
-
   (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n count]]])))
   (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [count false]]]])))
   (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [count true]]]])))
@@ -1399,9 +1398,11 @@
   (is (= [{:n false}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/any :a]]]])))
   (is (= [{:n true}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/not-any :a]]]])))
   (is (= [{:n #{}}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/set-concat :a]]]])))
-  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/count-distinct :a]]]])))
+  (is (= [{:n 0}] (rel/q {} [[:from :foo] [:agg [] [:n [rel/count-distinct :a]]]]))))
 
-  )
+(deftest more-than-one-row-constraint-test
+  (is (= :check-violation (error-type #(rel/q {} [[:from :foo] [:agg [] [:n count]] [:check [= :n 1]]]))))
+  (is (= :check-violation (error-type #(rel/q {} [[:agg [] [:n count]] [:check [= :n 1]]])))))
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

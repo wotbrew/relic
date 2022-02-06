@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `:agg` behaviour changed for empty relations when grouping all rows (see below)
+- relic databases are wrapped with a custom type (RelicDB) to avoid surprises with metadata and changes to the databases
+  state 'as a map'. Continues to meet all the map interfaces so should not cause any breakage. #52
+
 ### `:agg` behaviour change (minor breaking)
 
 `:agg` with over all rows now always returns a row with default values instead of nil.

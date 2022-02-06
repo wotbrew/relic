@@ -1793,7 +1793,7 @@
       (init graph relvar))))
 
 (extend-protocol w/GraphUnsafe
-  Object
+  #?(:clj Object :cljs object)
   (set-graph [m graph]
     (when-not (map? m)
       (u/raise "Only maps are usable as relic databases"))

@@ -4,7 +4,8 @@
 
 - `:agg` behaviour changed for empty relations when grouping all rows (see below)
 - relic databases are wrapped with a custom type (RelicDB) to avoid surprises with metadata and changes to the databases
-  state 'as a map'. Continues to meet all the map interfaces so should not cause any breakage. #52
+  state 'as a map'. Continues to meet all the map interfaces so should not cause any breakage. [#52](https://github.com/wotbrew/relic/issues/52)
+- existing covering indexes are now scored and used by joins (`:join` & `:left-join`). Previously you had to mat the join or create a specific `:hash` index with exactly the same indexed expressions.
 
 ### `:agg` behaviour change (minor breaking)
 

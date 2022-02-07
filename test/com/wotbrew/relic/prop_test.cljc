@@ -236,10 +236,10 @@
                [:abot [rel/bottom 32 :a]]
                [:bmin [max [inc :b]]]]]]})
 
-(defn- qc [model p]
+(defn- qc [model p & opts]
   (println "QC:" (:name model "???") "|" (u/best-effort-fn-name p))
   (let [num-tests 10000
-        ret (tc/quick-check num-tests (p model) :max-size 32)]
+        ret (apply tc/quick-check num-tests (p model) :max-size 32 opts)]
     ret))
 
 (deftest props-test

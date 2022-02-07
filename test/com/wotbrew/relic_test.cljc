@@ -3,7 +3,8 @@
             [com.wotbrew.relic :as rel]
             [com.wotbrew.relic.impl.relvar :as r]
             [com.wotbrew.relic.impl.dataflow :as dataflow]
-            [com.wotbrew.relic.impl.expr :as e]))
+            [com.wotbrew.relic.impl.expr :as e]
+            [com.wotbrew.relic.impl.wrap :as w]))
 
 (defn- result-set [node] (some-> node :result-set deref))
 
@@ -1434,6 +1435,36 @@
     (is (= [{:n 1}] (rel/q db2 cc)))
     (is (= [{:n 2}] (rel/q db3 cc)))
     (is (= [{:n 3}] (rel/q db5 cc)))))
+
+(deftest unique-indexes-are-used-if-available-for-joins-test
+  (let [idx [[:from :A] [:unique :a :b]]
+        default-idx [[:table :A] [:hash :a]]
+        db (rel/mat {} idx [[:from :B] [:join :A {:a :a}]])
+        g (w/get-graph db)
+        g2 (w/get-graph (rel/mat {} [[:from :B] [:join :A {:a :a}]]))]
+    (is (= [idx] (dataflow/find-indexes g :A)))
+    (is (nil? (dataflow/get-node g default-idx)))
+    (is (some? (dataflow/get-node g2 default-idx)))))
+
+(deftest hash-indexes-are-used-if-available-for-joins-test
+  (let [idx [[:from :A] [:hash :a :b]]
+        default-idx [[:table :A] [:hash :a]]
+        db (rel/mat {} idx [[:from :B] [:join :A {:a :a}]])
+        g (w/get-graph db)
+        g2 (w/get-graph (rel/mat {} [[:from :B] [:join :A {:a :a}]]))]
+    (is (= [idx] (dataflow/find-indexes g :A)))
+    (is (nil? (dataflow/get-node g default-idx)))
+    (is (some? (dataflow/get-node g2 default-idx)))))
+
+(deftest btree-indexes-are-used-if-available-for-joins-test
+  (let [idx [[:from :A] [:unique :a :b]]
+        default-idx [[:table :A] [:hash :a]]
+        db (rel/mat {} idx [[:from :B] [:join :A {:a :a}]])
+        g (w/get-graph db)
+        g2 (w/get-graph (rel/mat {} [[:from :B] [:join :A {:a :a}]]))]
+    (is (= [idx] (dataflow/find-indexes g :A)))
+    (is (nil? (dataflow/get-node g default-idx)))
+    (is (some? (dataflow/get-node g2 default-idx)))))
 
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

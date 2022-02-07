@@ -327,16 +327,138 @@
       (fn [idx row] (get-in idx (path row)))
       (fn [idx _] (when idx (idx nil))))))
 
-(defn- index-seek-fn [index]
-  (let [[& exprs] (r/head index)]
-    (index-seek-from-exprs exprs)))
+(defn index? [relvar] (#{:hash :btree :unique} (r/head-operator relvar)))
+(defn unique? [relvar] (= :unique (r/head-operator relvar)))
+(defn hash? [relvar] (= :hash (r/head-operator relvar)))
+(defn btree? [relvar] (= :btree (r/head-operator relvar)))
+(defn from? [relvar] (= :from (r/head-operator relvar)))
 
-(defn find-hash-index
-  "Looks up an index that allows seeking on the exprs, returns a tuple [index-relvar, seek-fn, unique-seek-fn (maybe)]. "
-  ([graph left exprs] (find-hash-index graph left exprs exprs))
+(defn pass-through?
+  "If the operator represents pass-through, e.g does not modify the set of rows at all.
+
+  Useful to know if you want to check whether indexes apply."
+  [relvar]
+  (or (from? relvar)
+      (case (r/head-operator relvar)
+        :check true
+        :req true
+        :hash true
+        :btree true
+        :unique true
+        false)))
+
+(defn find-indexes
+  ([graph relvar] (find-indexes graph identity relvar))
+  ([graph pred relvar]
+   (let [relvar (r/unwrap-from (r/to-relvar relvar))
+         id (get-id graph relvar)
+         {:keys [dependents]} (graph id)]
+     (u/iterable-mut-list
+       (reduce
+         (fn !
+           [lst child-id]
+           (let [child-node (graph child-id)
+                 relvar (:relvar child-node)]
+             (cond
+               (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
+               (pass-through? relvar) (reduce ! lst (:dependents child-node))
+               :else lst)))
+         (u/mutable-list)
+         dependents)))))
+
+(defn- covering-index? [index exprs]
+  (let [[_ & i-exprs] (r/head index)]
+    (and (<= (count exprs)
+             (count i-exprs))
+         (= (set exprs) (set (take (count exprs) i-exprs))))))
+
+(defn- enumerate-nested-map-of-sets [m depth]
+  (case depth
+    0 (eduction cat (vals m))
+    1 (eduction cat (vals m))
+    2 (eduction (comp (mapcat vals) cat) (vals m))
+    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
+      (eduction (comp xf cat) (vals m)))))
+
+(defn- enumerate-nested-map-of-maps [m depth]
+  (case depth
+    0 (vals m)
+    1 (vals m)
+    2 (eduction (mapcat vals) (vals m))
+    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
+      (eduction xf (vals m)))))
+
+(defn- index-join-seek-fn [covering-index exprs row-exprs]
+  (let [[_ & i-exprs] (r/head covering-index)
+        exprs (vec exprs)
+        row-exprs (vec row-exprs)
+        depth (count i-exprs)
+        complete (= (count i-exprs) (count exprs))
+        sentinel (new-sentinel)
+        lift-nil-behaviour (fn [f] (fn [row] (if-some [ret (f row)] ret sentinel)))
+        fns (mapv (comp lift-nil-behaviour e/row-fn) row-exprs)
+        expr-ord #(reduce-kv (fn [_ i expr] (when (= % expr) (reduced i))) nil exprs)]
+    (case (count exprs)
+      0 (if (unique? covering-index)
+          (fn [idx row] (enumerate-nested-map-of-maps idx depth))
+          (fn [idx row] (enumerate-nested-map-of-sets idx depth)))
+      1 (let [[f] fns]
+          (if (unique? covering-index)
+            (if complete
+              (fn [idx row] (when-some [x (get idx (f row))] [x]))
+              (fn [idx row] (when-some [m (get idx (f row))] (enumerate-nested-map-of-maps m (dec depth)))))
+            (if complete
+              (fn [idx row] (get idx (f row)))
+              (fn [idx row] (when-some [m (get idx (f row))] (enumerate-nested-map-of-sets m (dec depth))))))
+          (let [path (vec (for [expr i-exprs
+                                :let [i (expr-ord expr)]
+                                :while i
+                                :let [f (fns i)]]
+                            f))
+                remaining-depth (- depth (count path))
+                path-fn (apply juxt path)]
+            (if (unique? covering-index)
+              (if complete
+                (fn [idx row] (when-some [x (get-in idx (path-fn row))] [x]))
+                (fn [idx row] (when-some [m (get-in idx (path-fn row))] (enumerate-nested-map-of-maps m remaining-depth))))
+              (if complete
+                (fn [idx row] (get-in idx (path-fn row)))
+                (fn [idx row] (when-some [m (get-in idx (path-fn row))]
+                                (enumerate-nested-map-of-sets m remaining-depth))))))))))
+
+(defn- find-sort-btree [graph relvar sorts]
+  (let [exprs (mapv first sorts)
+        btree (conj relvar (into [:btree] exprs))
+        seq-orders (mapv second sorts)
+        seq-fn (mapv {:asc seq :desc rseq, nil seq} seq-orders)]
+    [btree
+     (if (seq seq-fn)
+       (fn [idx]
+         (let [kvs
+               (reduce
+                 (fn [kvs f]
+                   (mapcat (comp f val) kvs))
+                 ((first seq-fn) idx)
+                 (rest seq-fn))]
+           (mapcat val kvs)))
+       (fn [idx] (mapcat val idx)))]))
+
+(defn find-join-index
+  "Looks up an index to be used for a join against the exprs, returns a tuple [index-relvar, seek-fn]."
+  ([graph left exprs] (find-join-index graph left exprs exprs))
   ([graph left exprs row-exprs]
-   (let [hash (conj left (into [:hash] exprs))]
-     [hash (index-seek-from-exprs row-exprs)])))
+   (if-some [indexes (seq (find-indexes graph #(covering-index? % exprs) left))]
+     (let [score (fn [index]
+                   (let [[type & iexprs] (r/head index)
+                         depth (double (count iexprs))]
+                     (case type
+                       :unique (+ depth 0.2)
+                       :hash (+ depth 0.1)
+                       depth)))
+           best (first (sort-by score > indexes))]
+       [best (index-join-seek-fn best exprs row-exprs)])
+     (let [hash (conj left (into [:hash] exprs))]
+       [hash (index-seek-from-exprs row-exprs)]))))
 
 (defrecord JoinColl [left coll])
 
@@ -448,14 +570,6 @@
                             (forward db ns deleted)))))
      :provide (fn [db] (not-empty (mget db)))}))
 
-(defn- enumerate-nested-map-of-sets [m depth]
-  (case depth
-    0 (eduction cat (vals m))
-    1 (eduction cat (vals m))
-    2 (eduction (comp (mapcat vals) cat) (vals m))
-    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
-      (eduction (comp xf cat) (vals m)))))
-
 (defn save-hash [graph self left fns]
   (let [path (if (empty? fns) (constantly []) (apply juxt fns))
         add-row (fn [m row] (update-in m (path row) u/set-conj row))
@@ -490,14 +604,6 @@
                           (forward db inserted deleted))))
      :provide (fn [db] (when-some [m (not-empty (mget db))]
                          (enumerate-nested-map-of-sets m (count fns))))}))
-
-(defn- enumerate-nested-map-of-maps [m depth]
-  (case depth
-    0 (vals m)
-    1 (vals m)
-    2 (eduction (mapcat vals) (vals m))
-    (let [xf (apply comp (repeat (- depth 1) (mapcat vals)))]
-      (eduction xf (vals m)))))
 
 (defn ukey-error [left exprs]
   (let [table (r/unwrap-table-key left)]
@@ -610,15 +716,15 @@
 (defn- add-join [left right clause graph]
   (add-implicit-joins
     (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
-            [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
+      (let [[left seekl] (find-join-index graph left (keys clause) (vals clause))
+            [right seekr] (find-join-index graph right (vals clause) (keys clause))]
         (conj left [join seekl right seekr] [transform join-merge])))))
 
 (defn- add-left-join [left right clause graph]
   (add-implicit-joins
     (fn []
-      (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
-            [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
+      (let [[left seekl] (find-join-index graph left (keys clause) (vals clause))
+            [right seekr] (find-join-index graph right (vals clause) (keys clause))]
         (conj left
               [left-join seekl right seekr]
               [transform join-merge])))))
@@ -1011,34 +1117,6 @@
     [[:const [{}]]]
     relvar))
 
-(defn- find-btree
-  ([graph relvar exprs] (find-btree graph relvar exprs exprs))
-  ([graph relvar exprs row-exprs]
-   (let [btree (conj relvar (into [:btree] exprs))
-         expr-fns (mapv e/row-fn row-exprs)
-         p (if (empty? expr-fns)
-             (constantly [nil])
-             (apply juxt expr-fns))]
-     [btree
-      (fn [idx row] (get-in idx (p row)))])))
-
-(defn- find-sort-btree [graph relvar sorts]
-  (let [exprs (mapv first sorts)
-        btree (conj relvar (into [:btree] exprs))
-        seq-orders (mapv second sorts)
-        seq-fn (mapv {:asc seq :desc rseq, nil seq} seq-orders)]
-    [btree
-     (if (seq seq-fn)
-       (fn [idx]
-         (let [kvs
-               (reduce
-                 (fn [kvs f]
-                   (mapcat (comp f val) kvs))
-                 ((first seq-fn) idx)
-                 (rest seq-fn))]
-           (mapcat val kvs)))
-       (fn [idx] (mapcat val idx)))]))
-
 (defn- save-view [graph self index view-fn]
   (let [sid (id self)
         [mget] (mem index)]
@@ -1051,45 +1129,6 @@
                v (when idx (view-fn idx))
                db (assoc-in db [sid :view] v)]
            (forward db inserted deleted))))}))
-
-(defn index? [relvar] (#{:hash :btree :unique} (r/head-operator relvar)))
-(defn unique? [relvar] (= :unique (r/head-operator relvar)))
-(defn hash? [relvar] (= :hash (r/head-operator relvar)))
-(defn btree? [relvar] (= :btree (r/head-operator relvar)))
-(defn from? [relvar] (= :from (r/head-operator relvar)))
-
-(defn pass-through?
-  "If the operator represents pass-through, e.g does not modify the set of rows at all.
-
-  Useful to know if you want to check whether indexes apply."
-  [relvar]
-  (or (from? relvar)
-      (case (r/head-operator relvar)
-        :check true
-        :req true
-        :hash true
-        :btree true
-        :unique true
-        false)))
-
-(defn find-indexes
-  ([graph relvar] (find-indexes graph identity relvar))
-  ([graph pred relvar]
-   (let [relvar (r/unwrap-from (r/to-relvar relvar))
-         id (get-id graph relvar)
-         {:keys [dependents]} (graph id)]
-     (u/iterable-mut-list
-       (reduce
-         (fn !
-           [lst child-id]
-           (let [child-node (graph child-id)
-                 relvar (:relvar child-node)]
-             (cond
-               (and (index? relvar) (pred relvar)) (u/add-to-mutable-list lst relvar)
-               (pass-through? relvar) (reduce ! lst (:dependents child-node))
-               :else lst)))
-         (u/mutable-list)
-         dependents)))))
 
 (defn where-plans
   [graph relvar exprs]
@@ -1298,49 +1337,49 @@
           ;; compile :key to walks
           walks
           (reduce-kv
-              (fn [v test m]
-                (reduce-kv
-                  (fn [v row-expr const-exprs]
-                    (let [i (row-expr-idx row-expr)
-                          lst (= i (dec (count iexprs)))
-                          nxt (if lst
-                                (if u
-                                  #(some-> % vector)
-                                  identity)
-                                vector)
-                          card (count const-exprs)
-                          st (fn [test]
-                               (let [subseq-fn (if (= :btree itype)
-                                                 subseq
-                                                 hash-index-range-iterable)
-                                     e (first const-exprs)
-                                     vxf (mapcat (comp nxt val))]
-                                 (if (contains? #{df dfe} (v i))
-                                   {:xf (mapcat (fn [m] (eduction vxf (subseq-fn m test e))))}
-                                   (update
-                                     (v i)
-                                     :post
-                                     (fnil conj [])
-                                     [test row-expr e]))))]
-                      (->>
-                        (case test
-                          := (case card
-                               1 (let [e (first const-exprs)]
-                                   {:xf (mapcat (fn [m] (nxt (m e))))})
-                               {:xf (mapcat (fn [m] (eduction (mapcat (comp nxt m)) const-exprs)))})
-                          :< (case card
-                               1 (st e/<))
-                          :> (case card
-                               1 (st e/>))
-                          :>= (case card
-                                1 (st e/>=))
-                          :<= (case card
-                                1 (st e/<=)))
-                        (assoc v i))))
-                  v
-                  m))
-              v
-              key)
+            (fn [v test m]
+              (reduce-kv
+                (fn [v row-expr const-exprs]
+                  (let [i (row-expr-idx row-expr)
+                        lst (= i (dec (count iexprs)))
+                        nxt (if lst
+                              (if u
+                                #(some-> % vector)
+                                identity)
+                              vector)
+                        card (count const-exprs)
+                        st (fn [test]
+                             (let [subseq-fn (if (= :btree itype)
+                                               subseq
+                                               hash-index-range-iterable)
+                                   e (first const-exprs)
+                                   vxf (mapcat (comp nxt val))]
+                               (if (contains? #{df dfe} (v i))
+                                 {:xf (mapcat (fn [m] (eduction vxf (subseq-fn m test e))))}
+                                 (update
+                                   (v i)
+                                   :post
+                                   (fnil conj [])
+                                   [test row-expr e]))))]
+                    (->>
+                      (case test
+                        := (case card
+                             1 (let [e (first const-exprs)]
+                                 {:xf (mapcat (fn [m] (nxt (m e))))})
+                             {:xf (mapcat (fn [m] (eduction (mapcat (comp nxt m)) const-exprs)))})
+                        :< (case card
+                             1 (st e/<))
+                        :> (case card
+                             1 (st e/>))
+                        :>= (case card
+                              1 (st e/>=))
+                        :<= (case card
+                              1 (st e/<=)))
+                      (assoc v i))))
+                v
+                m))
+            v
+            key)
           xf (apply comp (map :xf walks))
           post-exprs (mapcat :post walks)
           exprs (concat exprs post-exprs)
@@ -1409,8 +1448,8 @@
               right (r/to-relvar right)]
           (add-implicit-joins
             (fn []
-              (let [[left seekl] (find-hash-index graph left (keys clause) (vals clause))
-                    [right seekr] (find-hash-index graph right (vals clause) (keys clause))]
+              (let [[left seekl] (find-join-index graph left (keys clause) (vals clause))
+                    [right seekr] (find-join-index graph right (vals clause) (keys clause))]
                 (conj left
                       [join-coll seekl right seekr]
                       [(if unsafe transform-unsafe transform)
@@ -1489,8 +1528,8 @@
                     origin left
                     _ (when (and (:cascade opts) (not (r/unwrap-table origin)))
                         (u/raise "Cascading :fk constraints are only allowed on tables" {:relvar origin, :references references, :clause clause}))
-                    [left seekl] (find-hash-index graph left (keys clause) (vals clause))
-                    [right seekr] (find-hash-index graph references (vals clause) (keys clause))]
+                    [left seekl] (find-join-index graph left (keys clause) (vals clause))
+                    [right seekr] (find-join-index graph references (vals clause) (keys clause))]
                 (conj left [fk seekl right seekr clause origin references opts])))))
 
         :unique

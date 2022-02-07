@@ -6,10 +6,15 @@
   (set-graph [db graph])
   (get-graph [db]))
 
+(defprotocol Unwrap
+  (unwrap [db]))
+
 (deftype RelicDB [m graph]
   GraphUnsafe
   (set-graph [db graph2] (RelicDB. db graph2))
   (get-graph [db] graph)
+  Unwrap
+  (unwrap [_] m)
   Object
   (toString [_] (.toString m))
   (hashCode [_] (.hashCode m))

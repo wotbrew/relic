@@ -162,11 +162,9 @@
 (defn q
   "Queries the db, returns a seq of rows by default.
 
-  Takes a RQL query vector, or a map form [1].
+  Takes a query vector, or a map form [1].
 
-  Queries are relational expressions, they describe some data that you might want.
-
-  RQL queries are represented as vectors of operations.
+  Queries are represented as vectors of operations.
 
    e.g [op1, op2, op3]
 

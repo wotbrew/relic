@@ -1824,34 +1824,6 @@
                                       :result-set (delay (set inserted))))))))
      :provide (fn [db] (some-> (db left-id) :result-set deref))}))
 
-(defn materialize
-  ([db relvar] (materialize db relvar {}))
-  ([db relvar opts]
-   (cond
-     (keyword? relvar) db
-     (contains? (::materialized (gg db)) relvar) db
-     :else
-     (binding [*no-mat* (:query opts false)]
-       (let [graph (gg db)
-             graph (inc-generation graph)
-             matrelvar (conj relvar [mat (:query opts false)])
-             graph (add-to-graph graph matrelvar)
-             graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
-             graph (init graph matrelvar)]
-         (sg db graph))))))
-
-(defn dematerialize [db relvar]
-  (cond
-    (keyword? relvar) db
-    :else
-    (let [graph (gg db)
-          graph (update graph ::materialized disj relvar)
-          nid (get-id graph relvar)
-          graph (if nid (update graph nid dissoc :results :result-set) graph)
-          mat-relvar (conj relvar [mat false])
-          graph (del-from-graph graph mat-relvar)]
-      (sg db graph))))
-
 (declare transact)
 
 (defn- create-graph-if-missing
@@ -1867,6 +1839,36 @@
      :else
      (let [deps (dependencies q)]
        (transact (w/set-graph db {}) [(select-keys db deps)])))))
+
+(defn materialize
+  ([db relvar] (materialize db relvar {}))
+  ([db relvar opts]
+   (cond
+     (keyword? relvar) db
+     (contains? (::materialized (gg db)) relvar) db
+     :else
+     (binding [*no-mat* (:query opts false)]
+       (let [db (create-graph-if-missing db)
+             graph (gg db)
+             graph (inc-generation graph)
+             matrelvar (conj relvar [mat (:query opts false)])
+             graph (add-to-graph graph matrelvar)
+             graph (if (:ephemeral opts) graph (update graph ::materialized u/set-conj relvar))
+             graph (init graph matrelvar)]
+         (sg db graph))))))
+
+(defn dematerialize [db relvar]
+  (cond
+    (keyword? relvar) db
+    :else
+    (let [db (create-graph-if-missing db)
+          graph (gg db)
+          graph (update graph ::materialized disj relvar)
+          nid (get-id graph relvar)
+          graph (if nid (update graph nid dissoc :results :result-set) graph)
+          mat-relvar (conj relvar [mat false])
+          graph (del-from-graph graph mat-relvar)]
+      (sg db graph))))
 
 (defn qraw
   "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
@@ -2104,7 +2106,8 @@
   The :changes allow you to react to additions/removals from derived relvars, and build reactive systems."
   [db tx-coll]
   (binding [*tracking* (zipmap (::watched (gg db)) (repeat #{}))]
-    (let [ost db
+    (let [db (create-graph-if-missing db)
+          ost db
           ograph (gg ost)
           db (transact db tx-coll)
           graph (gg db)

@@ -1404,5 +1404,36 @@
   (is (= :check-violation (error-type #(rel/q {} [[:from :foo] [:agg [] [:n count]] [:check [= :n 1]]]))))
   (is (= :check-violation (error-type #(rel/q {} [[:agg [] [:n count]] [:check [= :n 1]]])))))
 
+(deftest transact-on-initial-map-test
+  (let [db {:Customer #{{:name "bob"} {:name "alice"}}}
+        db1 (rel/transact db [:update :Customer {:name "Bob"} [= :name "bob"]])
+        db2 (rel/transact db1 [:delete :Customer [= :name "bob"]])
+        db3 (rel/transact db2 [:insert :Customer {:name "jack"}, {:name "jill"}])]
+
+    (is (= {:Customer #{{:name "Bob"} {:name "alice"}}} db1))
+    (is (= {:Customer #{{:name "Bob"} {:name "alice"}}} db2))
+    (is (= {:Customer #{{:name "Bob"} {:name "alice"} {:name "jack"} {:name "jill"}}} db3))))
+
+(deftest transact-on-drifted-map-test
+  (let [db {:Customer #{{:name "bob"} {:name "alice"}}}
+        db1 (rel/transact db [:update :Customer {:name "Bob"} [= :name "bob"]])
+        db2 (update db1 :Customer disj {:name "Bob"})
+        db3 (rel/transact db2 [:insert :Customer {:name "jack"}, {:name "jill"}])]
+    (is (= {:Customer #{{:name "Bob"} {:name "alice"}}} db1))
+    (is (= {:Customer #{{:name "alice"}}} db2))
+    (is (= {:Customer #{{:name "alice"} {:name "jack"} {:name "jill"}}} db3))))
+
+(deftest transact-on-drifted-map-with-mat-test
+  (let [db {:Customer #{{:name "bob"} {:name "alice"}}}
+        cc [[:from :Customer] [:agg [] [:n count]]]
+        db1 (rel/mat db cc)
+        db2 (update db1 :Customer disj {:name "bob"})
+        db3 (update db2 :Customer conj {:name "bob"})
+        db4 (rel/mat db3 cc)
+        db5 (rel/transact db4 {:Customer [{:name "jack"}]})]
+    (is (= [{:n 1}] (rel/q db2 cc)))
+    (is (= [{:n 2}] (rel/q db3 cc)))
+    (is (= [{:n 3}] (rel/q db5 cc)))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

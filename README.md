@@ -134,7 +134,7 @@ You can materialize any query such that it will be maintained for you as you mod
 
 ```clojure 
 (rel/mat db [[:from :Customer] [:where [= :name "bob"]]])
-;; => returns the database, its value will be the same (hint: metadata).
+;; => returns the database, its value will be the same, but internally some machinery will have been allocated.
 {:Customer #{{:name "bob"}, {:name "alice"}}}
 ```
 

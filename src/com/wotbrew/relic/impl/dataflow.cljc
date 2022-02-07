@@ -5,6 +5,7 @@
             [com.wotbrew.relic.impl.util :as u]
             [com.wotbrew.relic.impl.expr :as e]
             [com.wotbrew.relic.impl.relvar :as r]
+            [com.wotbrew.relic.impl.wrap :as w]
             [clojure.set :as set]
             [clojure.string :as str]))
 
@@ -1791,8 +1792,16 @@
                   (reduce init graph deps))))]
       (init graph relvar))))
 
-(defn gg [db] (::graph (meta db) {}))
-(defn- sg [db graph] (vary-meta db assoc ::graph graph))
+(extend-protocol w/GraphUnsafe
+  #?(:clj Object :cljs object)
+  (set-graph [m graph]
+    (when-not (map? m)
+      (u/raise "Only maps are usable as relic databases"))
+    (w/->RelicDB m graph))
+  (get-graph [_] {}))
+
+(defn gg [db] (w/get-graph db))
+(defn- sg [db graph] (w/set-graph db graph))
 
 (defn- mat [graph self left is-query]
   (let [left-id (id left)]
@@ -1815,6 +1824,22 @@
                                       :result-set (delay (set inserted))))))))
      :provide (fn [db] (some-> (db left-id) :result-set deref))}))
 
+(declare transact)
+
+(defn- create-graph-if-missing
+  ([db]
+   (cond
+     (empty? db) db
+     (w/db? db) db
+     :else (transact (w/set-graph db {}) [db])))
+  ([db q]
+   (cond
+     (empty? db) db
+     (w/db? db) db
+     :else
+     (let [deps (dependencies q)]
+       (transact (w/set-graph db {}) [(select-keys db deps)])))))
+
 (defn materialize
   ([db relvar] (materialize db relvar {}))
   ([db relvar opts]
@@ -1823,7 +1848,8 @@
      (contains? (::materialized (gg db)) relvar) db
      :else
      (binding [*no-mat* (:query opts false)]
-       (let [graph (gg db)
+       (let [db (create-graph-if-missing db)
+             graph (gg db)
              graph (inc-generation graph)
              matrelvar (conj relvar [mat (:query opts false)])
              graph (add-to-graph graph matrelvar)
@@ -1835,23 +1861,14 @@
   (cond
     (keyword? relvar) db
     :else
-    (let [graph (gg db)
+    (let [db (create-graph-if-missing db)
+          graph (gg db)
           graph (update graph ::materialized disj relvar)
           nid (get-id graph relvar)
           graph (if nid (update graph nid dissoc :results :result-set) graph)
           mat-relvar (conj relvar [mat false])
           graph (del-from-graph graph mat-relvar)]
       (sg db graph))))
-
-(declare transact)
-
-(defn- create-graph-if-missing [db q]
-  (cond
-    (empty? db) db
-    (::graph (meta db)) db
-    :else
-    (let [deps (dependencies q)]
-      (transact db [(select-keys db deps)]))))
 
 (defn qraw
   "A version of query who's return type is undefined, just some seqable/reducable collection of rows."
@@ -2054,7 +2071,8 @@
   (binding [*foreign-key-cascades* {}
             *foreign-key-violations* {}
             *check-violations* {}]
-    (let [db (reduce transact* db tx-coll)
+    (let [db (create-graph-if-missing db)
+          db (reduce transact* db tx-coll)
           db (cascade db)]
 
       (doseq [[[relvar references clause] rows] *foreign-key-violations*]
@@ -2088,7 +2106,8 @@
   The :changes allow you to react to additions/removals from derived relvars, and build reactive systems."
   [db tx-coll]
   (binding [*tracking* (zipmap (::watched (gg db)) (repeat #{}))]
-    (let [ost db
+    (let [db (create-graph-if-missing db)
+          ost db
           ograph (gg ost)
           db (transact db tx-coll)
           graph (gg db)

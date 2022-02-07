@@ -15,7 +15,8 @@
   (:require [com.wotbrew.relic.impl.dataflow :as dataflow]
             [com.wotbrew.relic.impl.expr :as e]
             [com.wotbrew.relic.impl.util :as u]
-            [com.wotbrew.relic.impl.relvar :as r])
+            [com.wotbrew.relic.impl.relvar :as r]
+            [com.wotbrew.relic.impl.wrap :as w])
   #?(:cljs (:refer-clojure :exclude [exists?])))
 
 (defn transact
@@ -491,9 +492,12 @@
 ;; functions for going back and forth between 'normal maps' and relic
 
 (defn strip-meta
-  "Given a relic database map, removes any relic meta data."
+  "Given a relic database map, removes any relic meta data, returning a plain map.
+  Could be useful to free up any materialized indexes for GC."
   [db]
-  (vary-meta db (comp not-empty dissoc) ::dataflow/graph))
+  (if (w/db? db)
+    (w/unwrap db)
+    db))
 
 ;; --
 ;; relic expr sentinels

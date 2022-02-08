@@ -4,26 +4,40 @@
 
 _status: alpha, major breaking changes unlikely, minor ones likely_
 
-`relic` is an experimental Clojure/Script data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+`relic` is a Clojure/Script data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 ## Why
-
-Fatigue with over-fitted functions, and over-fitted maps for information work. 
-
-Programming with maps becomes less ergonomic as soon as you have to deal with more than one collection of them at a time, so often they are over structured to fit only one use case.
 
 > The relational view (or model) of data ... appears to be superior in several respects to the graph or network model .... It provides a means of describing data with its natural structure only-that is, without superimposing any additional structure for machine representation
 purposes - Codd, A Relational Model of Data for
 Large Shared Data Banks
 
-Here we are after many decades of dominance of such a model (with the traditional SQL RDMS) for information work.
+### Support for relational data representation
 
-> Our main aim for state in the ideal world is to get rid of it (state) — i.e. we are
-hoping that most state will turn out to be accidental state. - Moseley & Marks, Out of the Tar Pit
->
-`relic` asks the question, if I calculate a value from input data using a function, and store it in a map, and then take responsibility for its maintenance and conveyance to downstream functions as inputs change - is that accidental complexity?
+Programming with maps becomes less ergonomic as soon as you have to deal with more than one collection of them at a time, so often they are over structured into trees that limit their use in different contexts.
 
-Let `relic` take care of it, the performance is good enough, go home at 5pm and have a beer.
+Normalized relations are a more principled way to represent our collections of maps. There are some tools for working with relations in `clojure.set`, and they help.
+
+But `clojure.set` has little to say about how groups of relations should be represented, and indexes are either created for each join, or not used at all.
+
+### Declarative data processing
+
+Data processing pipelines [could be defined as queries](https://nchammas.com/writing/data-pipeline-materialized-view), a specification of the result rather than the steps - but you need mechanisms that can do this efficiently, particularly for partial updates.
+
+### Declarative relational constraints 
+
+It is often important to rule out invalid states, there are many tools for doing this to single maps or values, but specifying constraints that exist in the space of relationships is often on the programmer to do manually.
+
+It'd be nice to have a constraint language which was [more like a query](https://nchammas.com/writing/query-language-constraint-language).
+
+### Reactive programming
+
+In interactive applications, the system must respond to user input. You have the problem of invalidation - that is, how do you make sure dependent computations are re-run in response to the state of the program changing.
+re-frame does this with its subscriptions, but getting good performance if you have to invalidate say, an aggregate - is difficult and on you.
+
+### Reducing accidental complexity
+
+`relic` is trying to reduce complexity, an experiment that allows you to program with completely normalized data, declarative query, constraints and data processing, and retain good-enough performance.
 
 ## Features
 
@@ -38,11 +52,13 @@ Let `relic` take care of it, the performance is good enough, go home at 5pm and 
 ## Installation
 
 With `leiningen`
+
 ```clojure
 [com.wotbrew/relic "0.1.4"]
 ```
 
 With `clojure` (`deps.edn`)
+
 ```clojure 
 com.wotbrew/relic {:mvn/version "0.1.4"}
 ```

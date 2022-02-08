@@ -4,7 +4,7 @@
 
 _status: alpha, major breaking changes unlikely, minor ones likely_
 
-`relic` is a Clojure/Script data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
+`relic` is a Clojure(Script) data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 ## Why
 
@@ -162,7 +162,7 @@ If you read the tarpit paper, you might find this [real estate example](https://
 
 Another example demonstrating usage in the browser can be found in [cljidle](https://github.com/wotbrew/relic/blob/master/dev/examples/cljidle).
 
-For further reading, see the [docs](https://www.wotbrew.com/relic)
+For further reading, see the [docs](https://www.wotbrew.com/relic).
 
 ## Related libraries
 

@@ -334,8 +334,8 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
-    Spec
+  <a href="#nb-empty-relations" class="md-nav__link">
+    N.B Empty relations
   </a>
   
 </li>
@@ -1496,8 +1496,8 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
-    Spec
+  <a href="#nb-empty-relations" class="md-nav__link">
+    N.B Empty relations
   </a>
   
 </li>
@@ -1541,13 +1541,24 @@
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="c1">;; the results would be</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="p">({</span><span class="ss">:customer-id</span> <span class="mi">42</span>, <span class="ss">:average-spend</span> <span class="mf">18.5</span><span class="nv">M</span>, <span class="ss">:order-count</span> <span class="mi">2</span>, <span class="ss">:total-spend</span> <span class="mf">37.0</span><span class="nv">M</span><span class="p">})</span>
 </code></pre></div>
+<p>Let's break down the shape of the <code>:agg</code> operator:</p>
+<p><code>[:agg cols &amp; agg-bindings]</code></p>
+<p>The <code>cols</code> will be a vector of column names, so in the example above <code>[:customer-id]</code> is used so we will be aggregating 
+over rows grouped by their customer-id. You could have used <code>[:customer-id, :delivery-date]</code> or any combination of columns.</p>
+<p>The empty vector <code>[]</code> can be used to group over all rows.</p>
+<p>Each <code>agg-binding</code> is a vector tuple <code>[binding agg-expr]</code>, the <code>binding</code> is the name of the new column 
+you want the aggregated value to sit under, the <code>agg-expr</code> consists of an aggregation function (and any arguments).</p>
+<p>So for <code>[:total-spend [rel/sum :total]]</code> </p>
+<ul>
+<li><code>:total-spend</code> is the binding </li>
+<li><code>rel/sum</code> is an aggregation function</li>
+</ul>
+<p>Aggregation functions are built-in, they are not normal functions unfortunately - this is necessary for materialized views to work.</p>
+<p>You may later be able to extend relic with user defined aggregations, but the tools for that are not final.</p>
 <p>See also: <a href="../aggregates/">aggregates</a> for aggregate functions that you can use.</p>
-<h2 id="spec">Spec</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nv">stmt</span> <span class="nb">= </span><span class="p">[</span><span class="ss">:agg</span> <span class="nv">cols</span> <span class="o">&amp;</span> <span class="nv">bindings</span><span class="p">]</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="nv">cols</span> <span class="nb">= </span><span class="p">[</span><span class="o">&amp;</span> <span class="nv">col</span><span class="p">]</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3"></a><span class="nb">binding = </span><span class="p">[</span><span class="nv">new-col</span> <span class="nv">agg-expr</span><span class="p">]</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4"></a><span class="nv">agg-expr</span> <span class="nb">= </span><span class="nv">agg-fn|</span><span class="p">[</span><span class="nv">agg-fn</span> <span class="o">&amp;</span> <span class="nv">args</span><span class="p">]</span>
-</code></pre></div>
+<h2 id="nb-empty-relations">N.B Empty relations</h2>
+<p>If you are aggregating over all rows, <code>:agg</code> will always return a row, even if the input relation is empty.</p>
+<p>e.g you will get <code>{:count 0}</code> back (not <code>nil</code>) if you ask for a count of all rows and there are no rows.</p>
 
               
             </article>

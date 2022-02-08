@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 0.1.5
 
 - `:agg` behaviour changed for empty relations when grouping all rows (see below)
 - relic databases are wrapped with a custom type (RelicDB) to avoid surprises with metadata and changes to the databases

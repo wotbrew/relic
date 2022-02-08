@@ -41,11 +41,11 @@ re-frame does this with its subscriptions, but getting good performance if you h
 
 ## Features
 
-- Fully featured in-memory database with indexed SQL style [query](https://wotbrew.github.io/relic/query).
-- Integrated and embedded in clojure, use clojure [functions](https://wotbrew.github.io/relic/expr) in queries, build queries with clojure.
-- [Materialized views](https://wotbrew.github.io/relic/materialization) with incremental maintenance.
-- Make invalid states illegal with [constraints](https://wotbrew.github.io/relic/constraints).
-- [Reactive](https://wotbrew.github.io/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
+- Fully featured in-memory database with indexed SQL style [query](https://www.wotbrew.com/relic/query).
+- Integrated and embedded in clojure, use clojure [functions](https://www.wotbrew.com/relic/expr) in queries, build queries with clojure.
+- [Materialized views](https://www.wotbrew.com/relic/materialization) with incremental maintenance.
+- Make invalid states illegal with [constraints](https://www.wotbrew.com/relic/constraints).
+- [Reactive](https://www.wotbrew.com/relic/change-tracking), allowing efficient integration with react, bind components to materialized queries and remain responsive at 60fps.
 
 `relic` only targets in-memory use cases, for this kind of thing at scale consider: [materialize](https://github.com/MaterializeInc/materialize).
 
@@ -65,7 +65,7 @@ com.wotbrew/relic {:mvn/version "0.1.5"}
 
 ## Documentation
 
-See [documentation](https://wotbrew.github.io/relic) for a detailed reference.
+See [documentation](https://www.wotbrew.com/relic) for a detailed reference.
 
 ## Pitch
 
@@ -116,7 +116,7 @@ Because queries are just vectors, they just sort of lounge around being values. 
 
 See, boring.
 
-You manipulate your database with the [`transact`](https://wotbrew.github.io/relic/transact) function. This returns a new database with the transaction applied. Plain old functional programming, no surprises.
+You manipulate your database with the [`transact`](https://www.wotbrew.com/relic/transact) function. This returns a new database with the transaction applied. Plain old functional programming, no surprises.
 ```clojure 
 (def db (rel/transact {} [:insert :Customer {:name "bob"} {:name "alice"}])
 
@@ -156,13 +156,13 @@ You can materialize any query such that it will be maintained for you as you mod
 
 `mat` will return a new _database_, against which materialized queries will be instant, and __as you change data in tables, those changes will flow to materialized queries automatically.__
 
-You can do more than query and materialize with relic, you can [react to changes](https://wotbrew.github.io/relic/change-tracking), use [constraints](https://wotbrew.github.io/relic/constraints) and [more](https://wotbrew.github.io/relic).
+You can do more than query and materialize with relic, you can [react to changes](https://www.wotbrew.com/relic/change-tracking), use [constraints](https://www.wotbrew.com/relic/constraints) and [more](https://www.wotbrew.com/relic).
 
 If you read the tarpit paper, you might find this [real estate example](https://github.com/wotbrew/relic/blob/master/dev/examples/real_estate.clj) informative.
 
 Another example demonstrating usage in the browser can be found in [cljidle](https://github.com/wotbrew/relic/blob/master/dev/examples/cljidle).
 
-For further reading, see the [docs](https://wotbrew.github.io/relic)
+For further reading, see the [docs](https://www.wotbrew.com/relic)
 
 ## Related libraries
 

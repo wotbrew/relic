@@ -37,7 +37,7 @@ re-frame does this with its subscriptions, but getting good performance if you h
 
 ### Reducing accidental complexity
 
-`relic` is trying to reduce complexity, an experiment that allows you to program with completely normalized data, declarative query, constraints and data processing, and retain good-enough performance.
+`relic` is trying to reduce complexity, an experiment that allows you to program with normalized data, declarative query, constraints and data processing, and retain good-enough performance.
 
 ## Features
 

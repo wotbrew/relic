@@ -26,7 +26,7 @@ Data processing pipelines [could be defined as queries](https://nchammas.com/wri
 
 ### Declarative relational constraints 
 
-It is often important to rule out invalid states, there are many tools for doing this to single maps or values, but specifying constraints that exist in the space of relationships is often on the programmer to do manually.
+It is often important to rule out invalid states, there are many tools for doing this to single maps or collections, but specifying constraints that exist in the space of relationships is often on the programmer to do manually.
 
 It'd be nice to have a constraint language which was [more like a query](https://nchammas.com/writing/query-language-constraint-language).
 

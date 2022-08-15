@@ -16,3 +16,4 @@ hs_err*
 node_modules
 site
 dev/examples/cljidle/js/
+/.idea

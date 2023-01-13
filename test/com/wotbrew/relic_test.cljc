@@ -1466,5 +1466,15 @@
     (is (nil? (dataflow/get-node g default-idx)))
     (is (some? (dataflow/get-node g2 default-idx)))))
 
+(deftest unique-index-on-multi-col-join-test
+  (let [idx [[:from :A] [:unique :a :b :c]]
+        default-idx [[:table :A] [:hash :a :b]]
+        db (rel/mat {} idx [[:from :B] [:join :A {:a :a, :b :b}]])
+        g (w/get-graph db)
+        g2 (w/get-graph (rel/mat {} [[:from :B] [:join :A {:a :a, :b :b}]]))]
+    (is (= [idx] (dataflow/find-indexes g :A)))
+    (is (nil? (dataflow/get-node g default-idx)))
+    (is (some? (dataflow/get-node g2 default-idx)))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

@@ -409,22 +409,22 @@
               (fn [idx row] (when-some [m (get idx (f row))] (enumerate-nested-map-of-maps m (dec depth)))))
             (if complete
               (fn [idx row] (get idx (f row)))
-              (fn [idx row] (when-some [m (get idx (f row))] (enumerate-nested-map-of-sets m (dec depth))))))
-          (let [path (vec (for [expr i-exprs
-                                :let [i (expr-ord expr)]
-                                :while i
-                                :let [f (fns i)]]
-                            f))
-                remaining-depth (- depth (count path))
-                path-fn (apply juxt path)]
-            (if (unique? covering-index)
-              (if complete
-                (fn [idx row] (when-some [x (get-in idx (path-fn row))] [x]))
-                (fn [idx row] (when-some [m (get-in idx (path-fn row))] (enumerate-nested-map-of-maps m remaining-depth))))
-              (if complete
-                (fn [idx row] (get-in idx (path-fn row)))
-                (fn [idx row] (when-some [m (get-in idx (path-fn row))]
-                                (enumerate-nested-map-of-sets m remaining-depth))))))))))
+              (fn [idx row] (when-some [m (get idx (f row))] (enumerate-nested-map-of-sets m (dec depth)))))))
+      (let [path (vec (for [expr i-exprs
+                            :let [i (expr-ord expr)]
+                            :while i
+                            :let [f (fns i)]]
+                        f))
+            remaining-depth (- depth (count path))
+            path-fn (apply juxt path)]
+        (if (unique? covering-index)
+          (if complete
+            (fn [idx row] (when-some [x (get-in idx (path-fn row))] [x]))
+            (fn [idx row] (when-some [m (get-in idx (path-fn row))] (enumerate-nested-map-of-maps m remaining-depth))))
+          (if complete
+            (fn [idx row] (get-in idx (path-fn row)))
+            (fn [idx row] (when-some [m (get-in idx (path-fn row))]
+                            (enumerate-nested-map-of-sets m remaining-depth)))))))))
 
 (defn- find-sort-btree [graph relvar sorts]
   (let [exprs (mapv first sorts)

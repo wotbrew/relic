@@ -1476,5 +1476,10 @@
     (is (nil? (dataflow/get-node g default-idx)))
     (is (some? (dataflow/get-node g2 default-idx)))))
 
+(deftest update-regression-60-test
+  (let [db1 (rel/transact {} [:insert :a {:id 0, :n 0}] [:insert :a {:id 1, :n 0}])
+        db2 (rel/transact db1 [:update :a {:n (fn [{:keys [id]}] (if (= id 0) 1 0))}])]
+    (is (= #{{:id 0, :n 1} {:id 1, :n 0}} (:a db2)))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))

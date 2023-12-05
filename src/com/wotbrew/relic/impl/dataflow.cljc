@@ -1938,28 +1938,30 @@
         table-id (-> graph ::tables (get table-key))
         {:keys [linked
                 relvar]} (graph table-id)]
-    (if linked
+    (cond
+      linked
       (let [data (graph table-key)
             drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
             ndata (if drows (reduce disj data drows) data)
             nrows (if ndata (into [] (remove ndata) inserts) (set inserts))
             ndata (if ndata (into ndata nrows) nrows)
-
-
             graph (assoc graph table-key ndata)
             db (assoc db table-key ndata)
             graph (linked graph nrows drows)]
         (sg db graph))
-      (if relvar
-        (let [graph (link graph table-key)]
-          (change-table (sg db graph) table-key inserts deletes))
-        (let [data (graph table-key)
-              drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
-              ndata (if data (into data inserts) (set inserts))
-              ndata (if drows (reduce disj ndata drows) ndata)
-              graph (assoc graph table-key ndata)
-              db (assoc db table-key ndata)]
-          (sg db graph))))))
+
+      relvar
+      (let [graph (link graph table-key)]
+        (change-table (sg db graph) table-key inserts deletes))
+
+      :else
+      (let [data (graph table-key)
+            drows (when deletes (if data (into [] (filter data) deletes) (set deletes)))
+            ndata (if drows (reduce disj data drows) data)
+            ndata (if ndata (into ndata inserts) (set inserts))
+            graph (assoc graph table-key ndata)
+            db (assoc db table-key ndata)]
+        (sg db graph)))))
 
 (defn watch [db relvar]
   (let [relvar (r/to-relvar relvar)

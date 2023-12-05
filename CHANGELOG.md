@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.1.7
+
+- Fix #60 (:update dropping rows that did not get updated with no :where)
+- Fix using uniques for joins containing more than one column
+
+
 ## 0.1.5
 
 - `:agg` behaviour changed for empty relations when grouping all rows (see below)

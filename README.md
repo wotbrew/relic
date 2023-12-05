@@ -54,13 +54,13 @@ re-frame does this with its subscriptions, but getting good performance if you h
 With `leiningen`
 
 ```clojure
-[com.wotbrew/relic "0.1.5"]
+[com.wotbrew/relic "0.1.7"]
 ```
 
 With `clojure` (`deps.edn`)
 
 ```clojure 
-com.wotbrew/relic {:mvn/version "0.1.5"}
+com.wotbrew/relic {:mvn/version "0.1.7"}
 ```
 
 ## Documentation

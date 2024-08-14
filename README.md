@@ -2,8 +2,6 @@
 
 ![tests](https://github.com/wotbrew/relic/actions/workflows/tests.yml/badge.svg) [![Clojars Project](https://img.shields.io/clojars/v/com.wotbrew/relic.svg)](https://clojars.org/com.wotbrew/relic)
 
-_status: alpha, major breaking changes unlikely, minor ones likely_
-
 `relic` is a Clojure(Script) data structure that provides the functional relational programming model described by the [tar pit](http://curtclifton.net/papers/MoseleyMarks06a.pdf) paper.
 
 ## Why

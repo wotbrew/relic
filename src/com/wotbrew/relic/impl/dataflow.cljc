@@ -1346,7 +1346,7 @@
                               (if u
                                 #(some-> % vector)
                                 identity)
-                              vector)
+                              #(some-> % vector))
                         card (count const-exprs)
                         st (fn [test]
                              (let [subseq-fn (if (= :btree itype)

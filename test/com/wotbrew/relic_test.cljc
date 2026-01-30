@@ -1481,5 +1481,15 @@
         db2 (rel/transact db1 [:update :a {:n (fn [{:keys [id]}] (if (= id 0) 1 0))}])]
     (is (= #{{:id 0, :n 1} {:id 1, :n 0}} (:a db2)))))
 
+(deftest unique-regression-65-test
+  (let [db (-> {}
+               (rel/mat [[:from :a] [:unique :x :y :z]])
+               (rel/transact [:insert :a {:x "x", :y "y", :z "z"}]))]
+    (is (= [{:x "x", :y "y", :z "z"}]
+           (rel/q db [[:from :a]
+                      [:where [= :x "x"] [= :y "y"] [= :z "z"]]])))
+    (is (nil? (rel/q db [[:from :a]
+                         [:where [= :x "x"] [= :y ""] [= :z "z"]]])))))
+
 (comment
   (clojure.test/run-all-tests #"com\.wotbrew\.relic(.*)-test"))
